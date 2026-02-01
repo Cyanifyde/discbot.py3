@@ -198,7 +198,7 @@ async def handle_verification_command(
     
     if not message.author.guild_permissions.administrator:
         await message.reply(
-            "❌ You need Administrator permission to use this command.",
+            "You need Administrator permission to use this command.",
             mention_author=False,
         )
         return True
@@ -224,7 +224,7 @@ async def handle_verification_command(
     channel = message.guild.get_channel(channel_id)
     if not channel or not isinstance(channel, discord.TextChannel):
         await message.reply(
-            "❌ Could not find that channel or it's not a text channel.",
+            "Could not find that channel or it's not a text channel.",
             mention_author=False,
         )
         return True

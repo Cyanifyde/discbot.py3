@@ -2,7 +2,7 @@
 
 A modular Discord bot with auto-responder, profile management, and content moderation features.
 
-## 🚀 Quick Start
+## Quick Start
 
 1. **Install dependencies:**
    ```bash
@@ -20,7 +20,7 @@ A modular Discord bot with auto-responder, profile management, and content moder
    python main.py
    ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 discbot/
@@ -65,7 +65,7 @@ discbot/
     └── template.*.json     # Config templates
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ### Layered Design
 
@@ -88,7 +88,7 @@ discbot/
 3. **Testability**: Services have no Discord dependencies, easy to unit test
 4. **Configuration**: All keys defined in `core/constants.py` - no magic strings
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -112,7 +112,7 @@ Each guild has a config file in `config.guild/{guild_id}.json`:
 }
 ```
 
-## 📝 Adding New Features
+## Adding New Features
 
 ### New Responder Handler
 
@@ -150,7 +150,7 @@ class MyService:
 
 2. Add to `GuildState` in `bot/guild_state.py`
 
-## 🧪 Testing
+## Testing
 
 Services can be tested without Discord:
 
@@ -163,6 +163,6 @@ def test_hash_checker():
     assert checker.check("unknown") == False
 ```
 
-## 📄 License
+## License
 
 MIT

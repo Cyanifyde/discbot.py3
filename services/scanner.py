@@ -131,7 +131,7 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
     member = message.guild.get_member(message.author.id)
     if not member or not _is_mod(member):
         await message.reply(
-            "❌ You need moderator permissions to use scanner commands.",
+            "You need moderator permissions to use scanner commands.",
             mention_author=False,
         )
         return True
@@ -175,7 +175,7 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
 
 async def _cmd_help(message: discord.Message) -> None:
     """Show help for scanner commands."""
-    help_text = """**🔍 Image Scanner Commands**
+    help_text = """**Image Scanner Commands**
 
 **Basic:**
 **`scanner enable`** - Enable the suspicious image scanner
@@ -220,14 +220,14 @@ async def _cmd_enable(
     current = await get_state(guild_id)
     if current.get("enabled"):
         await message.reply(
-            "✅ Scanner is already enabled and running!",
+            "Scanner is already enabled and running!",
             mention_author=False,
         )
         return
 
     if not state:
         await message.reply(
-            "❌ Guild state not initialized. Please try again later.",
+            "Guild state not initialized. Please try again later.",
             mention_author=False,
         )
         return
@@ -243,7 +243,7 @@ async def _cmd_enable(
         )
 
     await message.reply(
-        "✅ **Image scanner enabled!**\n"
+        "**Image scanner enabled!**\n"
         "The scanner will now check images against the hash database.\n"
         f"Loaded **{len(state.hashes):,}** hashes.",
         mention_author=False,
@@ -261,7 +261,7 @@ async def _cmd_disable(
     current = await get_state(guild_id)
     if not current.get("enabled"):
         await message.reply(
-            "ℹ️ Scanner is already disabled.",
+            "Scanner is already disabled.",
             mention_author=False,
         )
         return
@@ -274,7 +274,7 @@ async def _cmd_disable(
     )
 
     await message.reply(
-        "⏹️ **Image scanner disabled.**\n"
+        "**Image scanner disabled.**\n"
         "New images will not be scanned.\n"
         "Use `scanner enable` to re-enable.",
         mention_author=False,
@@ -291,11 +291,10 @@ async def _cmd_status(
     data = await get_state(guild_id)
 
     enabled = data.get("enabled", False)
-    status_emoji = "✅" if enabled else "❌"
     status_text = "Enabled" if enabled else "Disabled"
 
     lines = [
-        f"**🔍 Image Scanner Status: {status_emoji} {status_text}**",
+        f"**Image Scanner Status: {status_text}**",
         "",
     ]
 
@@ -307,10 +306,10 @@ async def _cmd_status(
             state.queue_processor.reader_task is not None
             and not state.queue_processor.stop_event.is_set()
         )
-        proc_status = "🟢 Running" if processor_running else "🔴 Stopped"
+        proc_status = "Running" if processor_running else "Stopped"
         lines.append(f"**Processor:** {proc_status}")
     else:
-        lines.append("⚠️ Guild state not initialized")
+        lines.append("Guild state not initialized")
 
     if data.get("enabled_by"):
         lines.append(f"\n**Last enabled by:** User ID {data['enabled_by']}")
@@ -339,7 +338,7 @@ async def _cmd_stats(
     data = await get_state(guild_id)
 
     lines = [
-        "**📊 Image Scanner Statistics**",
+        "**Image Scanner Statistics**",
         "",
         f"**Total Scans:** {data.get('total_scans', 0):,}",
         f"**Total Matches:** {data.get('total_matches', 0):,}",
@@ -374,7 +373,7 @@ async def _cmd_reload(
     """Reload the hash list."""
     if not state:
         await message.reply(
-            "❌ Guild state not initialized.",
+            "Guild state not initialized.",
             mention_author=False,
         )
         return
@@ -401,7 +400,7 @@ async def _cmd_reload(
         )
 
         await message.reply(
-            f"✅ **Hash list reloaded!**\n"
+            f"**Hash list reloaded!**\n"
             f"**Before:** {old_count:,} hashes\n"
             f"**After:** {new_count:,} hashes {diff_text}",
             mention_author=False,
@@ -409,14 +408,14 @@ async def _cmd_reload(
     except Exception as e:
         logger.error("Failed to reload hashes: %s", e)
         await message.reply(
-            f"❌ Failed to reload hashes: {e}",
+            f"Failed to reload hashes: {e}",
             mention_author=False,
         )
 
 
 async def _cmd_setup(message: discord.Message) -> None:
     """Show setup instructions."""
-    help_text = """**🔍 Scanner Setup Instructions**
+    help_text = """**Scanner Setup Instructions**
 
 **1. Add image hashes to scan for:**
 ```
@@ -465,7 +464,7 @@ async def _cmd_addhash(
 
     if not args:
         await message.reply(
-            "❌ Usage: `scanner addhash <sha256_hash>`\n"
+            "Usage: `scanner addhash <sha256_hash>`\n"
             "Provide a 64-character SHA256 hash.",
             mention_author=False,
         )
@@ -476,7 +475,7 @@ async def _cmd_addhash(
     # Validate hash format (SHA256 = 64 hex chars)
     if len(hash_value) != 64 or not all(c in "0123456789abcdef" for c in hash_value):
         await message.reply(
-            "❌ Invalid hash format. Must be a 64-character SHA256 hash (hex).",
+            "Invalid hash format. Must be a 64-character SHA256 hash (hex).",
             mention_author=False,
         )
         return
@@ -485,7 +484,7 @@ async def _cmd_addhash(
 
     if hash_value in guild_hashes:
         await message.reply(
-            f"ℹ️ Hash `{hash_value[:16]}...` is already in the list.",
+            f"Hash `{hash_value[:16]}...` is already in the list.",
             mention_author=False,
         )
         return
@@ -499,7 +498,7 @@ async def _cmd_addhash(
         state.hashes.add(hash_value)
 
     await message.reply(
-        f"✅ Hash added: `{hash_value[:16]}...`\n"
+        f"Hash added: `{hash_value[:16]}...`\n"
         f"**Total guild hashes:** {len(guild_hashes)}",
         mention_author=False,
     )
@@ -516,7 +515,7 @@ async def _cmd_removehash(
 
     if not args:
         await message.reply(
-            "❌ Usage: `scanner removehash <sha256_hash>`",
+            "Usage: `scanner removehash <sha256_hash>`",
             mention_author=False,
         )
         return
@@ -526,7 +525,7 @@ async def _cmd_removehash(
 
     if hash_value not in guild_hashes:
         await message.reply(
-            f"❌ Hash `{hash_value[:16]}...` not found in guild's hash list.",
+            f"Hash `{hash_value[:16]}...` not found in guild's hash list.",
             mention_author=False,
         )
         return
@@ -540,7 +539,7 @@ async def _cmd_removehash(
         state.hashes.discard(hash_value)
 
     await message.reply(
-        f"✅ Hash removed: `{hash_value[:16]}...`\n"
+        f"Hash removed: `{hash_value[:16]}...`\n"
         f"**Remaining guild hashes:** {len(guild_hashes)}",
         mention_author=False,
     )
@@ -555,13 +554,13 @@ async def _cmd_listhashes(message: discord.Message) -> None:
 
     if not guild_hashes:
         await message.reply(
-            "ℹ️ No guild-specific hashes configured.\n"
+            "No guild-specific hashes configured.\n"
             "Use `scanner addhash <hash>` to add hashes.",
             mention_author=False,
         )
         return
 
-    lines = [f"**🔍 Guild Hashes ({len(guild_hashes)} total):**", ""]
+    lines = [f"**Guild Hashes ({len(guild_hashes)} total):**", ""]
 
     # Show up to 20 hashes
     for i, h in enumerate(guild_hashes[:20]):
@@ -589,7 +588,7 @@ async def _cmd_clearhashes(
     # Reload would be needed to refresh the full hash set
 
     await message.reply(
-        f"✅ **Cleared {old_count} guild-specific hashes.**\n"
+        f"**Cleared {old_count} guild-specific hashes.**\n"
         "Use `scanner reload` to refresh the hash list.",
         mention_author=False,
     )
@@ -602,7 +601,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
 
     if not args:
         await message.reply(
-            "❌ Usage: `scanner removerole <role_id|all>`",
+            "Usage: `scanner removerole <role_id|all>`",
             mention_author=False,
         )
         return
@@ -616,7 +615,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
         data["roles_to_remove"] = roles_to_remove
         await update_guild_module_data(guild_id, MODULE_NAME, data)
         await message.reply(
-            "✅ **Configured to remove ALL roles** on hash match.",
+            "**Configured to remove ALL roles** on hash match.",
             mention_author=False,
         )
         return
@@ -625,7 +624,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
     role_id_str = args.strip("<@&>")
     if not role_id_str.isdigit():
         await message.reply(
-            "❌ Invalid role ID. Provide a numeric role ID or 'all'.",
+            "Invalid role ID. Provide a numeric role ID or 'all'.",
             mention_author=False,
         )
         return
@@ -636,14 +635,14 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
     role = message.guild.get_role(role_id)
     if not role:
         await message.reply(
-            f"❌ Role with ID `{role_id}` not found in this server.",
+            f"Role with ID `{role_id}` not found in this server.",
             mention_author=False,
         )
         return
 
     if role_id in roles_to_remove:
         await message.reply(
-            f"ℹ️ Role **{role.name}** is already in the removal list.",
+            f"Role **{role.name}** is already in the removal list.",
             mention_author=False,
         )
         return
@@ -653,7 +652,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        f"✅ Role **{role.name}** (`{role_id}`) will be removed on hash match.",
+        f"Role **{role.name}** (`{role_id}`) will be removed on hash match.",
         mention_author=False,
     )
 
@@ -665,7 +664,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
 
     if not args:
         await message.reply(
-            "❌ Usage: `scanner addrole <role_id>`",
+            "Usage: `scanner addrole <role_id>`",
             mention_author=False,
         )
         return
@@ -674,7 +673,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     role_id_str = args.strip().strip("<@&>")
     if not role_id_str.isdigit():
         await message.reply(
-            "❌ Invalid role ID. Provide a numeric role ID.",
+            "Invalid role ID. Provide a numeric role ID.",
             mention_author=False,
         )
         return
@@ -685,7 +684,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     role = message.guild.get_role(role_id)
     if not role:
         await message.reply(
-            f"❌ Role with ID `{role_id}` not found in this server.",
+            f"Role with ID `{role_id}` not found in this server.",
             mention_author=False,
         )
         return
@@ -693,7 +692,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     roles_to_add = list(data.get("roles_to_add", []))
     if role_id in roles_to_add:
         await message.reply(
-            f"ℹ️ Role **{role.name}** is already in the add list.",
+            f"Role **{role.name}** is already in the add list.",
             mention_author=False,
         )
         return
@@ -703,7 +702,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        f"✅ Role **{role.name}** (`{role_id}`) will be added on hash match.",
+        f"Role **{role.name}** (`{role_id}`) will be added on hash match.",
         mention_author=False,
     )
 
@@ -718,7 +717,7 @@ async def _cmd_clearroles(message: discord.Message) -> None:
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        "✅ **All role configurations cleared.**\n"
+        "**All role configurations cleared.**\n"
         "No roles will be removed or added on hash match.",
         mention_author=False,
     )
@@ -729,7 +728,7 @@ async def _cmd_config(message: discord.Message) -> None:
     guild_id = message.guild.id
     data = await get_state(guild_id)
 
-    lines = ["**🔍 Scanner Configuration**", ""]
+    lines = ["**Scanner Configuration**", ""]
 
     # Guild hashes
     guild_hashes = data.get("guild_hashes", [])

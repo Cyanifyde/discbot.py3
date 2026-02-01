@@ -136,7 +136,7 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
     member = message.guild.get_member(message.author.id)
     if not member or not _is_mod(member):
         await message.reply(
-            "❌ You need moderator permissions to use inactivity commands.",
+            "You need moderator permissions to use inactivity commands.",
             mention_author=False,
         )
         return True
@@ -178,7 +178,7 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
 
 async def _cmd_help(message: discord.Message) -> None:
     """Show help for inactivity commands."""
-    help_text = """**⏰ Inactivity Enforcement Commands**
+    help_text = """**Inactivity Enforcement Commands**
 
 **Basic:**
 **`inactivity enable`** - Enable inactivity enforcement
@@ -226,14 +226,14 @@ async def _cmd_enable(
     current = await get_state(guild_id)
     if current.get("enabled"):
         await message.reply(
-            "✅ Inactivity enforcement is already enabled!",
+            "Inactivity enforcement is already enabled!",
             mention_author=False,
         )
         return
 
     if not state:
         await message.reply(
-            "❌ Guild state not initialized. Please try again later.",
+            "Guild state not initialized. Please try again later.",
             mention_author=False,
         )
         return
@@ -252,7 +252,7 @@ async def _cmd_enable(
     grace_days = data.get("grace_period_days", 3)
 
     await message.reply(
-        "✅ **Inactivity enforcement enabled!**\n"
+        "**Inactivity enforcement enabled!**\n"
         f"**Inactive threshold:** {threshold} days\n"
         f"**Message threshold:** {msg_threshold} messages\n"
         f"**Grace period:** {grace_days} days (for new members)\n"
@@ -273,7 +273,7 @@ async def _cmd_disable(
     current = await get_state(guild_id)
     if not current.get("enabled"):
         await message.reply(
-            "ℹ️ Inactivity enforcement is already disabled.",
+            "Inactivity enforcement is already disabled.",
             mention_author=False,
         )
         return
@@ -286,7 +286,7 @@ async def _cmd_disable(
     )
 
     await message.reply(
-        "⏹️ **Inactivity enforcement disabled.**\n"
+        "**Inactivity enforcement disabled.**\n"
         "No users will be enforced for inactivity.\n"
         "Use `inactivity enable` to re-enable.",
         mention_author=False,
@@ -303,11 +303,10 @@ async def _cmd_status(
     data = await get_state(guild_id)
 
     enabled = data.get("enabled", False)
-    status_emoji = "✅" if enabled else "❌"
     status_text = "Enabled" if enabled else "Disabled"
 
     lines = [
-        f"**⏰ Inactivity Enforcement Status: {status_emoji} {status_text}**",
+        f"**Inactivity Enforcement Status: {status_text}**",
         "",
     ]
 
@@ -341,7 +340,7 @@ async def _cmd_status(
         shard = cursor.get("shard", "00")
         lines.append(f"\n**Current cursor:** shard {shard}")
     else:
-        lines.append("⚠️ Guild state not initialized")
+        lines.append("Guild state not initialized")
 
     if data.get("enabled_by"):
         lines.append(f"\n**Last enabled by:** User ID {data['enabled_by']}")
@@ -370,7 +369,7 @@ async def _cmd_stats(
     data = await get_state(guild_id)
 
     lines = [
-        "**📊 Inactivity Enforcement Statistics**",
+        "**Inactivity Enforcement Statistics**",
         "",
         f"**Total Enforced:** {data.get('total_enforced', 0):,}",
         f"**Total Scanned:** {data.get('total_scanned', 0):,}",
@@ -410,14 +409,14 @@ async def _cmd_step(
     current = await get_state(guild_id)
     if not current.get("enabled"):
         await message.reply(
-            "❌ Inactivity enforcement is disabled. Use `inactivity enable` first.",
+            "Inactivity enforcement is disabled. Use `inactivity enable` first.",
             mention_author=False,
         )
         return
 
     if not state:
         await message.reply(
-            "❌ Guild state not initialized.",
+            "Guild state not initialized.",
             mention_author=False,
         )
         return
@@ -430,7 +429,7 @@ async def _cmd_step(
         await increment_stats(guild_id, enforced=enforced, scanned=scanned)
 
         await message.channel.send(
-            f"✅ **Enforcement step complete!**\n"
+            f"**Enforcement step complete!**\n"
             f"**Scanned:** {scanned:,} users\n"
             f"**Enforced:** {enforced:,} users",
             allowed_mentions=discord.AllowedMentions.none(),
@@ -438,14 +437,14 @@ async def _cmd_step(
     except Exception as e:
         logger.error("Failed to run enforcement step: %s", e)
         await message.channel.send(
-            f"❌ Enforcement step failed: {e}",
+            f"Enforcement step failed: {e}",
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
 async def _cmd_setup(message: discord.Message) -> None:
     """Show setup instructions."""
-    help_text = """**⏰ Inactivity Setup Instructions**
+    help_text = """**Inactivity Setup Instructions**
 
 **1. Set up time configuration (recommended first):**
 ```
@@ -502,7 +501,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
 
     if not args:
         await message.reply(
-            "❌ Usage: `inactivity removerole <role_id|all>`",
+            "Usage: `inactivity removerole <role_id|all>`",
             mention_author=False,
         )
         return
@@ -517,7 +516,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
         data["roles_to_remove"] = roles_to_remove
         await update_guild_module_data(guild_id, MODULE_NAME, data)
         await message.reply(
-            "✅ **Configured to remove ALL roles** on enforcement.",
+            "**Configured to remove ALL roles** on enforcement.",
             mention_author=False,
         )
         return
@@ -526,7 +525,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
     role_id_str = args.strip("<@&>")
     if not role_id_str.isdigit():
         await message.reply(
-            "❌ Invalid role ID. Provide a numeric role ID or 'all'.",
+            "Invalid role ID. Provide a numeric role ID or 'all'.",
             mention_author=False,
         )
         return
@@ -537,14 +536,14 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
     role = message.guild.get_role(role_id)
     if not role:
         await message.reply(
-            f"❌ Role with ID `{role_id}` not found in this server.",
+            f"Role with ID `{role_id}` not found in this server.",
             mention_author=False,
         )
         return
 
     if role_id in roles_to_remove:
         await message.reply(
-            f"ℹ️ Role **{role.name}** is already in the removal list.",
+            f"Role **{role.name}** is already in the removal list.",
             mention_author=False,
         )
         return
@@ -554,7 +553,7 @@ async def _cmd_removerole(message: discord.Message, args: Optional[str]) -> None
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        f"✅ Role **{role.name}** (`{role_id}`) will be removed on enforcement.",
+        f"Role **{role.name}** (`{role_id}`) will be removed on enforcement.",
         mention_author=False,
     )
 
@@ -566,7 +565,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
 
     if not args:
         await message.reply(
-            "❌ Usage: `inactivity addrole <role_id>`",
+            "Usage: `inactivity addrole <role_id>`",
             mention_author=False,
         )
         return
@@ -575,7 +574,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     role_id_str = args.strip().strip("<@&>")
     if not role_id_str.isdigit():
         await message.reply(
-            "❌ Invalid role ID. Provide a numeric role ID.",
+            "Invalid role ID. Provide a numeric role ID.",
             mention_author=False,
         )
         return
@@ -586,7 +585,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     role = message.guild.get_role(role_id)
     if not role:
         await message.reply(
-            f"❌ Role with ID `{role_id}` not found in this server.",
+            f"Role with ID `{role_id}` not found in this server.",
             mention_author=False,
         )
         return
@@ -594,7 +593,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     roles_to_add = list(data.get("roles_to_add", []))
     if role_id in roles_to_add:
         await message.reply(
-            f"ℹ️ Role **{role.name}** is already in the add list.",
+            f"Role **{role.name}** is already in the add list.",
             mention_author=False,
         )
         return
@@ -604,7 +603,7 @@ async def _cmd_addrole(message: discord.Message, args: Optional[str]) -> None:
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        f"✅ Role **{role.name}** (`{role_id}`) will be added on enforcement.",
+        f"Role **{role.name}** (`{role_id}`) will be added on enforcement.",
         mention_author=False,
     )
 
@@ -619,7 +618,7 @@ async def _cmd_clearroles(message: discord.Message) -> None:
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        "✅ **All role configurations cleared.**\n"
+        "**All role configurations cleared.**\n"
         "No roles will be removed or added on enforcement.",
         mention_author=False,
     )
@@ -630,7 +629,7 @@ async def _cmd_config(message: discord.Message) -> None:
     guild_id = message.guild.id
     data = await get_state(guild_id)
 
-    lines = ["**⏰ Inactivity Role Configuration**", ""]
+    lines = ["**Inactivity Role Configuration**", ""]
 
     # Roles to remove
     roles_to_remove = data.get("roles_to_remove", [])
@@ -668,7 +667,7 @@ async def _cmd_setgrace(message: discord.Message, args: Optional[str]) -> None:
 
     if not args:
         await message.reply(
-            "❌ Usage: `inactivity setgrace <days>`\n"
+            "Usage: `inactivity setgrace <days>`\n"
             "Example: `inactivity setgrace 7` (new members get 7 days before enforcement)",
             mention_author=False,
         )
@@ -680,7 +679,7 @@ async def _cmd_setgrace(message: discord.Message, args: Optional[str]) -> None:
             raise ValueError("Days must be non-negative")
     except ValueError:
         await message.reply(
-            "❌ Invalid number. Provide a positive integer (days).",
+            "Invalid number. Provide a positive integer (days).",
             mention_author=False,
         )
         return
@@ -689,7 +688,7 @@ async def _cmd_setgrace(message: discord.Message, args: Optional[str]) -> None:
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        f"✅ **Grace period set to {days} days.**\n"
+        f"**Grace period set to {days} days.**\n"
         f"New members will have {days} days to post before enforcement.",
         mention_author=False,
     )
@@ -702,7 +701,7 @@ async def _cmd_setbaseline(message: discord.Message, args: Optional[str]) -> Non
 
     if not args:
         await message.reply(
-            "❌ Usage: `inactivity setbaseline <YYYY-MM-DD>`\n"
+            "Usage: `inactivity setbaseline <YYYY-MM-DD>`\n"
             "Example: `inactivity setbaseline 2026-01-01`\n"
             "All users must have posted since this date, or use `inactivity init` for current date.",
             mention_author=False,
@@ -717,7 +716,7 @@ async def _cmd_setbaseline(message: discord.Message, args: Optional[str]) -> Non
         )
     except ValueError:
         await message.reply(
-            "❌ Invalid date format. Use YYYY-MM-DD (e.g., 2026-01-15).",
+            "Invalid date format. Use YYYY-MM-DD (e.g., 2026-01-15).",
             mention_author=False,
         )
         return
@@ -726,7 +725,7 @@ async def _cmd_setbaseline(message: discord.Message, args: Optional[str]) -> Non
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
     await message.reply(
-        f"✅ **Baseline date set to {date_str}.**\n"
+        f"**Baseline date set to {date_str}.**\n"
         f"Users who haven't posted since this date will be subject to enforcement.",
         mention_author=False,
     )
@@ -746,7 +745,7 @@ async def _cmd_init(message: discord.Message) -> None:
     baseline_str = baseline_dt.strftime("%Y-%m-%d")
     today_str = now.strftime("%Y-%m-%d")
     await message.reply(
-        f"✅ **Baseline initialized to {baseline_str}.**\n"
+        f"**Baseline initialized to {baseline_str}.**\n"
         f"Current members now have 30 days (until ~{today_str}) to post at least once.\n"
         f"Users who have posted even once will never be checked again.",
         mention_author=False,
