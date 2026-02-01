@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from bot import DiscBot
+from discord.errors import PrivilegedIntentsRequired
+
+# Load environment variables from .env file
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
+
+# Get configuration from environment
+BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("discbot")
+
+# Debug: show if .env was found
+if not env_path.exists():
+    logger.warning(".env file not found at %s", env_path)
+
+
+async def main() -> None:
+    token = BOT_TOKEN
+    if not token:
+        logger.error("Missing bot token. Set DISCORD_BOT_TOKEN in .env or environment.")
+        return
+    
+    # Show token info for debugging (first 10 chars only for security)
+    logger.info("Using token starting with: %s...", token[:10] if len(token) > 10 else "***")
+    
+    bot = DiscBot()
+    try:
+        await bot.start(token)
+    except PrivilegedIntentsRequired:
+        logger.error(
+            "Privileged intents required. Enable MESSAGE CONTENT and SERVER MEMBERS intents "
+            "in the Discord developer portal, or disable those intents in code/config if you "
+            "intend to run without them."
+        )
+        try:
+            await bot.close()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error("Failed to start bot: %s", e)
+        if "401" in str(e) or "Improper token" in str(e):
+            logger.error(
+                "Token is invalid. Go to https://discord.com/developers/applications, "
+                "select your bot, go to Bot tab, and click 'Reset Token' to generate a new one. "
+                "Then update DISCORD_BOT_TOKEN in your .env file."
+            )
+        try:
+            await bot.close()
+        except Exception:
+            pass
+        raise
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

@@ -1,0 +1,39 @@
+{
+  "bio": "",
+  "pronouns": "",
+  "specialties": [],
+  "links": [],
+  "commission_status": "",
+  "commission_info": "",
+  "commission_embed": null,
+  "embed": {
+    "title": "Artist Profile: {user}",
+    "description": "{bio}",
+    "color": 2845872,
+    "fields": [
+      {
+        "name": "Pronouns",
+        "value": "{pronouns}",
+        "inline": true
+      },
+      {
+        "name": "Specialties",
+        "value": "{specialties}",
+        "inline": true
+      },
+      {
+        "name": "Commission Status",
+        "value": "{commission_status}",
+        "inline": true
+      },
+      {
+        "name": "Portfolio",
+        "value": "{links}",
+        "inline": false
+      }
+    ],
+    "footer": {
+      "text": "Use profile setbio / setpronouns / setspecialities / addlink"
+    }
+  }
+}

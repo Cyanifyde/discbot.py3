@@ -1,0 +1,66 @@
+{
+  "settings": {
+    "enabled": true,
+    "match_mode": "startswith",
+    "case_sensitive": false,
+    "strip_trigger": true,
+    "allow_mention_prefix": true,
+    "require_mention": false,
+    "allowed_user_ids": [],
+    "blocked_user_ids": [],
+    "allowed_role_ids": [],
+    "blocked_role_ids": [],
+    "allowed_channel_ids": [],
+    "blocked_channel_ids": [],
+    "allowed_category_ids": [],
+    "blocked_category_ids": [],
+    "cooldown_seconds": 2,
+    "cooldown_scope": "user",
+    "delete_trigger_message": false,
+    "delay_seconds": 0.0,
+    "typing": false,
+    "response_mode": "channel",
+    "response_targets": [],
+    "response_prefix": "",
+    "response_suffix": "",
+    "mention_user": false,
+    "mention_roles": [],
+    "reply_ping_author": false,
+    "dm_fallback_to_channel": false,
+    "input_min_words": 0,
+    "input_max_words": 0,
+    "input_min_chars": 0,
+    "input_max_chars": 0
+  },
+  "triggers": {
+    "hello": {
+      "response": "Hey! This is a static response.",
+      "settings": {
+        "require_mention": true
+      }
+    },
+    "commisionguide": {
+      "content": "",
+      "embeds": [
+        {
+          "title": "Mageka's Commision Guide",
+          "url": "https://magecommss.carrd.co/",
+          "fields": [
+            {
+              "name": "Read the guide here!",
+              "value": "https://magecommss.carrd.co/"
+            }
+          ],
+          "color": 5061041,
+          "footer": {
+            "text": "By mageka"
+          }
+        }
+      ]
+    },
+    "is lai good looking?": "yes",
+    "profile": {
+      "handler": "profile:ProfileResponder"
+    }
+  }
+}
