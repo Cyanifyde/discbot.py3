@@ -30,6 +30,7 @@ from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from modules.auto_responder import handle_auto_responder
 from modules.dm_sender import handle_dm_send
 from modules.verification import (
+    handle_remove_verification_command,
     handle_verification_command,
     restore_verification_views,
     setup_verification,
@@ -172,6 +173,8 @@ class DiscBot(discord.Client):
         
         # Handle admin text commands (before guild state check)
         if await handle_verification_command(message, self):
+            return
+        if await handle_remove_verification_command(message, self):
             return
         
         state = self._get_guild_state(message.guild.id)

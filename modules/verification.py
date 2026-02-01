@@ -31,12 +31,21 @@ VERIFY_BUTTON_PREFIX = "verify_btn:"
 
 # Regex to parse the addverification command
 # addverification <#channel_id> "text" unverified_role_id verified_role_id
-COMMAND_PATTERN = re.compile(
+ADD_COMMAND_PATTERN = re.compile(
     r'^addverification\s+'
     r'<#(\d+)>\s+'           # Channel mention
     r'"([^"]+)"\s+'          # Quoted text
     r'(\d+)\s+'              # Unverified role ID
     r'(\d+)\s*$',            # Verified role ID
+    re.IGNORECASE
+)
+
+# Regex to parse the removeverification command
+# removeverification <#channel_id> message_id
+REMOVE_COMMAND_PATTERN = re.compile(
+    r'^removeverification\s+'
+    r'<#(\d+)>\s+'           # Channel mention
+    r'(\d+)\s*$',            # Message ID
     re.IGNORECASE
 )
 
@@ -195,7 +204,7 @@ async def handle_verification_command(
         return True
     
     # Parse the command
-    match = COMMAND_PATTERN.match(content)
+    match = ADD_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
             '❌ Invalid format. Use:\n'
@@ -306,6 +315,105 @@ async def handle_verification_command(
         logger.error("Failed to send verification message: %s", e)
         await message.reply(
             "❌ Failed to send the verification message. Please check my permissions.",
+            mention_author=False,
+        )
+    
+    return True
+
+
+async def handle_remove_verification_command(
+    message: discord.Message,
+    bot: discord.Client,
+) -> bool:
+    """
+    Handle the removeverification text command.
+    
+    Format: removeverification #channel message_id
+    
+    Returns True if the command was handled (even if it failed).
+    """
+    content = message.content.strip()
+    
+    # Check if it's the removeverification command
+    if not content.lower().startswith("removeverification"):
+        return False
+    
+    # Must be in a guild
+    if not message.guild:
+        return False
+    
+    # Must be an admin
+    if not isinstance(message.author, discord.Member):
+        return False
+    
+    if not message.author.guild_permissions.administrator:
+        await message.reply(
+            "❌ You need Administrator permission to use this command.",
+            mention_author=False,
+        )
+        return True
+    
+    # Parse the command
+    match = REMOVE_COMMAND_PATTERN.match(content)
+    if not match:
+        await message.reply(
+            '❌ Invalid format. Use:\n'
+            '`removeverification #channel message_id`',
+            mention_author=False,
+        )
+        return True
+    
+    channel_id = int(match.group(1))
+    message_id = int(match.group(2))
+    
+    # Get channel
+    channel = message.guild.get_channel(channel_id)
+    if not channel or not isinstance(channel, discord.TextChannel):
+        await message.reply(
+            "❌ Could not find that channel or it's not a text channel.",
+            mention_author=False,
+        )
+        return True
+    
+    # Try to delete the message
+    try:
+        target_message = await channel.fetch_message(message_id)
+        await target_message.delete()
+    except discord.NotFound:
+        # Message already deleted, that's fine
+        pass
+    except discord.Forbidden:
+        await message.reply(
+            "❌ I don't have permission to delete that message.",
+            mention_author=False,
+        )
+        return True
+    except discord.HTTPException as e:
+        logger.error("Failed to delete verification message: %s", e)
+        await message.reply(
+            "❌ Failed to delete the message. Please try again.",
+            mention_author=False,
+        )
+        return True
+    
+    # Remove from config
+    removed = await remove_verification_button(message.guild.id, message_id)
+    
+    if removed:
+        await message.reply(
+            f"✅ Verification button removed from {channel.mention}!",
+            mention_author=False,
+        )
+        logger.info(
+            "Verification button removed in guild %s, channel %s, message %s by %s",
+            message.guild.id,
+            channel.id,
+            message_id,
+            message.author.id,
+        )
+    else:
+        await message.reply(
+            f"✅ Message deleted. (Note: It wasn't in my saved verification list.)",
             mention_author=False,
         )
     
