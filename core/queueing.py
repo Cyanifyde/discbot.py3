@@ -97,6 +97,7 @@ class QueueProcessor:
         self.queued_jobs = int(store.state.get("queued_jobs", 0))
         self.compact_threshold = int(config.get("queue_compact_threshold_bytes", 0))
         self.stop_event = asyncio.Event()
+        self.stop_event.set()  # Initially stopped - must be explicitly started
         self.reader_task: Optional[asyncio.Task] = None
         self.worker_tasks: List[asyncio.Task] = []
         self.session: Optional[aiohttp.ClientSession] = None

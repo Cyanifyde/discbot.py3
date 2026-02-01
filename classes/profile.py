@@ -323,23 +323,24 @@ async def _handle_remove_link(payload: ResponderInput, rest: str) -> str:
 
 def _help_text() -> str:
     return (
-        "Profile commands:\n"
+        "**Profile Commands**\n"
+        "```\n"
         "profile view [@user]\n"
-        "profile set bio|pronouns|specialities <value>\n"
         "profile setbio <text>\n"
         "profile setpronouns <text>\n"
         "profile setspecialities <list>\n"
         "profile commissionstatus set <text>\n"
         "profile commissioninfo set <text|embed-json>\n"
-        "profile addlink <link> [text]\n"
-        "profile removelink <line>\n"
+        "profile addlink <url> [text]\n"
+        "profile removelink <number>\n"
         "profile commission [@user]\n"
         "profile commission info [@user]\n"
         "profile bio [@user]\n"
         "profile pronouns [@user]\n"
         "profile specialties [@user]\n"
         "profile links [@user]\n"
-        "profile help"
+        "profile help\n"
+        "```"
     )
 
 

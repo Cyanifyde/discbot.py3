@@ -29,6 +29,7 @@ from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from modules.auto_responder import handle_auto_responder
 from modules.dm_sender import handle_dm_send
+from modules.sus_scanner import handle_sus_command, restore_sus_state
 from modules.verification import (
     handle_remove_verification_command,
     handle_verification_command,
@@ -86,10 +87,15 @@ class DiscBot(discord.Client):
             # Run config migrations (adds new fields without overwriting data)
             await migrate_all_guild_configs()
             
+            # Initialize guild states first
+            await self._initialize_existing_guilds()
+            
             # Restore verification buttons from saved data
             await restore_verification_views(self)
             
-            await self._initialize_existing_guilds()
+            # Restore sus scanner state (starts scanner for guilds where it was enabled)
+            await restore_sus_state(self)
+            
             self._status_task = asyncio.create_task(self._status_loop())
 
     async def close(self) -> None:
@@ -175,6 +181,8 @@ class DiscBot(discord.Client):
         if await handle_verification_command(message, self):
             return
         if await handle_remove_verification_command(message, self):
+            return
+        if await handle_sus_command(message, self):
             return
         
         state = self._get_guild_state(message.guild.id)

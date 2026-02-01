@@ -9,8 +9,12 @@ from core.utils import is_valid_id, safe_int, sanitize_text
 
 TRIGGERS = {"send", "say", "post"}
 HELP_TEXT = (
-    "DM format: send <guild_id> <channel_id> <message>\n"
-    "Example: send 12345678912345678 987654328765432 Hello world"
+    "**DM Send Command**\n"
+    "```\n"
+    "send <guild_id> <channel_id> <message>\n"
+    "```\n"
+    "**Example:**\n"
+    "`send 123456789123456789 987654321987654321 Hello world`"
 )
 
 

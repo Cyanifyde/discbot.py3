@@ -207,8 +207,10 @@ async def handle_verification_command(
     match = ADD_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            '❌ Invalid format. Use:\n'
-            '`addverification #channel "message text" unverified_role_id verified_role_id`',
+            '❌ **Invalid format.**\n'
+            '```\n'
+            'addverification #channel "message text" unverified_role_id verified_role_id\n'
+            '```',
             mention_author=False,
         )
         return True
@@ -357,8 +359,10 @@ async def handle_remove_verification_command(
     match = REMOVE_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            '❌ Invalid format. Use:\n'
-            '`removeverification #channel message_id`',
+            '❌ **Invalid format.**\n'
+            '```\n'
+            'removeverification #channel message_id\n'
+            '```',
             mention_author=False,
         )
         return True

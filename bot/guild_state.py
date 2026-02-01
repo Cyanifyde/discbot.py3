@@ -87,18 +87,28 @@ class GuildState:
         
         self._refresh_config_cache()
 
-    async def start(self) -> None:
-        """Initialize and start background tasks."""
+    async def start(self, start_scanner: bool = False) -> None:
+        """
+        Initialize and start background tasks.
+        
+        Args:
+            start_scanner: Whether to start the sus scanner queue processor.
+                          If False (default), scanner must be enabled via 'sus enable'.
+        """
         await self.storage.initialize()
         await self.queue_store.initialize()
         self.hashes = await load_hashes(self.config)
-        await self.queue_processor.start()
+        
+        # Only start queue processor if explicitly requested
+        # The sus scanner module handles starting this based on saved state
+        if start_scanner:
+            await self.queue_processor.start()
         
         # Start periodic tasks
         self.flush_task = asyncio.create_task(self._periodic_flush())
         self.queue_state_task = asyncio.create_task(self._periodic_queue_state_flush())
         
-        logger.info("Guild %s state started", self.guild_id)
+        logger.info("Guild %s state started (scanner=%s)", self.guild_id, start_scanner)
 
     async def stop(self) -> None:
         """Stop background tasks and flush state."""
@@ -177,8 +187,23 @@ class GuildState:
         """Check if a hash matches known bad hashes."""
         return hash_value in self.hashes
 
+    def is_scanner_running(self) -> bool:
+        """Check if the sus scanner queue processor is running."""
+        return (
+            self.queue_processor.reader_task is not None and
+            not self.queue_processor.stop_event.is_set()
+        )
+
     async def enqueue_job(self, job: dict[str, Any]) -> bool:
-        """Enqueue a scan job."""
+        """
+        Enqueue a scan job.
+        
+        Jobs are only enqueued if the scanner is running.
+        """
+        # Don't enqueue if scanner isn't running
+        if not self.is_scanner_running():
+            return False
+        
         enqueued = await self.queue_processor.enqueue(job)
         if not enqueued:
             await self.storage.increment_queue_dropped()
