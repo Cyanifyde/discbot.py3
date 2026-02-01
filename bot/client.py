@@ -27,7 +27,12 @@ from core.interactions import handle_interaction
 from core.io_utils import read_text
 from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
-from modules.auto_responder import handle_auto_responder
+from core.help_system import help_system
+from modules.auto_responder import (
+    handle_auto_responder,
+    handle_add_response_command,
+    handle_remove_response_command,
+)
 from modules.dm_sender import handle_dm_send
 from modules.verification import (
     handle_remove_verification_command,
@@ -39,6 +44,8 @@ from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
 from services.scanner import restore_state as restore_scanner_state
+from services.modules_command import handle_command as handle_modules_command
+from services.modules_command import register_help as register_modules_help
 
 from .guild_state import GuildState
 
@@ -89,6 +96,9 @@ class DiscBot(discord.Client):
 
             # Run config migrations (adds new fields without overwriting data)
             await migrate_all_guild_configs()
+
+            # Register help for modules command
+            register_modules_help()
 
             # Initialize guild states first
             await self._initialize_existing_guilds()
@@ -181,7 +191,19 @@ class DiscBot(discord.Client):
             await handle_dm_send(self, message)
             return
 
+        # Check for help command first (before other handlers)
+        if await self._handle_help_command(message):
+            return
+
+        # Handle auto-responder commands
+        if await handle_add_response_command(message):
+            return
+        if await handle_remove_response_command(message):
+            return
+
         # Handle admin text commands (before guild state check)
+        if await handle_modules_command(message):
+            return
         if await handle_verification_command(message, self):
             return
         if await handle_remove_verification_command(message, self):
@@ -558,6 +580,46 @@ class DiscBot(discord.Client):
             )
         
         return enforced, scanned
+
+    # ─── Helper Methods ───────────────────────────────────────────────────────
+
+    async def _handle_help_command(self, message: discord.Message) -> bool:
+        """
+        Handle @bot help command to show all registered module help.
+        
+        Returns True if the command was handled.
+        """
+        if not message.guild:
+            return False
+        
+        # Check if bot is mentioned and message contains "help"
+        bot_mentioned = False
+        if self.user and message.guild.me:
+            bot_id = message.guild.me.id
+            bot_mentioned = any(mention.id == bot_id for mention in message.mentions)
+        
+        if not bot_mentioned:
+            return False
+        
+        content = message.content.strip().lower()
+        # Remove bot mention from content
+        for mention in message.mentions:
+            if self.user and mention.id == self.user.id:
+                content = content.replace(f"<@{mention.id}>", "")
+                content = content.replace(f"<@!{mention.id}>", "")
+        
+        content = content.strip()
+        
+        if content != "help":
+            return False
+        
+        # Generate and send help embed
+        if help_system.has_modules():
+            embed = help_system.get_help_embed()
+            await message.reply(embed=embed, mention_author=False)
+            return True
+        
+        return False
 
     # ─── Commands ─────────────────────────────────────────────────────────────
 

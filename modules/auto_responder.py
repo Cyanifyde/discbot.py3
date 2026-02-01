@@ -18,14 +18,26 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import discord
 
 from core.config import GUILD_CONFIG_DIR
-from core.io_utils import read_json
+from core.io_utils import read_json, write_json_atomic
 from core.paths import resolve_repo_path
 from core.utils import is_safe_relative_path, sanitize_text
 from core.modules_config import module_is_enabled
+from core.help_system import help_system
+from core.permissions import can_use_command, is_module_enabled, can_use_module
 from classes.response_handlers import ResponderInput
 
 MODULE_NAME = "autoresponder"
 CONFIG_SUFFIX = ".autoresponder.json"
+
+# Command patterns
+ADD_RESPONSE_PATTERN = re.compile(
+    r'^addresponse\s+"([^"]+)"\s+"([^"]+)"(?:\s+(.*))?$',
+    re.IGNORECASE | re.DOTALL
+)
+REMOVE_RESPONSE_PATTERN = re.compile(
+    r'^removeresponse\s+"([^"]+)"$',
+    re.IGNORECASE
+)
 
 _CACHE: Dict[int, Tuple[Optional[float], Dict[str, Any]]] = {}
 _CACHE_TTL_SECONDS = 30.0  # Cache config for 30 seconds
@@ -34,6 +46,7 @@ _HANDLER_NAMESPACE = "classes"
 _COOLDOWNS: Dict[Tuple[int, str, int], float] = {}
 _LAST_COOLDOWN_CLEANUP = 0.0
 _COOLDOWN_CLEANUP_INTERVAL = 300.0  # Cleanup every 5 minutes
+_HELP_REGISTERED = False  # Track if help has been registered
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "enabled": True,
@@ -624,6 +637,21 @@ async def _send_response(
 
 
 async def handle_auto_responder(message: discord.Message) -> bool:
+    global _HELP_REGISTERED
+    
+    # Register help on first call (lazy registration)
+    if not _HELP_REGISTERED:
+        help_system.register_module(
+            name="Auto-Responder",
+            description="Automatic responses to configured triggers with custom handlers, filters, and delivery modes.",
+            commands=[
+                ("addresponse \"trigger\" \"response\"", "Add a simple text response"),
+                ("addresponse \"trigger\" \"\" --embed title=\"Title\" description=\"Desc\" color=#hex", "Add an embed response"),
+                ("removeresponse \"trigger\"", "Remove a user-added response"),
+            ]
+        )
+        _HELP_REGISTERED = True
+    
     if message.guild is None:
         return False
     if message.author.bot:
@@ -704,3 +732,327 @@ async def handle_auto_responder(message: discord.Message) -> bool:
         if handled:
             return True
     return False
+
+
+async def _save_guild_config(guild_id: int, data: Dict[str, Any]) -> None:
+    """Save guild config and invalidate cache."""
+    path = GUILD_CONFIG_DIR / f"{guild_id}{CONFIG_SUFFIX}"
+    await write_json_atomic(path, data)
+    # Invalidate cache
+    _CACHE.pop(guild_id, None)
+
+
+def _is_mod(member: discord.Member) -> bool:
+    """Check if member has mod permissions."""
+    perms = member.guild_permissions
+    return (
+        perms.administrator
+        or perms.manage_guild
+        or perms.manage_messages
+    )
+
+
+async def handle_add_response_command(message: discord.Message) -> bool:
+    """
+    Handle the addresponse text command.
+    
+    Format: addresponse "trigger" "response" [--embed title="Title" description="Desc" color=#hex]
+    
+    Returns True if the command was handled.
+    """
+    content = message.content.strip()
+    
+    # Check if it's the addresponse command
+    if not content.lower().startswith("addresponse"):
+        return False
+    
+    # Must be in a guild
+    if not message.guild:
+        return False
+    
+    # Must be a mod
+    if not isinstance(message.author, discord.Member):
+        return False
+    
+    # Check module and command permissions (guild-specific)
+    if not await is_module_enabled(message.guild.id, "autoresponder"):
+        await message.reply(
+            "Auto Responder module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable autoresponder`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_command(message.author, "addresponse"):
+        await message.reply(
+            "You don't have permission to use this command in this server.\n"
+            "An administrator can grant access with `modules allow addresponse @YourRole`",
+            mention_author=False,
+        )
+        return True
+    
+    if not _is_mod(message.author):
+        await message.reply(
+            "You need Administrator, Manage Server, or Manage Messages permission to use this command.",
+            mention_author=False,
+        )
+        return True
+    
+    # Parse the command - support both simple and embed formats
+    # Simple: addresponse "trigger" "response"
+    # Embed: addresponse "trigger" "" --embed title="Title" description="Desc" color=#5865F2
+    
+    match = ADD_RESPONSE_PATTERN.match(content)
+    if not match:
+        await message.reply(
+            "**Invalid format.**\\n"
+            "**Simple response:**\\n"
+            '```\\naddresponse "trigger" "response"\\n```\\n'
+            "**Embed response:**\\n"
+            '```\\naddresponse "trigger" "" --embed title=\"Title\" description=\"Description\" color=#5865F2\\n```\\n'
+            "**Available embed fields:** title, description, color, url, footer",
+            mention_author=False,
+        )
+        return True
+    
+    trigger = match.group(1).strip()
+    response = match.group(2).strip()
+    extra = match.group(3) or ""
+    
+    if not trigger:
+        await message.reply(
+            "Trigger cannot be empty.",
+            mention_author=False,
+        )
+        return True
+    
+    # Check if embed format
+    embed_data = None
+    if "--embed" in extra.lower():
+        # Parse embed parameters
+        embed_data = _parse_embed_params(extra)
+        if not embed_data:
+            await message.reply(
+                "Failed to parse embed parameters. Use format:\\n"
+                '`--embed title="Title" description="Desc" color=#hex`',
+                mention_author=False,
+            )
+            return True
+    elif not response:
+        await message.reply(
+            "Response cannot be empty unless using --embed.",
+            mention_author=False,
+        )
+        return True
+    
+    # Load current config
+    data = await _load_guild_config(message.guild.id)
+    if not isinstance(data, dict):
+        data = {"settings": {}, "triggers": {}}
+    
+    triggers = data.get("triggers", {})
+    if not isinstance(triggers, dict):
+        triggers = {}
+    
+    # Track user-added triggers
+    user_added = data.get("user_added", [])
+    if not isinstance(user_added, list):
+        user_added = []
+    
+    # Add the trigger
+    if embed_data:
+        triggers[trigger] = embed_data
+    else:
+        triggers[trigger] = {
+            "response": response,
+            "settings": {
+                "match_mode": "equals",  # Default to exact match for user-added
+                "case_sensitive": False
+            }
+        }
+    
+    # Mark as user-added
+    if trigger not in user_added:
+        user_added.append(trigger)
+    
+    data["triggers"] = triggers
+    data["user_added"] = user_added
+    
+    # Save config
+    await _save_guild_config(message.guild.id, data)
+    
+    if embed_data:
+        await message.reply(
+            f'✅ Added embed response for trigger: `{trigger}`',
+            mention_author=False,
+        )
+    else:
+        await message.reply(
+            f'✅ Added response for trigger: `{trigger}` → `{response[:50]}{"..." if len(response) > 50 else ""}`',
+            mention_author=False,
+        )
+    
+    return True
+
+
+def _parse_embed_params(extra: str) -> Optional[Dict[str, Any]]:
+    """Parse embed parameters from command text."""
+    # Extract parameters after --embed
+    embed_part = extra[extra.lower().find("--embed") + 7:].strip()
+    
+    params = {}
+    # Parse key="value" pairs
+    pattern = re.compile(r'(\w+)="([^"]*)"')
+    for match in pattern.finditer(embed_part):
+        key = match.group(1).lower()
+        value = match.group(2)
+        params[key] = value
+    
+    if not params:
+        return None
+    
+    # Build embed structure
+    embed_data: Dict[str, Any] = {
+        "content": "",
+        "embeds": [{}]
+    }
+    
+    embed = embed_data["embeds"][0]
+    
+    if "title" in params:
+        embed["title"] = params["title"]
+    if "description" in params:
+        embed["description"] = params["description"]
+    if "url" in params:
+        embed["url"] = params["url"]
+    if "color" in params:
+        # Parse color (hex)
+        color_str = params["color"].lstrip("#")
+        try:
+            embed["color"] = int(color_str, 16)
+        except ValueError:
+            embed["color"] = 0x5865F2  # Default Discord blurple
+    if "footer" in params:
+        embed["footer"] = {"text": params["footer"]}
+    
+    if not embed:
+        return None
+    
+    return embed_data
+
+
+async def handle_remove_response_command(message: discord.Message) -> bool:
+    """
+    Handle the removeresponse text command.
+    
+    Only allows removing user-added responses, not built-in ones.
+    
+    Returns True if the command was handled.
+    """
+    content = message.content.strip()
+    
+    # Check if it's the removeresponse command
+    if not content.lower().startswith("removeresponse"):
+        return False
+    
+    # Must be in a guild
+    if not message.guild:
+        return False
+    
+    # Must be a mod
+    if not isinstance(message.author, discord.Member):
+        return False
+    
+    # Check module and command permissions (guild-specific)
+    if not await is_module_enabled(message.guild.id, "autoresponder"):
+        await message.reply(
+            "Auto Responder module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable autoresponder`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_command(message.author, "removeresponse"):
+        await message.reply(
+            "You don't have permission to use this command in this server.\n"
+            "An administrator can grant access with `modules allow removeresponse @YourRole`",
+            mention_author=False,
+        )
+        return True
+    
+    if not _is_mod(message.author):
+        await message.reply(
+            "You need Administrator, Manage Server, or Manage Messages permission to use this command.",
+            mention_author=False,
+        )
+        return True
+    
+    # Parse the command
+    match = REMOVE_RESPONSE_PATTERN.match(content)
+    if not match:
+        await message.reply(
+            "**Invalid format.**\\n"
+            '```\\nremoveresponse "trigger"\\n```',
+            mention_author=False,
+        )
+        return True
+    
+    trigger = match.group(1).strip()
+    
+    if not trigger:
+        await message.reply(
+            "Trigger cannot be empty.",
+            mention_author=False,
+        )
+        return True
+    
+    # Load current config
+    data = await _load_guild_config(message.guild.id)
+    if not isinstance(data, dict):
+        await message.reply(
+            f"No triggers found.",
+            mention_author=False,
+        )
+        return True
+    
+    triggers = data.get("triggers", {})
+    user_added = data.get("user_added", [])
+    
+    if not isinstance(triggers, dict):
+        triggers = {}
+    if not isinstance(user_added, list):
+        user_added = []
+    
+    # Check if trigger exists
+    if trigger not in triggers:
+        await message.reply(
+            f'Trigger `{trigger}` not found.',
+            mention_author=False,
+        )
+        return True
+    
+    # Check if it's user-added
+    if trigger not in user_added:
+        await message.reply(
+            f'⛔ Cannot remove `{trigger}` - this is a built-in trigger.\\n'
+            f'You can only remove triggers you added yourself.',
+            mention_author=False,
+        )
+        return True
+    
+    # Remove the trigger
+    del triggers[trigger]
+    user_added.remove(trigger)
+    
+    data["triggers"] = triggers
+    data["user_added"] = user_added
+    
+    # Save config
+    await _save_guild_config(message.guild.id, data)
+    
+    await message.reply(
+        f'✅ Removed trigger: `{trigger}`',
+        mention_author=False,
+    )
+    
+    return True

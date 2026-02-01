@@ -25,6 +25,8 @@ import discord
 from core.config_migration import get_guild_module_data, update_guild_module_data
 from core.hashes import load_hashes
 from core.utils import utcnow
+from core.help_system import help_system
+from core.permissions import can_use_module, is_module_enabled
 
 if TYPE_CHECKING:
     from bot.client import DiscBot
@@ -129,9 +131,22 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
         return False
 
     member = message.guild.get_member(message.author.id)
-    if not member or not _is_mod(member):
+    if not member:
+        return False
+    
+    # Check module permissions (guild-specific)
+    if not await is_module_enabled(message.guild.id, "scanner"):
         await message.reply(
-            "You need moderator permissions to use scanner commands.",
+            "Scanner module is disabled in this server.\\n"
+            "An administrator can enable it with `modules enable scanner`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_module(member, "scanner"):
+        await message.reply(
+            "You don't have permission to use scanner commands in this server.\\n"
+            "An administrator can grant access with `modules allow scanner @YourRole`",
             mention_author=False,
         )
         return True
@@ -862,6 +877,19 @@ async def restore_state(bot: "DiscBot") -> None:
     Only starts the scanner for guilds where it was previously enabled.
     Also loads guild-specific hashes into runtime state.
     """
+    # Register help information
+    help_system.register_module(
+        name="Scanner",
+        description="Image hash scanning for suspicious content.",
+        commands=[
+            ("scanner enable", "Enable image hash scanning"),
+            ("scanner disable", "Disable image scanning"),
+            ("scanner status", "Check scanner status"),
+            ("scanner stats", "View scanning statistics"),
+            ("scanner help", "Show all scanner commands"),
+        ]
+    )
+    
     for guild_id, state in bot.guild_states.items():
         try:
             data = await get_state(guild_id)

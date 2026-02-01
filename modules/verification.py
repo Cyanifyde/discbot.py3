@@ -20,6 +20,8 @@ from discord.ui import Button, View
 
 from core.config_migration import get_guild_module_data, update_guild_module_data
 from core.interactions import register_component_handler
+from core.help_system import help_system
+from core.permissions import can_use_command, can_use_module, is_module_enabled
 
 logger = logging.getLogger("discbot.verification")
 
@@ -41,11 +43,11 @@ ADD_COMMAND_PATTERN = re.compile(
 )
 
 # Regex to parse the removeverification command
-# removeverification <#channel_id> message_id
+# removeverification message_id (works from any channel now)
+# OR removeverification <#channel_id> message_id (old format still supported)
 REMOVE_COMMAND_PATTERN = re.compile(
     r"^removeverification\s+"
-    r"<#(\d+)>\s+"           # Channel mention
-    r"(\d+)\s*$",            # Message ID
+    r"(?:<#(\d+)>\s+)?(\d+)\s*$",  # Optional channel mention, then message ID
     re.IGNORECASE
 )
 
@@ -168,6 +170,16 @@ async def handle_verify_button(interaction: discord.Interaction) -> bool:
 
 def setup_verification() -> None:
     """Register the verification button handler with the core interaction system."""
+    # Register help information
+    help_system.register_module(
+        name="Verification",
+        description="Role-based verification via button clicks.",
+        commands=[
+            ("addverification #channel \"message\" unverified_id verified_id", "Set up verification button"),
+            ("removeverification message_id", "Remove verification button"),
+        ]
+    )
+    
     register_component_handler(VERIFY_BUTTON_PREFIX, handle_verify_button)
 
 
@@ -195,6 +207,23 @@ async def handle_verification_command(
     # Must be an admin
     if not isinstance(message.author, discord.Member):
         return False
+    
+    # Check module and command permissions (guild-specific)
+    if not await is_module_enabled(message.guild.id, "verification"):
+        await message.reply(
+            "Verification module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable verification`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_command(message.author, "addverification"):
+        await message.reply(
+            "You don't have permission to use this command in this server.\n"
+            "An administrator can grant access with `modules allow addverification @YourRole`",
+            mention_author=False,
+        )
+        return True
     
     if not message.author.guild_permissions.administrator:
         await message.reply(
@@ -348,6 +377,23 @@ async def handle_remove_verification_command(
     if not isinstance(message.author, discord.Member):
         return False
     
+    # Check module and command permissions (guild-specific)
+    if not await is_module_enabled(message.guild.id, "verification"):
+        await message.reply(
+            "Verification module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable verification`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_command(message.author, "removeverification"):
+        await message.reply(
+            "You don't have permission to use this command in this server.\n"
+            "An administrator can grant access with `modules allow removeverification @YourRole`",
+            mention_author=False,
+        )
+        return True
+    
     if not message.author.guild_permissions.administrator:
         await message.reply(
             "You need Administrator permission to use this command.",
@@ -359,29 +405,74 @@ async def handle_remove_verification_command(
     match = REMOVE_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            "**Invalid format.**\n"
-            "```\n"
-            "removeverification #channel message_id\n"
-            "```",
+            "**Invalid format.**\\n"
+            "```\\n"
+            "removeverification message_id\\n"
+            "```\\n"
+            "The bot will automatically find which channel the message is in.",
             mention_author=False,
         )
         return True
     
-    channel_id = int(match.group(1))
+    channel_id_str = match.group(1)  # Optional channel mention
     message_id = int(match.group(2))
     
-    # Get channel
-    channel = message.guild.get_channel(channel_id)
-    if not channel or not isinstance(channel, discord.TextChannel):
+    # Try to find the verification button in module memory first
+    data = await get_guild_module_data(message.guild.id, MODULE_NAME)
+    if not isinstance(data, dict):
+        data = {}
+    
+    buttons = data.get("buttons", {})
+    if not isinstance(buttons, dict):
+        buttons = {}
+    
+    # Get channel from memory or command parameter
+    target_channel = None
+    if str(message_id) in buttons:
+        # Found in memory
+        button_info = buttons[str(message_id)]
+        stored_channel_id = button_info.get("channel_id")
+        if stored_channel_id:
+            target_channel = message.guild.get_channel(stored_channel_id)
+    
+    # Fallback to channel parameter if provided
+    if not target_channel and channel_id_str:
+        target_channel = message.guild.get_channel(int(channel_id_str))
+    
+    # If still not found, search all channels (last resort)
+    if not target_channel:
         await message.reply(
-            "Could not find that channel or it's not a text channel.",
+            "Searching for the verification message...",
+            mention_author=False,
+        )
+        for channel in message.guild.text_channels:
+            try:
+                test_message = await channel.fetch_message(message_id)
+                target_channel = channel
+                break
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                continue
+    
+    if not target_channel:
+        await message.reply(
+            f"Could not find message `{message_id}` in any channel.\\n"
+            f"It may have already been deleted.",
+            mention_author=False,
+        )
+        # Clean up from memory anyway
+        await remove_verification_button(message.guild.id, message_id)
+        return True
+    
+    if not isinstance(target_channel, discord.TextChannel):
+        await message.reply(
+            "That channel is not a text channel.",
             mention_author=False,
         )
         return True
     
     # Try to delete the message
     try:
-        target_message = await channel.fetch_message(message_id)
+        target_message = await target_channel.fetch_message(message_id)
         await target_message.delete()
     except discord.NotFound:
         # Message already deleted, that's fine
@@ -405,13 +496,13 @@ async def handle_remove_verification_command(
     
     if removed:
         await message.reply(
-            f"Verification button removed from #{channel.name}!",
+            f"✅ Verification button removed from {target_channel.mention}!",
             mention_author=False,
         )
         logger.info(
             "Verification button removed in guild %s, channel %s, message %s by %s",
             message.guild.id,
-            channel.id,
+            target_channel.id,
             message_id,
             message.author.id,
         )

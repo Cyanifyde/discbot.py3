@@ -27,6 +27,8 @@ import discord
 from core.config_migration import get_guild_module_data, update_guild_module_data
 from core.constants import K
 from core.utils import iso_to_dt, safe_int, utcnow
+from core.help_system import help_system
+from core.permissions import can_use_module, is_module_enabled
 
 if TYPE_CHECKING:
     from bot.client import DiscBot
@@ -134,9 +136,22 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
         return False
 
     member = message.guild.get_member(message.author.id)
-    if not member or not _is_mod(member):
+    if not member:
+        return False
+    
+    # Check module permissions (guild-specific)
+    if not await is_module_enabled(message.guild.id, "inactivity"):
         await message.reply(
-            "You need moderator permissions to use inactivity commands.",
+            "Inactivity module is disabled in this server.\\n"
+            "An administrator can enable it with `modules enable inactivity`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_module(member, "inactivity"):
+        await message.reply(
+            "You don't have permission to use inactivity commands in this server.\\n"
+            "An administrator can grant access with `modules allow inactivity @YourRole`",
             mention_author=False,
         )
         return True
@@ -906,6 +921,19 @@ async def restore_state(bot: "DiscBot") -> None:
     This just logs which guilds have inactivity enabled.
     The actual enforcement loop is controlled separately.
     """
+    # Register help information
+    help_system.register_module(
+        name="Inactivity Enforcement",
+        description="Enforce actions against users who haven't posted within the threshold period.",
+        commands=[
+            ("inactivity enable", "Enable inactivity checking"),
+            ("inactivity disable", "Disable inactivity checking"),
+            ("inactivity status", "Check enforcement status"),
+            ("inactivity stats", "View enforcement statistics"),
+            ("inactivity help", "Show all inactivity commands"),
+        ]
+    )
+    
     for guild_id, state in bot.guild_states.items():
         try:
             data = await get_state(guild_id)
