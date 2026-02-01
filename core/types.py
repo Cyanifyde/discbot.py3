@@ -9,7 +9,7 @@ Using dataclasses instead of raw dicts provides:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -18,7 +18,7 @@ class AttachmentInfo:
     url: str
     filename: str
     size: int
-    content_type: str | None = None
+    content_type: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {

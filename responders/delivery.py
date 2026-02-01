@@ -6,7 +6,7 @@ Handles sending responses via different modes (channel, reply, DM).
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Optional
 
 import discord
 

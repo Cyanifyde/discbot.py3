@@ -4,7 +4,7 @@ import datetime as dt
 import hashlib
 import re
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 UTC = dt.timezone.utc
 

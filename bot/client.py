@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt  # Used in _snapshot_step
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import discord
 from discord import app_commands
@@ -54,10 +54,10 @@ class DiscBot(discord.Client):
         
         self.tree = app_commands.CommandTree(self)
         self.guild_states: dict[int, GuildState] = {}
-        self.default_template: dict[str, Any] | None = None
+        self.default_template: Optional[dict[str, Any]] = None
         self.ready_once = False
-        self._status_task: asyncio.Task | None = None
-        self._last_status: str | None = None
+        self._status_task: Optional[asyncio.Task] = None
+        self._last_status: Optional[str] = None
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ class DiscBot(discord.Client):
 
     # ─── Guild State Management ───────────────────────────────────────────────
 
-    def _get_guild_state(self, guild_id: int) -> GuildState | None:
+    def _get_guild_state(self, guild_id: int) -> Optional[GuildState]:
         """Get state for a guild if it exists."""
         return self.guild_states.get(guild_id)
 
@@ -97,7 +97,7 @@ class DiscBot(discord.Client):
         self,
         guild: discord.Guild,
         create_if_missing: bool,
-    ) -> GuildState | None:
+    ) -> Optional[GuildState]:
         """Ensure guild state exists, optionally creating config if missing."""
         if guild.id in self.guild_states:
             return self.guild_states[guild.id]
@@ -503,7 +503,7 @@ class DiscBot(discord.Client):
         @app_commands.describe(user="User to view commission info for (optional)")
         async def commission_cmd(
             interaction: discord.Interaction,
-            user: discord.User | None = None,
+            user: Optional[discord.User] = None,
         ) -> None:
             target = user or interaction.user
             embed, error = await profile_module.get_commission_embed_for(interaction.user, target)
