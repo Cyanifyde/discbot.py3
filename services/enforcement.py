@@ -36,7 +36,7 @@ class EnforcementService:
     def get_removable_roles(
         self,
         member: discord.Member,
-        bot_top_role: discord.Role | None,
+        bot_top_role: Optional[discord.Role],
     ) -> list[discord.Role]:
         """
         Get list of roles that can be removed from a member.
@@ -60,7 +60,7 @@ class EnforcementService:
     async def remove_roles(
         self,
         member: discord.Member,
-        bot_top_role: discord.Role | None,
+        bot_top_role: Optional[discord.Role],
         reason: str,
     ) -> int:
         """
@@ -82,7 +82,7 @@ class EnforcementService:
     async def add_unverified_role(
         self,
         member: discord.Member,
-        bot_top_role: discord.Role | None,
+        bot_top_role: Optional[discord.Role],
         reason: str,
     ) -> bool:
         """
@@ -114,9 +114,9 @@ class EnforcementService:
     async def enforce_member(
         self,
         member: discord.Member,
-        bot_top_role: discord.Role | None,
+        bot_top_role: Optional[discord.Role],
         reason: str,
-        delete_message: discord.Message | None = None,
+        delete_message: Optional[discord.Message] = None,
     ) -> EnforcementResult:
         """
         Full enforcement action: remove roles, add unverified, optionally delete message.
@@ -146,7 +146,7 @@ class EnforcementService:
         member: discord.Member,
         result: EnforcementResult,
         action: str,
-        extra: dict[str, Any] | None = None,
+        extra: Optional[dict[str, Any]] = None,
     ) -> str:
         """Format an action log message."""
         parts = [

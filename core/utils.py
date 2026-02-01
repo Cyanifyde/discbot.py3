@@ -53,7 +53,7 @@ def is_valid_id(value: Any) -> bool:
     return is_int(value) and 1 <= value <= 2**63 - 1
 
 
-def safe_int(value: Any, default: int | None = None) -> int | None:
+def safe_int(value: Any, default: Optional[int] = None) -> Optional[int]:
     if isinstance(value, bool):
         return default
     if isinstance(value, int):

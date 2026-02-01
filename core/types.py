@@ -41,9 +41,9 @@ class AttachmentInfo:
 @dataclass
 class LinkedMessage:
     """Reference to a linked Discord message."""
-    guild_id: str | None = None
-    channel_id: str | None = None
-    message_id: str | None = None
+    guild_id: Optional[str] = None
+    channel_id: Optional[str] = None
+    message_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -78,8 +78,8 @@ class ScanJob:
     source: str
     enqueued_at: str = ""
     v: int = 2
-    attachment: AttachmentInfo | None = None
-    url: str | None = None
+    attachment: Optional[AttachmentInfo] = None
+    url: Optional[str] = None
     linked: LinkedMessage = field(default_factory=LinkedMessage)
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,7 +120,7 @@ class EnforcementResult:
     roles_removed: int = 0
     unverified_added: bool = False
     message_deleted: bool = False
-    error: str | None = None
+    error: Optional[str] = None
 
     @property
     def success(self) -> bool:

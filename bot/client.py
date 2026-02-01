@@ -337,8 +337,8 @@ class DiscBot(discord.Client):
         limit = int(state.config.get(K.SNAPSHOT_MEMBERS_PER_RUN, 200))
         
         processed = 0
-        last_id: int | None = None
-        max_id: int | None = None
+        last_id: Optional[int] = None
+        max_id: Optional[int] = None
         
         async for member in guild.fetch_members(limit=limit, after=after_obj):
             processed += 1
@@ -408,7 +408,7 @@ class DiscBot(discord.Client):
         
         scanned = 0
         enforced = 0
-        last_scanned_user: str | None = None
+        last_scanned_user: Optional[str] = None
         last_scanned_shard: str = start_shard
         
         bot_member = guild.get_member(self.user.id) if self.user else None

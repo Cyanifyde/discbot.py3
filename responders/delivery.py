@@ -81,7 +81,7 @@ def build_allowed_mentions(
     return mention_text, allowed_mentions
 
 
-def apply_text_wrappers(text: str | None, settings: dict[str, Any]) -> str | None:
+def apply_text_wrappers(text: Optional[str], settings: dict[str, Any]) -> Optional[str]:
     """Apply prefix and suffix wrappers to text."""
     if text is None:
         return None
@@ -117,8 +117,8 @@ async def build_files(value: Any) -> list[discord.File]:
     files: list[discord.File] = []
     
     for item in value:
-        path_str: str | None = None
-        filename: str | None = None
+        path_str: Optional[str] = None
+        filename: Optional[str] = None
         spoiler = False
         
         if isinstance(item, str):
@@ -169,7 +169,7 @@ async def send_response(
         return False
     
     # Parse response
-    content: str | None = None
+    content: Optional[str] = None
     embeds: list[discord.Embed] = []
     files: list[discord.File] = []
     
@@ -222,7 +222,7 @@ async def send_response(
 
 async def _send_dm(
     message: discord.Message,
-    content: str | None,
+    content: Optional[str],
     embeds: list[discord.Embed],
     files: list[discord.File],
     allowed_mentions: discord.AllowedMentions,
@@ -252,7 +252,7 @@ async def _send_dm(
 
 async def _send_reply(
     message: discord.Message,
-    content: str | None,
+    content: Optional[str],
     embeds: list[discord.Embed],
     files: list[discord.File],
     allowed_mentions: discord.AllowedMentions,
@@ -283,7 +283,7 @@ async def _send_reply(
 
 async def _send_channel(
     message: discord.Message,
-    content: str | None,
+    content: Optional[str],
     embeds: list[discord.Embed],
     files: list[discord.File],
     allowed_mentions: discord.AllowedMentions,

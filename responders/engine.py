@@ -103,7 +103,7 @@ def _check_cooldown(
     return True
 
 
-def _normalize_handler_path(path: str) -> str | None:
+def _normalize_handler_path(path: str) -> Optional[str]:
     """Normalize a handler path to module:attr format."""
     if not path:
         return None
@@ -135,7 +135,7 @@ def _normalize_handler_path(path: str) -> str | None:
     return None
 
 
-def _load_handler(path: str) -> Any | None:
+def _load_handler(path: str) -> Optional[Any]:
     """Load a handler class or function by path."""
     normalized = _normalize_handler_path(path)
     if not normalized:
