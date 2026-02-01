@@ -925,12 +925,22 @@ async def restore_state(bot: "DiscBot") -> None:
     help_system.register_module(
         name="Inactivity Enforcement",
         description="Enforce actions against users who haven't posted within the threshold period.",
+        help_command="inactivity help",
         commands=[
+            ("inactivity help", "Show all inactivity commands"),
             ("inactivity enable", "Enable inactivity checking"),
             ("inactivity disable", "Disable inactivity checking"),
-            ("inactivity status", "Check enforcement status"),
+            ("inactivity status", "Check current enforcement status"),
             ("inactivity stats", "View enforcement statistics"),
-            ("inactivity help", "Show all inactivity commands"),
+            ("inactivity step", "Manually run enforcement step"),
+            ("inactivity setup", "Quick setup wizard"),
+            ("inactivity config", "Show current configuration"),
+            ("inactivity init", "Initialize baseline date for enforcement"),
+            ("inactivity setgrace <days>", "Set grace period for new members"),
+            ("inactivity setbaseline <YYYY-MM-DD>", "Set baseline date manually"),
+            ("inactivity addrole <role_id>", "Add role to assign on enforcement"),
+            ("inactivity removerole <role_id>", "Remove role from assignment list"),
+            ("inactivity clearroles", "Clear all role assignments"),
         ]
     )
     

@@ -18,24 +18,41 @@ class ModuleHelp:
     
     name: str
     description: str
+    help_command: str = ""  # Command to run for detailed help (e.g., "scanner help")
     commands: list[tuple[str, str]] = field(default_factory=list)
     # (command, description) tuples
     
     def to_embed_field(self) -> dict[str, Any]:
-        """Convert to Discord embed field format."""
-        if self.commands:
-            value_lines = [self.description, ""]
-            for cmd, desc in self.commands:
-                value_lines.append(f"`{cmd}` - {desc}")
-            value = "\n".join(value_lines)
-        else:
-            value = self.description
+        """Convert to Discord embed field format for overview."""
+        value_parts = [self.description]
+        if self.help_command:
+            value_parts.append(f"\n**Detailed Help:** `{self.help_command}`")
         
         return {
-            "name": self.name,
-            "value": value,
+            "name": f"📦 {self.name}",
+            "value": "".join(value_parts),
             "inline": False
         }
+    
+    def to_detailed_embed(self) -> discord.Embed:
+        """Create a detailed embed for this module with all commands."""
+        embed = discord.Embed(
+            title=f"📦 {self.name}",
+            description=self.description,
+            color=0x5865F2
+        )
+        
+        if self.commands:
+            commands_text = "\n".join(
+                f"**`{cmd}`** - {desc}" for cmd, desc in self.commands
+            )
+            embed.add_field(
+                name="Commands",
+                value=commands_text,
+                inline=False
+            )
+        
+        return embed
 
 
 class HelpSystem:
@@ -62,6 +79,7 @@ class HelpSystem:
         self,
         name: str,
         description: str,
+        help_command: str = "",
         commands: Optional[list[tuple[str, str]]] = None,
     ) -> None:
         """
@@ -70,6 +88,7 @@ class HelpSystem:
         Args:
             name: Module name to display
             description: Brief description of the module
+            help_command: Command to get detailed help (e.g., "scanner help")
             commands: List of (command, description) tuples
         """
         if name not in self._modules:
@@ -78,6 +97,7 @@ class HelpSystem:
         self._modules[name] = ModuleHelp(
             name=name,
             description=description,
+            help_command=help_command,
             commands=commands or []
         )
     
@@ -88,19 +108,19 @@ class HelpSystem:
             if name in self._registered_order:
                 self._registered_order.remove(name)
     
-    def get_help_embed(self, title: str = "Bot Help - Available Modules") -> discord.Embed:
+    def get_help_embed(self, title: str = "🤖 Bot Modules") -> discord.Embed:
         """
-        Generate a help embed with all registered modules.
+        Generate a help embed with module overview.
         
         Args:
             title: Title for the help embed
             
         Returns:
-            Discord embed with all module help information
+            Discord embed with module overview and help commands
         """
         embed = discord.Embed(
             title=title,
-            description="Here are the available features and commands:",
+            description="Here are all available modules. Use each module's help command for detailed information.",
             color=0x5865F2  # Discord blurple
         )
         

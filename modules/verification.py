@@ -174,9 +174,10 @@ def setup_verification() -> None:
     help_system.register_module(
         name="Verification",
         description="Role-based verification via button clicks.",
+        help_command="@bot help",
         commands=[
             ("addverification #channel \"message\" unverified_id verified_id", "Set up verification button"),
-            ("removeverification message_id", "Remove verification button"),
+            ("removeverification message_id", "Remove verification button (auto-finds channel)"),
         ]
     )
     

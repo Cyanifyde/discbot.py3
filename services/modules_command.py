@@ -46,14 +46,15 @@ def register_help() -> None:
     help_system.register_module(
         name="Module Management",
         description="Control which modules are enabled and which roles can use them. All settings are per-guild.",
+        help_command="modules help",
         commands=[
             ("modules list", "Show all modules and their status"),
-            ("modules enable <module>", "Enable a module"),
-            ("modules disable <module>", "Disable a module"),
-            ("modules permissions <module|command>", "Show role permissions"),
-            ("modules allow <module|command> <@role>", "Allow a role to use module/command"),
-            ("modules deny <module|command> <@role>", "Remove role permission"),
-            ("modules help", "Show detailed help"),
+            ("modules enable <module>", "Enable a module for this guild"),
+            ("modules disable <module>", "Disable a module for this guild"),
+            ("modules permissions <module|command>", "Show which roles can use a module/command"),
+            ("modules allow <module|command> <@role>", "Grant a role access to module/command"),
+            ("modules deny <module|command> <@role>", "Revoke role access to module/command"),
+            ("modules help", "Show detailed module management help"),
         ]
     )
 

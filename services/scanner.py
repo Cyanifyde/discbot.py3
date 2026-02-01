@@ -881,12 +881,23 @@ async def restore_state(bot: "DiscBot") -> None:
     help_system.register_module(
         name="Scanner",
         description="Image hash scanning for suspicious content.",
+        help_command="scanner help",
         commands=[
+            ("scanner help", "Show all scanner commands"),
             ("scanner enable", "Enable image hash scanning"),
             ("scanner disable", "Disable image scanning"),
-            ("scanner status", "Check scanner status"),
+            ("scanner status", "Check current scanner status"),
             ("scanner stats", "View scanning statistics"),
-            ("scanner help", "Show all scanner commands"),
+            ("scanner reload", "Reload global hash list"),
+            ("scanner setup", "Quick setup wizard"),
+            ("scanner config", "Show current configuration"),
+            ("scanner addhash <hash>", "Add hash to guild's hash list"),
+            ("scanner removehash <hash>", "Remove hash from guild's hash list"),
+            ("scanner listhashes", "List all guild hashes"),
+            ("scanner clearhashes", "Clear all guild hashes"),
+            ("scanner addrole <role_id>", "Add role to assign on match"),
+            ("scanner removerole <role_id>", "Remove role from assignment list"),
+            ("scanner clearroles", "Clear all role assignments"),
         ]
     )
     
