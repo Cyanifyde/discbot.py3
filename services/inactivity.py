@@ -315,6 +315,22 @@ async def _cmd_status(
         lines.append(f"• Inactive threshold: {threshold} days")
         lines.append(f"• Message threshold: {msg_threshold} messages")
         lines.append(f"• Max users per step: {max_scan}")
+        
+        # Show grace period and baseline
+        grace_days = data.get("grace_period_days", 7)
+        lines.append(f"• Grace period: {grace_days} days (for new members)")
+        
+        baseline_str = data.get("baseline_date")
+        if baseline_str:
+            try:
+                baseline_dt = iso_to_dt(baseline_str)
+                if baseline_dt:
+                    baseline_formatted = baseline_dt.strftime("%Y-%m-%d")
+                    lines.append(f"• Baseline date: {baseline_formatted}")
+            except Exception:
+                pass
+        else:
+            lines.append("• Baseline date: Not set (use `inactivity init`)")
 
         cursor = state.storage.state_data.get("enforcement_cursor", {})
         shard = cursor.get("shard", "00")
@@ -422,36 +438,48 @@ async def _cmd_setup(message: discord.Message) -> None:
     """Show setup instructions."""
     help_text = """**⏰ Inactivity Setup Instructions**
 
-**1. Configure roles to remove on enforcement:**
+**1. Set up time configuration (recommended first):**
+```
+inactivity init
+```
+Initialize baseline to current date (all current members considered active).
+
+```
+inactivity setgrace 7
+```
+Set grace period for new members (days they have to post before enforcement).
+
+**2. Configure roles to remove on enforcement:**
 ```
 inactivity removerole <role_id>
 ```
 Add a role ID that will be removed when a user is enforced.
 Use `inactivity removerole all` to remove ALL roles (except @everyone).
 
-**2. Configure roles to add on enforcement:**
+**3. Configure roles to add on enforcement:**
 ```
 inactivity addrole <role_id>
 ```
 Add a role ID that will be given to users when enforced.
 
-**3. View current configuration:**
+**4. View current configuration:**
 ```
 inactivity config
+inactivity status
 ```
 
-**4. Clear all configured roles:**
+**Example Full Setup:**
 ```
-inactivity clearroles
-```
-
-**Example Setup:**
-```
+inactivity init
+inactivity setgrace 7
 inactivity removerole 123456789012345678
 inactivity addrole 987654321098765432
 inactivity enable
 ```
-This removes role `123...` and adds role `987...` when users are enforced.
+
+**What grace period and baseline do:**
+- **Grace Period**: New members get X days to post before being checked
+- **Baseline**: Users must have posted since this date (use `init` for current date)
 """
     await message.reply(help_text, mention_author=False)
 
