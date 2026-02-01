@@ -282,7 +282,7 @@ async def handle_verification_command(
     channel_perms = channel.permissions_for(bot_member)
     if not channel_perms.send_messages:
         await message.reply(
-            f"❌ I don't have permission to send messages in {channel.mention}.",
+            f"❌ I don't have permission to send messages in #{channel.name}.",
             mention_author=False,
         )
         return True
@@ -304,7 +304,7 @@ async def handle_verification_command(
         )
         
         await message.reply(
-            f"✅ Verification button posted in {channel.mention}!",
+            f"✅ Verification button posted in #{channel.name}!",
             mention_author=False,
         )
         logger.info(
@@ -405,7 +405,7 @@ async def handle_remove_verification_command(
     
     if removed:
         await message.reply(
-            f"✅ Verification button removed from {channel.mention}!",
+            f"✅ Verification button removed from #{channel.name}!",
             mention_author=False,
         )
         logger.info(
