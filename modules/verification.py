@@ -142,7 +142,7 @@ async def handle_verify_button(interaction: discord.Interaction) -> bool:
             await member.remove_roles(unverified_role, reason="User verified")
         
         await interaction.response.send_message(
-            "✅ You have been verified!",
+            "You have been verified!",
             ephemeral=True,
         )
         logger.info(
@@ -207,7 +207,7 @@ async def handle_verification_command(
     match = ADD_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            "❌ **Invalid format.**\n"
+            "**Invalid format.**\n"
             "```\n"
             "addverification #channel \"message text\" unverified_role_id verified_role_id\n"
             "```",
@@ -235,14 +235,14 @@ async def handle_verification_command(
     
     if not verified_role:
         await message.reply(
-            f"❌ Could not find verified role with ID `{verified_role_id}`.",
+            f"Could not find verified role with ID `{verified_role_id}`.",
             mention_author=False,
         )
         return True
     
     if not unverified_role:
         await message.reply(
-            f"❌ Could not find unverified role with ID `{unverified_role_id}`.",
+            f"Could not find unverified role with ID `{unverified_role_id}`.",
             mention_author=False,
         )
         return True
@@ -251,14 +251,14 @@ async def handle_verification_command(
     bot_member = message.guild.get_member(bot.user.id) if bot.user else None
     if not bot_member:
         await message.reply(
-            "❌ Could not find my member info in this server.",
+            "Could not find my member info in this server.",
             mention_author=False,
         )
         return True
     
     if not bot_member.guild_permissions.manage_roles:
         await message.reply(
-            "❌ I need the **Manage Roles** permission to handle verification.",
+            "I need the **Manage Roles** permission to handle verification.",
             mention_author=False,
         )
         return True
@@ -266,14 +266,14 @@ async def handle_verification_command(
     # Check role hierarchy
     if verified_role >= bot_member.top_role:
         await message.reply(
-            f"❌ I cannot assign **{verified_role.name}** because it's at or above my highest role.",
+            f"I cannot assign **{verified_role.name}** because it's at or above my highest role.",
             mention_author=False,
         )
         return True
     
     if unverified_role >= bot_member.top_role:
         await message.reply(
-            f"❌ I cannot remove **{unverified_role.name}** because it's at or above my highest role.",
+            f"I cannot remove **{unverified_role.name}** because it's at or above my highest role.",
             mention_author=False,
         )
         return True
@@ -282,7 +282,7 @@ async def handle_verification_command(
     channel_perms = channel.permissions_for(bot_member)
     if not channel_perms.send_messages:
         await message.reply(
-            f"❌ I don't have permission to send messages in #{channel.name}.",
+            f"I don't have permission to send messages in #{channel.name}.",
             mention_author=False,
         )
         return True
@@ -304,7 +304,7 @@ async def handle_verification_command(
         )
         
         await message.reply(
-            f"✅ Verification button posted in #{channel.name}!",
+            f"Verification button posted in #{channel.name}!",
             mention_author=False,
         )
         logger.info(
@@ -316,7 +316,7 @@ async def handle_verification_command(
     except discord.HTTPException as e:
         logger.error("Failed to send verification message: %s", e)
         await message.reply(
-            "❌ Failed to send the verification message. Please check my permissions.",
+            "Failed to send the verification message. Please check my permissions.",
             mention_author=False,
         )
     
@@ -350,7 +350,7 @@ async def handle_remove_verification_command(
     
     if not message.author.guild_permissions.administrator:
         await message.reply(
-            "❌ You need Administrator permission to use this command.",
+            "You need Administrator permission to use this command.",
             mention_author=False,
         )
         return True
@@ -359,7 +359,7 @@ async def handle_remove_verification_command(
     match = REMOVE_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            "❌ **Invalid format.**\n"
+            "**Invalid format.**\n"
             "```\n"
             "removeverification #channel message_id\n"
             "```",
@@ -374,7 +374,7 @@ async def handle_remove_verification_command(
     channel = message.guild.get_channel(channel_id)
     if not channel or not isinstance(channel, discord.TextChannel):
         await message.reply(
-            "❌ Could not find that channel or it's not a text channel.",
+            "Could not find that channel or it's not a text channel.",
             mention_author=False,
         )
         return True
@@ -388,14 +388,14 @@ async def handle_remove_verification_command(
         pass
     except discord.Forbidden:
         await message.reply(
-            "❌ I don't have permission to delete that message.",
+            "I don't have permission to delete that message.",
             mention_author=False,
         )
         return True
     except discord.HTTPException as e:
         logger.error("Failed to delete verification message: %s", e)
         await message.reply(
-            "❌ Failed to delete the message. Please try again.",
+            "Failed to delete the message. Please try again.",
             mention_author=False,
         )
         return True
@@ -405,7 +405,7 @@ async def handle_remove_verification_command(
     
     if removed:
         await message.reply(
-            f"✅ Verification button removed from #{channel.name}!",
+            f"Verification button removed from #{channel.name}!",
             mention_author=False,
         )
         logger.info(
@@ -417,7 +417,7 @@ async def handle_remove_verification_command(
         )
     else:
         await message.reply(
-            f"✅ Message deleted. (Note: It wasn't in my saved verification list.)",
+            f"Message deleted. (Note: It wasn't in my saved verification list.)",
             mention_author=False,
         )
     
