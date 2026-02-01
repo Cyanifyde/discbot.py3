@@ -208,9 +208,9 @@ who haven't posted within the configured threshold period.
 **Users who have posted at least once are NEVER checked for inactivity.**
 Only completely silent users (0 messages) are subject to enforcement.
 
-The checker does **not** run automatically.
-A moderator must enable it with `inactivity enable`, then run steps manually
-or wait for the scheduled enforcement loop.
+The checker runs **automatically** on a schedule (default: every 6 hours).
+A moderator must enable it with `inactivity enable`.
+You can also run `inactivity step` to trigger enforcement manually at any time.
 """
     await message.reply(help_text, mention_author=False)
 
@@ -256,8 +256,9 @@ async def _cmd_enable(
         f"**Inactive threshold:** {threshold} days\n"
         f"**Message threshold:** {msg_threshold} messages\n"
         f"**Grace period:** {grace_days} days (for new members)\n"
-        "**Note:** Users who post at least once are never checked again.\n"
-        "Use `inactivity step` to run a manual enforcement step.",
+        "**Note:** Users who post at least once are never checked again.\n\n"
+        "Enforcement will run automatically every 6 hours.\n"
+        "You can also use `inactivity step` to run enforcement manually at any time.",
         mention_author=False,
     )
 

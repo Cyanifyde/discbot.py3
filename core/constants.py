@@ -45,6 +45,7 @@ class ConfigKey:
     QUEUE_COMPACT_THRESHOLD_BYTES = "queue_compact_threshold_bytes"
     QUEUE_FLUSH_INTERVAL_SECONDS = "queue_flush_interval_seconds"
     QUEUE_STATE_FLUSH_INTERVAL_SECONDS = "queue_state_flush_interval_seconds"
+    ENFORCEMENT_INTERVAL_SECONDS = "enforcement_interval_seconds"
     
     # Workers
     WORKER_COUNT = "worker_count"

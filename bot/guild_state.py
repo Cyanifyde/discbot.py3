@@ -61,6 +61,7 @@ class GuildState:
         self.start_time = utcnow()
         self.flush_task: Optional[asyncio.Task] = None
         self.queue_state_task: Optional[asyncio.Task] = None
+        self.enforcement_task: Optional[asyncio.Task] = None
         self.action_count = 0
         self.snapshot_lock = asyncio.Lock()
         
@@ -107,6 +108,7 @@ class GuildState:
         # Start periodic tasks
         self.flush_task = asyncio.create_task(self._periodic_flush())
         self.queue_state_task = asyncio.create_task(self._periodic_queue_state_flush())
+        self.enforcement_task = asyncio.create_task(self._periodic_enforcement())
         
         logger.info("Guild %s state started (scanner=%s)", self.guild_id, start_scanner)
 
@@ -117,9 +119,11 @@ class GuildState:
             self.flush_task.cancel()
         if self.queue_state_task:
             self.queue_state_task.cancel()
+        if self.enforcement_task:
+            self.enforcement_task.cancel()
         
         await asyncio.gather(
-            *(t for t in [self.flush_task, self.queue_state_task] if t),
+            *(t for t in [self.flush_task, self.queue_state_task, self.enforcement_task] if t),
             return_exceptions=True,
         )
         
@@ -149,6 +153,42 @@ class GuildState:
                 self.queue_processor.read_offset_bytes,
                 self.queue_processor.queued_jobs,
             )
+
+    async def _periodic_enforcement(self) -> None:
+        """Periodically run inactivity enforcement if enabled."""
+        from services.inactivity import is_enabled, run_enforcement_step, increment_stats
+        
+        interval = float(self.config.get(K.ENFORCEMENT_INTERVAL_SECONDS, 21600))
+        
+        while True:
+            await asyncio.sleep(interval)
+            
+            try:
+                if not await is_enabled(self.guild_id):
+                    continue
+                
+                guild = self.bot.get_guild(self.guild_id)
+                if not guild:
+                    logger.warning(
+                        "Guild %s not found for scheduled enforcement",
+                        self.guild_id,
+                    )
+                    continue
+                
+                logger.info("Running scheduled enforcement for guild %s", self.guild_id)
+                
+                enforced, scanned = await run_enforcement_step(self.bot, self, guild)
+                await increment_stats(self.guild_id, enforced=enforced, scanned=scanned)
+                
+                logger.info(
+                    "Scheduled enforcement complete for guild %s: scanned=%d enforced=%d",
+                    self.guild_id, scanned, enforced,
+                )
+            except Exception as e:
+                logger.error(
+                    "Error in scheduled enforcement for guild %s: %s",
+                    self.guild_id, e,
+                )
 
     def is_channel_ignored(self, channel_id: int) -> bool:
         """Check if a channel should be ignored."""
