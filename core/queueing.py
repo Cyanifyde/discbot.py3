@@ -265,15 +265,31 @@ class QueueProcessor:
         attachments = message.attachments
         if not attachments:
             return None
-        attachment = attachments[0]
-        if attachment.size and attachment.size > max_bytes:
+        
+        # Try to match the specific attachment from the job
+        attachment_info = job.get("attachment")
+        target_attachment = None
+        
+        if isinstance(attachment_info, dict):
+            job_url = attachment_info.get("url")
+            # Find matching attachment by URL
+            for att in attachments:
+                if att.url == job_url:
+                    target_attachment = att
+                    break
+        
+        # Fallback to first attachment if no match
+        if not target_attachment:
+            target_attachment = attachments[0]
+        
+        if target_attachment.size and target_attachment.size > max_bytes:
             return None
         try:
-            data = await attachment.read()
+            data = await target_attachment.read()
         except Exception:
             data = b""
         if not data:
-            attachment_info = job.get("attachment")
+            # Fallback to downloading from URL
             if isinstance(attachment_info, dict):
                 url = attachment_info.get("url")
                 if url:

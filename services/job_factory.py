@@ -127,18 +127,31 @@ class JobFactory:
         return None
 
     def build_job_for_message(self, message: discord.Message) -> Optional[ScanJob]:
+        """Build a scan job for a message if applicable (for first attachment/url)."""
+        jobs = self.build_jobs_for_message(message)
+        return jobs[0] if jobs else None
+    
+    def build_jobs_for_message(self, message: discord.Message) -> list[ScanJob]:
         """
-        Build a scan job for a message if applicable.
+        Build scan jobs for a message.
+        
+        Returns a list of jobs (one per attachment if multiple, or one for URL/link).
         
         Checks in order:
-        1. Attachments
+        1. All attachments (creates one job per attachment)
         2. CDN URLs (if enabled)
         3. Message links (if enabled)
         """
-        # Check attachments first
+        jobs = []
+        
+        # Check all attachments
         if message.attachments:
-            attachment = message.attachments[0]
-            return self.from_attachment(message, attachment)
+            for attachment in message.attachments:
+                job = self.from_attachment(message, attachment)
+                if job:
+                    jobs.append(job)
+            if jobs:
+                return jobs
         
         content = message.content or ""
         
@@ -146,12 +159,14 @@ class JobFactory:
         if self._enable_cdn_scan:
             url = self.extract_cdn_url(content)
             if url:
-                return self.from_cdn_url(message, url)
+                jobs.append(self.from_cdn_url(message, url))
+                return jobs
         
         # Check message links
         if self._enable_link_scan:
             linked = self.extract_message_link(content)
             if linked:
-                return self.from_message_link(message, *linked)
+                jobs.append(self.from_message_link(message, *linked))
+                return jobs
         
-        return None
+        return jobs

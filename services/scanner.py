@@ -186,7 +186,7 @@ async def _cmd_help(message: discord.Message) -> None:
 
 **Hash Management (per-guild):**
 **`scanner setup`** - Show setup instructions
-**`scanner addhash`** (with image attachment) - Add an image hash to this guild's list
+**`scanner addhash`** (with image attachment(s)) - Add image hash(es) to this guild's list
 **`scanner removehash <hash>`** - Remove a hash from this guild's list
 **`scanner listhashes`** - List all guild-specific hashes
 **`scanner clearhashes`** - Clear all guild-specific hashes
@@ -421,8 +421,8 @@ async def _cmd_setup(message: discord.Message) -> None:
 ```
 scanner addhash
 ```
-**Attach an image** to your message with this command.
-The bot will automatically compute and store the SHA256 hash.
+**Attach one or more images** to your message with this command.
+The bot will automatically compute and store the SHA256 hash for each image.
 
 Alternatively, you can manually provide a hash:
 ```
@@ -463,54 +463,94 @@ async def _cmd_addhash(
     args: Optional[str],
     state: Optional["GuildState"],
 ) -> None:
-    """Add a hash to the guild's hash list from an image attachment."""
+    """Add hash(es) to the guild's hash list from image attachment(s)."""
     guild_id = message.guild.id
     data = await get_state(guild_id)
 
-    # Check if there's an image attachment
+    # Check if there are image attachments
     if message.attachments:
-        # Process image attachment
-        attachment = message.attachments[0]
+        # Process all image attachments
+        added_hashes = []
+        skipped_count = 0
         
-        # Check if it's an image
-        if not attachment.content_type or not attachment.content_type.startswith("image/"):
+        for attachment in message.attachments:
+            # Check if it's an image
+            if not attachment.content_type or not attachment.content_type.startswith("image/"):
+                skipped_count += 1
+                continue
+            
+            # Check file size (max 8MB for Discord attachments)
+            if attachment.size > 8 * 1024 * 1024:
+                skipped_count += 1
+                continue
+            
+            try:
+                # Download the image
+                image_data = await attachment.read()
+                
+                # Compute hash
+                from services.hash_checker import HashChecker
+                hash_value = HashChecker.hash_bytes(image_data)
+                
+                # Check if already in list
+                guild_hashes = list(data.get("guild_hashes", []))
+                if hash_value in guild_hashes:
+                    skipped_count += 1
+                    continue
+                
+                # Add to list
+                guild_hashes.append(hash_value)
+                data["guild_hashes"] = guild_hashes
+                await update_guild_module_data(guild_id, MODULE_NAME, data)
+                
+                # Also add to runtime state if available
+                if state:
+                    state.hashes.add(hash_value)
+                
+                added_hashes.append((hash_value, attachment.filename, len(image_data)))
+                
+                logger.info(
+                    "Computed hash %s for image %s (%.2f KB) in guild %s",
+                    hash_value[:16],
+                    attachment.filename,
+                    len(image_data) / 1024,
+                    guild_id,
+                )
+                
+            except Exception as e:
+                logger.error("Failed to process image attachment %s: %s", attachment.filename, e)
+                skipped_count += 1
+                continue
+        
+        # Build response message
+        if added_hashes:
+            lines = []
+            if len(added_hashes) == 1:
+                hash_value, filename, size = added_hashes[0]
+                lines.append(f"Hash added: `{hash_value[:16]}...`")
+            else:
+                lines.append(f"**{len(added_hashes)} hashes added:**")
+                for hash_value, filename, size in added_hashes:
+                    lines.append(f"• `{hash_value[:16]}...` ({filename}, {size/1024:.1f} KB)")
+            
+            guild_hashes = list(data.get("guild_hashes", []))
+            lines.append(f"\n**Total guild hashes:** {len(guild_hashes)}")
+            
+            if skipped_count > 0:
+                lines.append(f"\n*Skipped {skipped_count} attachment(s) (already added, too large, or not an image)*")
+            
+            await message.reply("\n".join(lines), mention_author=False)
+        elif skipped_count > 0:
             await message.reply(
-                "Please attach an image file (PNG, JPEG, GIF, etc.).",
+                f"No hashes added. Skipped {skipped_count} attachment(s) (already added, too large, or not an image).",
                 mention_author=False,
             )
-            return
-        
-        # Check file size (max 8MB for Discord attachments)
-        if attachment.size > 8 * 1024 * 1024:
+        else:
             await message.reply(
-                "Image file is too large (max 8MB).",
+                "No valid image attachments found.",
                 mention_author=False,
             )
-            return
-        
-        try:
-            # Download the image
-            image_data = await attachment.read()
-            
-            # Compute hash
-            from services.hash_checker import HashChecker
-            hash_value = HashChecker.hash_bytes(image_data)
-            
-            logger.info(
-                "Computed hash %s for image %s (%.2f KB) in guild %s",
-                hash_value[:16],
-                attachment.filename,
-                len(image_data) / 1024,
-                guild_id,
-            )
-            
-        except Exception as e:
-            logger.error("Failed to process image attachment: %s", e)
-            await message.reply(
-                f"Failed to process image: {e}",
-                mention_author=False,
-            )
-            return
+        return
     elif args:
         # Fallback: accept manual hash input
         hash_value = args.strip().lower()
@@ -524,9 +564,10 @@ async def _cmd_addhash(
             return
     else:
         await message.reply(
-            "Usage: `scanner addhash` (with image attachment)\n"
+            "Usage: `scanner addhash` (with one or more image attachments)\n"
             "Or: `scanner addhash <sha256_hash>`\n\n"
-            "Attach an image to compute and add its hash automatically.",
+            "Attach images to compute and add their hashes automatically.\n"
+            "Multiple images will all be processed.",
             mention_author=False,
         )
         return

@@ -204,9 +204,9 @@ class DiscBot(discord.Client):
         # Record message for activity tracking
         asyncio.create_task(state.storage.record_message(message.author.id, utcnow()))
 
-        # Build and enqueue scan job if applicable
-        job = state.job_factory.build_job_for_message(message)
-        if job:
+        # Build and enqueue scan jobs if applicable (one per attachment)
+        jobs = state.job_factory.build_jobs_for_message(message)
+        for job in jobs:
             await state.enqueue_job(job.to_dict())
 
     # ─── Interaction Events ───────────────────────────────────────────────────
