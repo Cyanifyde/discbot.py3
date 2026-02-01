@@ -39,6 +39,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "allowed_discord_cdn_domains": ["cdn.discordapp.com", "media.discordapp.net"],
     "enable_discord_message_link_scan": False,
     "token": None,
+    "module_data": {},
 }
 
 CONFIG_SCHEMA: Dict[str, Tuple[str, bool]] = {
@@ -67,6 +68,7 @@ CONFIG_SCHEMA: Dict[str, Tuple[str, bool]] = {
     "allowed_discord_cdn_domains": ("list_str", True),
     "enable_discord_message_link_scan": ("bool", True),
     "token": ("str_or_none", False),
+    "module_data": ("dict", False),
 }
 
 
@@ -162,6 +164,11 @@ def validate_and_normalize_config(data: Dict[str, Any]) -> Dict[str, Any]:
                 normalized[key] = value
             else:
                 errors.append(f"{key} must be a string or null")
+        elif type_name == "dict":
+            if not isinstance(value, dict):
+                errors.append(f"{key} must be a dict/object")
+            else:
+                normalized[key] = value
         else:
             errors.append(f"Unknown config type for {key}")
 

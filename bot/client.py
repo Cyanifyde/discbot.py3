@@ -22,11 +22,18 @@ from core.config import (
     load_guild_config,
 )
 from core.constants import K
+from core.config_migration import migrate_all_guild_configs
 from core.io_utils import read_text
+from core.interactions import handle_interaction
 from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from modules.auto_responder import handle_auto_responder
 from modules.dm_sender import handle_dm_send
+from modules.verification import (
+    handle_verification_command,
+    restore_verification_views,
+    setup_verification,
+)
 
 from .guild_state import GuildState
 
@@ -63,6 +70,9 @@ class DiscBot(discord.Client):
 
     async def setup_hook(self) -> None:
         """Called when the bot is starting up."""
+        # Register interaction handlers
+        setup_verification()
+        
         await self._register_commands()
         await self.tree.sync()
 
@@ -71,6 +81,13 @@ class DiscBot(discord.Client):
         if not self.ready_once:
             logger.info("Bot ready as %s", self.user)
             self.ready_once = True
+            
+            # Run config migrations (adds new fields without overwriting data)
+            await migrate_all_guild_configs()
+            
+            # Restore verification buttons from saved data
+            await restore_verification_views(self)
+            
             await self._initialize_existing_guilds()
             self._status_task = asyncio.create_task(self._status_loop())
 
@@ -153,6 +170,10 @@ class DiscBot(discord.Client):
             await handle_dm_send(self, message)
             return
         
+        # Handle admin text commands (before guild state check)
+        if await handle_verification_command(message, self):
+            return
+        
         state = self._get_guild_state(message.guild.id)
         if not state:
             return
@@ -170,6 +191,12 @@ class DiscBot(discord.Client):
         job = state.job_factory.build_job_for_message(message)
         if job:
             await state.enqueue_job(job.to_dict())
+
+    # ─── Interaction Events ───────────────────────────────────────────────────
+
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """Handle interactions (button clicks, etc.)."""
+        await handle_interaction(interaction)
 
     # ─── Enforcement ──────────────────────────────────────────────────────────
 

@@ -23,5 +23,6 @@
   "enable_discord_cdn_url_scan": false,
   "allowed_discord_cdn_domains": ["cdn.discordapp.com", "media.discordapp.net"],
   "enable_discord_message_link_scan": false,
-  "token": null
+  "token": null,
+  "module_data": {}
 }
