@@ -313,12 +313,12 @@ async def _cmd_status(
         lines.append("⚠️ Guild state not initialized")
 
     if data.get("enabled_by"):
-        lines.append(f"\n**Last enabled by:** <@{data['enabled_by']}>")
+        lines.append(f"\n**Last enabled by:** User ID {data['enabled_by']}")
         if data.get("enabled_at"):
             lines.append(f"**Enabled at:** {data['enabled_at']}")
 
     if data.get("disabled_by"):
-        lines.append(f"\n**Last disabled by:** <@{data['disabled_by']}>")
+        lines.append(f"\n**Last disabled by:** User ID {data['disabled_by']}")
         if data.get("disabled_at"):
             lines.append(f"**Disabled at:** {data['disabled_at']}")
 

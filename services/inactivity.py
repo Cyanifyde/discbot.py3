@@ -56,7 +56,7 @@ DEFAULT_STATE: Dict[str, Any] = {
     "last_step_at": None,
     "roles_to_remove": [],  # Role IDs to remove on enforcement (empty = all roles)
     "roles_to_add": [],     # Role IDs to add on enforcement
-    "grace_period_days": 7,  # Days new members have to post before enforcement
+    "grace_period_days": 3,  # Days new members have to post before enforcement
     "baseline_date": None,   # First run baseline - users must have posted since this date
 }
 
@@ -205,8 +205,8 @@ async def _cmd_help(message: discord.Message) -> None:
 The inactivity checker scans user records and enforces against users
 who haven't posted within the configured threshold period.
 
-Users with more than the message threshold are never enforced by inactivity
-(only by image hash match).
+**Users who have posted at least once are NEVER checked for inactivity.**
+Only completely silent users (0 messages) are subject to enforcement.
 
 The checker does **not** run automatically.
 A moderator must enable it with `inactivity enable`, then run steps manually
@@ -247,11 +247,16 @@ async def _cmd_enable(
 
     threshold = int(state.config.get(K.INACTIVE_DAYS_THRESHOLD, 0))
     msg_threshold = int(state.config.get(K.INACTIVITY_MESSAGE_THRESHOLD, 3))
+    
+    data = await get_state(guild_id)
+    grace_days = data.get("grace_period_days", 3)
 
     await message.reply(
         "✅ **Inactivity enforcement enabled!**\n"
         f"**Inactive threshold:** {threshold} days\n"
         f"**Message threshold:** {msg_threshold} messages\n"
+        f"**Grace period:** {grace_days} days (for new members)\n"
+        "**Note:** Users who post at least once are never checked again.\n"
         "Use `inactivity step` to run a manual enforcement step.",
         mention_author=False,
     )
@@ -339,12 +344,12 @@ async def _cmd_status(
         lines.append("⚠️ Guild state not initialized")
 
     if data.get("enabled_by"):
-        lines.append(f"\n**Last enabled by:** <@{data['enabled_by']}>")
+        lines.append(f"\n**Last enabled by:** User ID {data['enabled_by']}")
         if data.get("enabled_at"):
             lines.append(f"**Enabled at:** {data['enabled_at']}")
 
     if data.get("disabled_by"):
-        lines.append(f"\n**Last disabled by:** <@{data['disabled_by']}>")
+        lines.append(f"\n**Last disabled by:** User ID {data['disabled_by']}")
         if data.get("disabled_at"):
             lines.append(f"**Disabled at:** {data['disabled_at']}")
 
@@ -428,10 +433,14 @@ async def _cmd_step(
             f"✅ **Enforcement step complete!**\n"
             f"**Scanned:** {scanned:,} users\n"
             f"**Enforced:** {enforced:,} users",
+            allowed_mentions=discord.AllowedMentions.none(),
         )
     except Exception as e:
         logger.error("Failed to run enforcement step: %s", e)
-        await message.channel.send(f"❌ Enforcement step failed: {e}")
+        await message.channel.send(
+            f"❌ Enforcement step failed: {e}",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
 
 async def _cmd_setup(message: discord.Message) -> None:
@@ -442,12 +451,13 @@ async def _cmd_setup(message: discord.Message) -> None:
 ```
 inactivity init
 ```
-Initialize baseline to current date (all current members considered active).
+Gives all current members 30 days to post at least once.
 
 ```
-inactivity setgrace 7
+inactivity setgrace 3
 ```
 Set grace period for new members (days they have to post before enforcement).
+Default is 3 days.
 
 **2. Configure roles to remove on enforcement:**
 ```
@@ -471,15 +481,16 @@ inactivity status
 **Example Full Setup:**
 ```
 inactivity init
-inactivity setgrace 7
+inactivity setgrace 3
 inactivity removerole 123456789012345678
 inactivity addrole 987654321098765432
 inactivity enable
 ```
 
-**What grace period and baseline do:**
-- **Grace Period**: New members get X days to post before being checked
-- **Baseline**: Users must have posted since this date (use `init` for current date)
+**Important Notes:**
+- **Users only need to post ONCE** to never be checked again
+- **Grace Period**: New members get X days (default 3) to post
+- **Baseline (init)**: Gives current members 30 days from now to post once
 """
     await message.reply(help_text, mention_author=False)
 
@@ -722,19 +733,22 @@ async def _cmd_setbaseline(message: discord.Message, args: Optional[str]) -> Non
 
 
 async def _cmd_init(message: discord.Message) -> None:
-    """Initialize baseline to current date."""
+    """Initialize baseline - gives current members 30 days to post."""
     guild_id = message.guild.id
     data = await get_state(guild_id)
 
     now = utcnow()
-    data["baseline_date"] = now.isoformat()
+    # Set baseline to 30 days ago so current members have 30 days from now to post
+    baseline_dt = now - dt.timedelta(days=30)
+    data["baseline_date"] = baseline_dt.isoformat()
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
-    date_str = now.strftime("%Y-%m-%d")
+    baseline_str = baseline_dt.strftime("%Y-%m-%d")
+    today_str = now.strftime("%Y-%m-%d")
     await message.reply(
-        f"✅ **Baseline initialized to today ({date_str}).**\n"
-        f"All current members are now considered 'active' as of this date.\n"
-        f"Users who don't post after this date will be subject to enforcement.",
+        f"✅ **Baseline initialized to {baseline_str}.**\n"
+        f"Current members now have 30 days (until ~{today_str}) to post at least once.\n"
+        f"Users who have posted even once will never be checked again.",
         mention_author=False,
     )
 
