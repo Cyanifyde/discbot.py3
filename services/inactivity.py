@@ -804,6 +804,7 @@ async def run_enforcement_step(
         parsed_ids.sort(key=lambda item: item[0])
 
         for user_id_int, user_id in parsed_ids:
+            # Skip users we've already processed in this shard
             if (
                 shard == start_shard
                 and after_int is not None
@@ -816,6 +817,9 @@ async def run_enforcement_step(
 
             record = data.get(user_id)
             if not isinstance(record, dict):
+                # Still update cursor even for invalid records
+                last_scanned_user = user_id
+                last_scanned_shard = shard
                 continue
 
             scanned += 1
@@ -875,16 +879,19 @@ async def run_enforcement_step(
 
         if scanned >= max_scan:
             break
+        # Move to next shard: reset the after filter
         after = None
         after_int = None
 
+    # Update cursor with the last position we examined
     if last_scanned_user:
         await state.storage.update_state(
             lambda s: s.update(
                 {"enforcement_cursor": {"shard": last_scanned_shard, "after": last_scanned_user}}
             )
         )
-    else:
+    elif scanned == 0:
+        # No users scanned at all - we've completed all shards, reset to beginning
         await state.storage.update_state(
             lambda s: s.update({"enforcement_cursor": {"shard": "00", "after": None}})
         )

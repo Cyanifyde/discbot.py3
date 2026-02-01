@@ -485,6 +485,9 @@ class DiscBot(discord.Client):
                 
                 record = data.get(user_id)
                 if not isinstance(record, dict):
+                    # Still track position even for invalid records
+                    last_scanned_user = user_id
+                    last_scanned_shard = shard
                     continue
                 
                 scanned += 1
@@ -535,6 +538,7 @@ class DiscBot(discord.Client):
             
             if scanned >= max_scan:
                 break
+            # Reset after filter when moving to next shard
             after = None
             after_int = None
         
@@ -542,6 +546,11 @@ class DiscBot(discord.Client):
         if last_scanned_user:
             await state.storage.update_state(
                 lambda s: s.update({"enforcement_cursor": {"shard": last_scanned_shard, "after": last_scanned_user}})
+            )
+        elif scanned == 0:
+            # Completed all shards with no users scanned - reset to beginning
+            await state.storage.update_state(
+                lambda s: s.update({"enforcement_cursor": {"shard": "00", "after": None}})
             )
         else:
             await state.storage.update_state(
