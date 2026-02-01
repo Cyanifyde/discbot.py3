@@ -10,6 +10,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from .config import ConfigError
 from .io_utils import read_json, write_json_atomic
 from .paths import BASE_DIR
 from .utils import dt_to_iso, iso_to_dt, safe_int, utcnow
@@ -305,8 +306,19 @@ class SuspicionStore:
 
     async def summary_counts(self) -> Dict[str, int]:
         counts = {"total": 0, "cleared": 0, "enforced": 0, "uncleared": 0}
-        for shard in [f"{i:02d}" for i in range(100)]:
-            data = await self._read_shard_file(self.shard_path(shard))
+        shards = [f"{i:02d}" for i in range(100)]
+        
+        # Read all shards concurrently for better performance
+        shard_data_list = await asyncio.gather(
+            *[self._read_shard_file(self.shard_path(shard)) for shard in shards],
+            return_exceptions=True
+        )
+        
+        for data in shard_data_list:
+            if isinstance(data, Exception):
+                continue
+            if not isinstance(data, dict):
+                continue
             for record in data.values():
                 if not isinstance(record, dict):
                     continue

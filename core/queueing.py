@@ -185,6 +185,8 @@ class QueueProcessor:
                 self.next_read_offset = end_offset
 
     async def _worker_loop(self, worker_id: int) -> None:
+        import logging
+        logger = logging.getLogger("discbot.queue")
         while not self.stop_event.is_set():
             try:
                 job, end_offset = await self.queue.get()
@@ -192,8 +194,10 @@ class QueueProcessor:
                 break
             try:
                 await asyncio.wait_for(self._process_job(job), timeout=self.worker_timeout)
-            except Exception:
-                pass
+            except asyncio.TimeoutError:
+                logger.warning("Worker %d: Job timed out after %ds", worker_id, self.worker_timeout)
+            except Exception as e:
+                logger.error("Worker %d: Job processing failed: %s", worker_id, e)
             await self._ack_processed(end_offset)
             self.queue.task_done()
 

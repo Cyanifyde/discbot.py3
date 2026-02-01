@@ -28,9 +28,12 @@ MODULE_NAME = "autoresponder"
 CONFIG_SUFFIX = ".autoresponder.json"
 
 _CACHE: Dict[int, Tuple[Optional[float], Dict[str, Any]]] = {}
+_CACHE_TTL_SECONDS = 30.0  # Cache config for 30 seconds
 _HANDLER_CACHE: Dict[str, Any] = {}
 _HANDLER_NAMESPACE = "classes"
 _COOLDOWNS: Dict[Tuple[int, str, int], float] = {}
+_LAST_COOLDOWN_CLEANUP = 0.0
+_COOLDOWN_CLEANUP_INTERVAL = 300.0  # Cleanup every 5 minutes
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "enabled": True,
@@ -109,14 +112,16 @@ def _normalize_id_list(value: Any) -> List[int]:
 
 async def _load_guild_config(guild_id: int) -> Dict[str, Any]:
     path = GUILD_CONFIG_DIR / f"{guild_id}{CONFIG_SUFFIX}"
-    mtime = await _stat_mtime(path)
+    now = time.monotonic()
     cached = _CACHE.get(guild_id)
-    if cached and cached[0] == mtime:
-        return cached[1]
+    if cached:
+        cache_time, data = cached
+        if cache_time is not None and now - cache_time < _CACHE_TTL_SECONDS:
+            return data
     data = await read_json(path, default=None)
     if not isinstance(data, dict):
         data = {}
-    _CACHE[guild_id] = (mtime, data)
+    _CACHE[guild_id] = (now, data)
     return data
 
 
@@ -178,6 +183,8 @@ def _normalize_trigger_items(data: Dict[str, Any], global_settings: Dict[str, An
         spec = _build_trigger_spec(trigger, value, global_settings)
         if spec:
             items.append(spec)
+    # Sort by trigger length (longest first) for better matching
+    # This sorting happens once per config load, cached by TTL
     items.sort(key=lambda item: len(item.trigger), reverse=True)
     return items
 
@@ -241,7 +248,7 @@ def _passes_filters(message: discord.Message, settings: Dict[str, Any]) -> bool:
     blocked_users = _normalize_id_list(settings.get("blocked_user_ids"))
     if blocked_users and author.id in blocked_users:
         return False
-    if guild is not None:
+    if guild is not None and isinstance(author, discord.Member):
         allowed_roles = set(_normalize_id_list(settings.get("allowed_role_ids")))
         if allowed_roles and not any(role.id in allowed_roles for role in author.roles):
             return False
@@ -310,12 +317,27 @@ def _cooldown_key(message: discord.Message, trigger: str, settings: Dict[str, An
     return (guild_id, trigger, message.author.id)
 
 
+def _cleanup_expired_cooldowns(now: float) -> None:
+    """Remove cooldowns older than 1 hour to prevent memory leak."""
+    max_age = 3600.0  # 1 hour
+    expired = [key for key, timestamp in _COOLDOWNS.items() if now - timestamp > max_age]
+    for key in expired:
+        _COOLDOWNS.pop(key, None)
+
+
 def _check_cooldown(message: discord.Message, trigger: str, settings: Dict[str, Any]) -> bool:
     seconds = float(settings.get("cooldown_seconds", 0) or 0)
     if seconds <= 0:
         return True
     key = _cooldown_key(message, trigger, settings)
     now = time.monotonic()
+    
+    # Periodic cleanup to prevent memory leak
+    global _LAST_COOLDOWN_CLEANUP
+    if now - _LAST_COOLDOWN_CLEANUP > _COOLDOWN_CLEANUP_INTERVAL:
+        _cleanup_expired_cooldowns(now)
+        _LAST_COOLDOWN_CLEANUP = now
+    
     last = _COOLDOWNS.get(key)
     if last is not None and now - last < seconds:
         return False
@@ -487,7 +509,7 @@ def _build_allowed_mentions(
         mention_parts.extend(role.mention for role in role_mentions)
         allow_roles = True
     allowed_mentions = discord.AllowedMentions(
-        users=role_mentions if allow_users else False,
+        users=allow_users,
         roles=role_mentions if allow_roles else False,
         replied_user=bool(settings.get("reply_ping_author", False)),
     )
@@ -652,18 +674,26 @@ async def handle_auto_responder(message: discord.Message) -> bool:
             if handler:
                 try:
                     result = await _invoke_handler(handler, payload)
-                except Exception:
+                except Exception as e:
+                    import logging
+                    logging.getLogger("discbot.autoresponder").error(
+                        "Handler '%s' failed: %s", spec.handler, e
+                    )
                     result = None
                 response, overrides = _unwrap_handler_result(result)
         if response is None:
             response = spec.response
         if response is None:
-            return False
+            continue
         final_settings = _merge_settings(spec.settings, overrides)
         for item in _coerce_responses(response):
             try:
                 sent = await _send_response(message, item, final_settings)
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.getLogger("discbot.autoresponder").error(
+                    "Failed to send response for trigger '%s': %s", spec.trigger, e
+                )
                 sent = False
             handled = handled or sent
         if handled and final_settings.get("delete_trigger_message"):

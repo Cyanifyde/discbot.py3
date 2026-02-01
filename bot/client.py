@@ -198,11 +198,23 @@ class DiscBot(discord.Client):
         if state.is_channel_ignored(message.channel.id):
             return
 
-        # Run auto-responder
-        asyncio.create_task(handle_auto_responder(message))
+        # Run auto-responder with error handling
+        async def _safe_auto_responder():
+            try:
+                await handle_auto_responder(message)
+            except Exception as e:
+                logger.error("Auto-responder error for message %s: %s", message.id, e)
+        
+        asyncio.create_task(_safe_auto_responder())
 
-        # Record message for activity tracking
-        asyncio.create_task(state.storage.record_message(message.author.id, utcnow()))
+        # Record message for activity tracking with error handling
+        async def _safe_record_message():
+            try:
+                await state.storage.record_message(message.author.id, utcnow())
+            except Exception as e:
+                logger.error("Failed to record message for user %s: %s", message.author.id, e)
+        
+        asyncio.create_task(_safe_record_message())
 
         # Build and enqueue scan jobs if applicable (one per attachment)
         jobs = state.job_factory.build_jobs_for_message(message)
