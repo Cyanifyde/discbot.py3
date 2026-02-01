@@ -7,7 +7,7 @@ Business logic is delegated to services and GuildState.
 from __future__ import annotations
 
 import asyncio
-import datetime as dt  # Used in _snapshot_step
+import datetime as dt
 import logging
 from typing import Any, Optional
 
@@ -21,21 +21,24 @@ from core.config import (
     load_default_template,
     load_guild_config,
 )
-from core.constants import K
 from core.config_migration import migrate_all_guild_configs
-from core.io_utils import read_text
+from core.constants import K
 from core.interactions import handle_interaction
+from core.io_utils import read_text
 from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from modules.auto_responder import handle_auto_responder
 from modules.dm_sender import handle_dm_send
-from modules.sus_scanner import handle_sus_command, restore_sus_state
 from modules.verification import (
     handle_remove_verification_command,
     handle_verification_command,
     restore_verification_views,
     setup_verification,
 )
+from services.inactivity import handle_command as handle_inactivity_command
+from services.inactivity import restore_state as restore_inactivity_state
+from services.scanner import handle_command as handle_scanner_command
+from services.scanner import restore_state as restore_scanner_state
 
 from .guild_state import GuildState
 
@@ -83,19 +86,20 @@ class DiscBot(discord.Client):
         if not self.ready_once:
             logger.info("Bot ready as %s", self.user)
             self.ready_once = True
-            
+
             # Run config migrations (adds new fields without overwriting data)
             await migrate_all_guild_configs()
-            
+
             # Initialize guild states first
             await self._initialize_existing_guilds()
-            
+
             # Restore verification buttons from saved data
             await restore_verification_views(self)
-            
-            # Restore sus scanner state (starts scanner for guilds where it was enabled)
-            await restore_sus_state(self)
-            
+
+            # Restore service states (scanner, inactivity)
+            await restore_scanner_state(self)
+            await restore_inactivity_state(self)
+
             self._status_task = asyncio.create_task(self._status_loop())
 
     async def close(self) -> None:
@@ -171,33 +175,35 @@ class DiscBot(discord.Client):
         """Handle incoming messages."""
         if message.author.bot:
             return
-        
+
         # Handle DMs
         if message.guild is None:
             await handle_dm_send(self, message)
             return
-        
+
         # Handle admin text commands (before guild state check)
         if await handle_verification_command(message, self):
             return
         if await handle_remove_verification_command(message, self):
             return
-        if await handle_sus_command(message, self):
+        if await handle_scanner_command(message, self):
             return
-        
+        if await handle_inactivity_command(message, self):
+            return
+
         state = self._get_guild_state(message.guild.id)
         if not state:
             return
-        
+
         if state.is_channel_ignored(message.channel.id):
             return
-        
+
         # Run auto-responder
         asyncio.create_task(handle_auto_responder(message))
-        
+
         # Record message for activity tracking
         asyncio.create_task(state.storage.record_message(message.author.id, utcnow()))
-        
+
         # Build and enqueue scan job if applicable
         job = state.job_factory.build_job_for_message(message)
         if job:

@@ -1,3 +1,8 @@
+"""
+Module configuration management.
+
+Handles enabling/disabling modules per guild via configuration files.
+"""
 from __future__ import annotations
 
 import asyncio

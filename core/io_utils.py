@@ -1,3 +1,8 @@
+"""
+File I/O utilities.
+
+Provides async-safe JSON reading/writing and text file operations.
+"""
 from __future__ import annotations
 
 import asyncio

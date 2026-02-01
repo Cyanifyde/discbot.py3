@@ -1,3 +1,9 @@
+"""
+Auto-responder module.
+
+Handles automatic responses to configured message triggers with support for
+custom handlers, filtering, cooldowns, and multiple delivery modes.
+"""
 from __future__ import annotations
 
 import asyncio

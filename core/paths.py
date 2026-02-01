@@ -1,3 +1,8 @@
+"""
+Path resolution utilities.
+
+Provides base directory and path resolution for the project.
+"""
 from __future__ import annotations
 
 from pathlib import Path

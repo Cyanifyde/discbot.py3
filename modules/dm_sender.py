@@ -1,3 +1,8 @@
+"""
+DM sender module.
+
+Allows the bot owner to send messages to channels via DM commands.
+"""
 from __future__ import annotations
 
 from typing import Optional, Tuple

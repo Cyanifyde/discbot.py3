@@ -12,6 +12,7 @@ import discord
 
 from core.paths import resolve_repo_path
 from core.utils import is_safe_relative_path, sanitize_text
+
 from .matching import normalize_id_list
 
 

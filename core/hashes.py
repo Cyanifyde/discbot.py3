@@ -1,3 +1,8 @@
+"""
+Hash loading utilities.
+
+Loads SHA256 hashes from configured files for image hash matching.
+"""
 from __future__ import annotations
 
 from typing import Any, Dict

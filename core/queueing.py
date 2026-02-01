@@ -1,18 +1,32 @@
+"""
+Job queue system for image hash scanning.
+
+Provides persistent queue storage and worker-based processing.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
 from collections import deque
 from pathlib import Path
-from typing import Any, Deque
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import aiohttp
 import discord
 
-from .io_utils import append_text, read_json, read_queue_lines, rewrite_queue_file, write_json_atomic
+from .io_utils import (
+    append_text,
+    read_json,
+    read_queue_lines,
+    rewrite_queue_file,
+    write_json_atomic,
+)
 from .storage import SuspicionStore
 from .utils import build_cdn_regex, hash_bytes, magic_bytes_valid, safe_int
+
+if TYPE_CHECKING:
+    from bot.client import DiscBot
 
 
 class QueueStore:

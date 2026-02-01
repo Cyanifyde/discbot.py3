@@ -1,10 +1,15 @@
+"""
+General utility functions.
+
+Provides date/time helpers, text sanitization, validation functions, and regex utilities.
+"""
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
 import re
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Tuple
 
 UTC = dt.timezone.utc
 

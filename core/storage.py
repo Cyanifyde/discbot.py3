@@ -1,12 +1,17 @@
+"""
+Persistent storage for user suspicion records.
+
+Provides sharded JSON storage with caching and atomic writes.
+"""
 from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Optional
 
-from .paths import BASE_DIR
 from .io_utils import read_json, write_json_atomic
+from .paths import BASE_DIR
 from .utils import dt_to_iso, iso_to_dt, safe_int, utcnow
 
 

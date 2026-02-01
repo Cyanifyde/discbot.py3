@@ -1,3 +1,9 @@
+"""
+Profile responder.
+
+Handles artist profile management including bio, pronouns, specialties,
+commission status, and portfolio links.
+"""
 from __future__ import annotations
 
 import datetime as dt

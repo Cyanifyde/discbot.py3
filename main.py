@@ -1,3 +1,8 @@
+"""
+Main entry point for the Discord bot.
+
+Loads configuration from environment and starts the bot.
+"""
 from __future__ import annotations
 
 import asyncio

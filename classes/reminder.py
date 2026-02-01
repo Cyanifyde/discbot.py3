@@ -1,3 +1,8 @@
+"""
+Reminder responder.
+
+Allows users to set reminders that will ping them after a specified delay.
+"""
 from __future__ import annotations
 
 import asyncio

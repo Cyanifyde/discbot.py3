@@ -32,20 +32,20 @@ VERIFY_BUTTON_PREFIX = "verify_btn:"
 # Regex to parse the addverification command
 # addverification <#channel_id> "text" unverified_role_id verified_role_id
 ADD_COMMAND_PATTERN = re.compile(
-    r'^addverification\s+'
-    r'<#(\d+)>\s+'           # Channel mention
+    r"^addverification\s+"
+    r"<#(\d+)>\s+"           # Channel mention
     r'"([^"]+)"\s+'          # Quoted text
-    r'(\d+)\s+'              # Unverified role ID
-    r'(\d+)\s*$',            # Verified role ID
+    r"(\d+)\s+"              # Unverified role ID
+    r"(\d+)\s*$",            # Verified role ID
     re.IGNORECASE
 )
 
 # Regex to parse the removeverification command
 # removeverification <#channel_id> message_id
 REMOVE_COMMAND_PATTERN = re.compile(
-    r'^removeverification\s+'
-    r'<#(\d+)>\s+'           # Channel mention
-    r'(\d+)\s*$',            # Message ID
+    r"^removeverification\s+"
+    r"<#(\d+)>\s+"           # Channel mention
+    r"(\d+)\s*$",            # Message ID
     re.IGNORECASE
 )
 
@@ -207,10 +207,10 @@ async def handle_verification_command(
     match = ADD_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            '❌ **Invalid format.**\n'
-            '```\n'
-            'addverification #channel "message text" unverified_role_id verified_role_id\n'
-            '```',
+            "❌ **Invalid format.**\n"
+            "```\n"
+            "addverification #channel \"message text\" unverified_role_id verified_role_id\n"
+            "```",
             mention_author=False,
         )
         return True
@@ -359,10 +359,10 @@ async def handle_remove_verification_command(
     match = REMOVE_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            '❌ **Invalid format.**\n'
-            '```\n'
-            'removeverification #channel message_id\n'
-            '```',
+            "❌ **Invalid format.**\n"
+            "```\n"
+            "removeverification #channel message_id\n"
+            "```",
             mention_author=False,
         )
         return True

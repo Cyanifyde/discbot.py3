@@ -5,13 +5,13 @@ Centralizes job creation logic that was previously duplicated in bot.py.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
 import re
+from typing import Any, Optional
 
 import discord
 
 from core.constants import K, JobSource
-from core.types import ScanJob, AttachmentInfo, LinkedMessage
+from core.types import AttachmentInfo, LinkedMessage, ScanJob
 from core.utils import dt_to_iso, utcnow
 
 

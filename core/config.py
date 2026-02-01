@@ -1,7 +1,12 @@
+"""
+Guild configuration loading and validation.
+
+Handles loading, validating, and normalizing guild-specific configuration files.
+"""
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
 from .io_utils import read_json, write_json_atomic
 from .paths import BASE_DIR

@@ -1,3 +1,8 @@
+"""
+Base response handler classes.
+
+Provides the base class and simple implementations for auto-responder handlers.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
