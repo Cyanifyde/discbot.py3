@@ -186,7 +186,7 @@ async def _cmd_help(message: discord.Message) -> None:
 
 **Hash Management (per-guild):**
 **`scanner setup`** - Show setup instructions
-**`scanner addhash <hash>`** - Add a hash to this guild's list
+**`scanner addhash`** (with image attachment) - Add an image hash to this guild's list
 **`scanner removehash <hash>`** - Remove a hash from this guild's list
 **`scanner listhashes`** - List all guild-specific hashes
 **`scanner clearhashes`** - Clear all guild-specific hashes
@@ -419,10 +419,15 @@ async def _cmd_setup(message: discord.Message) -> None:
 
 **1. Add image hashes to scan for:**
 ```
-scanner addhash <sha256_hash>
+scanner addhash
 ```
-Add SHA256 hashes of images you want to detect.
-You can get a hash by scanning an image file.
+**Attach an image** to your message with this command.
+The bot will automatically compute and store the SHA256 hash.
+
+Alternatively, you can manually provide a hash:
+```
+scanner addhash abc123def456...
+```
 
 **2. Configure roles to remove on match:**
 ```
@@ -444,10 +449,10 @@ scanner config
 
 **Example Setup:**
 ```
-scanner addhash abc123def456...
-scanner removerole 123456789012345678
-scanner addrole 987654321098765432
-scanner enable
+1. Send: scanner addhash (attach suspicious image)
+2. scanner removerole 123456789012345678
+3. scanner addrole 987654321098765432
+4. scanner enable
 ```
 """
     await message.reply(help_text, mention_author=False)
@@ -458,24 +463,70 @@ async def _cmd_addhash(
     args: Optional[str],
     state: Optional["GuildState"],
 ) -> None:
-    """Add a hash to the guild's hash list."""
+    """Add a hash to the guild's hash list from an image attachment."""
     guild_id = message.guild.id
     data = await get_state(guild_id)
 
-    if not args:
+    # Check if there's an image attachment
+    if message.attachments:
+        # Process image attachment
+        attachment = message.attachments[0]
+        
+        # Check if it's an image
+        if not attachment.content_type or not attachment.content_type.startswith("image/"):
+            await message.reply(
+                "Please attach an image file (PNG, JPEG, GIF, etc.).",
+                mention_author=False,
+            )
+            return
+        
+        # Check file size (max 8MB for Discord attachments)
+        if attachment.size > 8 * 1024 * 1024:
+            await message.reply(
+                "Image file is too large (max 8MB).",
+                mention_author=False,
+            )
+            return
+        
+        try:
+            # Download the image
+            image_data = await attachment.read()
+            
+            # Compute hash
+            from services.hash_checker import HashChecker
+            hash_value = HashChecker.hash_bytes(image_data)
+            
+            logger.info(
+                "Computed hash %s for image %s (%.2f KB) in guild %s",
+                hash_value[:16],
+                attachment.filename,
+                len(image_data) / 1024,
+                guild_id,
+            )
+            
+        except Exception as e:
+            logger.error("Failed to process image attachment: %s", e)
+            await message.reply(
+                f"Failed to process image: {e}",
+                mention_author=False,
+            )
+            return
+    elif args:
+        # Fallback: accept manual hash input
+        hash_value = args.strip().lower()
+        
+        # Validate hash format (SHA256 = 64 hex chars)
+        if len(hash_value) != 64 or not all(c in "0123456789abcdef" for c in hash_value):
+            await message.reply(
+                "Invalid hash format. Must be a 64-character SHA256 hash (hex).",
+                mention_author=False,
+            )
+            return
+    else:
         await message.reply(
-            "Usage: `scanner addhash <sha256_hash>`\n"
-            "Provide a 64-character SHA256 hash.",
-            mention_author=False,
-        )
-        return
-
-    hash_value = args.strip().lower()
-
-    # Validate hash format (SHA256 = 64 hex chars)
-    if len(hash_value) != 64 or not all(c in "0123456789abcdef" for c in hash_value):
-        await message.reply(
-            "Invalid hash format. Must be a 64-character SHA256 hash (hex).",
+            "Usage: `scanner addhash` (with image attachment)\n"
+            "Or: `scanner addhash <sha256_hash>`\n\n"
+            "Attach an image to compute and add its hash automatically.",
             mention_author=False,
         )
         return
