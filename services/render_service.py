@@ -287,11 +287,27 @@ class RenderService:
 
     def _measure_weasyprint_body(self, html: str) -> Optional[Dict[str, float]]:
         """
-        Measure the .rate-card element and add fixed padding for background border.
+        Measure the rendered size of the `.rate-card` box and approximate the
+        surrounding background padding from the template's `body { padding: ... }`.
+
+        This relies on private WeasyPrint box APIs and is best-effort. If anything
+        fails, callers should fall back to a conservative fixed size.
         """
         try:
+            import re
+
+            # Try to infer the template's body padding so the final image includes
+            # the intended background border without excessive empty space.
+            padding = 24
+            m = re.search(r"body\\s*\\{[^}]*?padding\\s*:\\s*(\\d+)px", html, flags=re.IGNORECASE | re.DOTALL)
+            if m:
+                try:
+                    padding = int(m.group(1))
+                except Exception:
+                    padding = 24
+
             # Render on a tall page so content isn't clipped
-            probe_style = "<style>@page { size: 800px 3000px; margin: 0; }</style>"
+            probe_style = "<style>@page { size: 1400px 5000px; margin: 0; }</style>"
             html_probe = html.replace("</head>", f"{probe_style}</head>")
             doc = HTML(string=html_probe).render()
             if not doc.pages:
@@ -318,15 +334,38 @@ class RenderService:
             if card is None:
                 return None
 
-            # Get card dimensions - try margin_height/width first (full outer box)
-            card_w = float(getattr(card, "margin_width", 0) or getattr(card, "border_width", 0) or getattr(card, "width", 0) or 0)
-            card_h = float(getattr(card, "margin_height", 0) or getattr(card, "border_height", 0) or getattr(card, "height", 0) or 0)
-            
+            # WeasyPrint boxes sometimes report the element height as the available
+            # page height (especially with percentage/min-height rules). Instead of
+            # trusting `card.height`, compute the maximum descendant extent.
+            card_left = float(getattr(card, "position_x", 0) or 0)
+            card_top = float(getattr(card, "position_y", 0) or 0)
+
+            # Use the card's own width (typically reliable) and compute height from
+            # its rendered descendants.
+            card_w = float(getattr(card, "width", 0) or 0)
+            max_x1 = card_left + (card_w if card_w > 0 else 0)
+            max_y1 = card_top
+
+            stack = list(getattr(card, "children", []) or [])
+            while stack:
+                b = stack.pop()
+                stack.extend(getattr(b, "children", []) or [])
+
+                w = float(getattr(b, "width", 0) or 0)
+                h = float(getattr(b, "height", 0) or 0)
+                if w <= 0 and h <= 0:
+                    continue
+
+                x = float(getattr(b, "position_x", 0) or 0)
+                y = float(getattr(b, "position_y", 0) or 0)
+                max_x1 = max(max_x1, x + w)
+                max_y1 = max(max_y1, y + h)
+
+            card_h = max(0.0, max_y1 - card_top)
             if card_w <= 0 or card_h <= 0:
                 return None
 
-            # Add fixed padding for background border around card (matches template body padding)
-            padding = 24
+            # Include the template's body padding on all sides.
             w = card_w + (padding * 2)
             h = card_h + (padding * 2)
                 
