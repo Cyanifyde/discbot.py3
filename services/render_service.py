@@ -211,3 +211,7 @@ def get_render_service() -> RenderService:
     if _render_service is None:
         _render_service = RenderService()
     return _render_service
+
+
+# Shared instance for convenient imports
+render_service = get_render_service()
