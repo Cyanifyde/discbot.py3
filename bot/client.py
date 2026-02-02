@@ -53,6 +53,52 @@ from modules.server_link import (
     handle_server_link_command,
     setup_server_link,
 )
+from modules.commissions import (
+    handle_commission_command,
+    setup_commissions,
+)
+from modules.portfolio import (
+    handle_portfolio_command,
+    setup_portfolio,
+)
+from modules.reports import (
+    handle_report_command,
+    setup_reports,
+)
+from modules.federation import (
+    handle_federation_command,
+    setup_federation,
+)
+from modules.utility import (
+    handle_utility_command,
+    setup_utility,
+    handle_bookmark_reaction,
+    bookmark_delivery_loop,
+)
+from modules.communication import (
+    handle_communication_command,
+    setup_communication,
+)
+from modules.art_tools import (
+    handle_art_tools_command,
+    setup_art_tools,
+)
+from modules.automation import (
+    handle_automation_command,
+    setup_automation,
+)
+from modules.roles import (
+    handle_roles_command,
+    setup_roles,
+)
+from modules.custom_content import (
+    handle_custom_content_command,
+    setup_custom_content,
+)
+from modules.trust import (
+    handle_trust_command,
+    setup_trust,
+)
 from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
@@ -60,7 +106,6 @@ from services.scanner import restore_state as restore_scanner_state
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
-from modules.utility import handle_bookmark_reaction, bookmark_delivery_loop
 
 from .guild_state import GuildState
 
@@ -104,6 +149,19 @@ class DiscBot(discord.Client):
         setup_server_stats()
         setup_server_link()
         setup_sync_interactions()
+
+        # Register Phase 2-4 modules
+        setup_commissions()
+        setup_portfolio()
+        setup_reports()
+        setup_federation()
+        setup_utility()
+        setup_communication()
+        setup_art_tools()
+        setup_automation()
+        setup_roles()
+        setup_custom_content()
+        setup_trust()
 
         await self._register_commands()
         await self.tree.sync()
@@ -242,6 +300,30 @@ class DiscBot(discord.Client):
         if await handle_serverstats_command(message, self):
             return
         if await handle_server_link_command(message, self):
+            return
+
+        # Handle Phase 2-4 module commands
+        if await handle_commission_command(message, self):
+            return
+        if await handle_portfolio_command(message, self):
+            return
+        if await handle_report_command(message, self):
+            return
+        if await handle_federation_command(message, self):
+            return
+        if await handle_utility_command(message, self):
+            return
+        if await handle_communication_command(message, self):
+            return
+        if await handle_art_tools_command(message, self):
+            return
+        if await handle_automation_command(message, self):
+            return
+        if await handle_roles_command(message, self):
+            return
+        if await handle_custom_content_command(message, self):
+            return
+        if await handle_trust_command(message, self):
             return
 
         state = self._get_guild_state(message.guild.id)
