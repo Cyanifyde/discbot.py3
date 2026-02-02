@@ -571,7 +571,7 @@ async def _handle_ratecard_command(message: discord.Message, parts: list[str]) -
     """Route ratecard subcommands."""
     if len(parts) < 2:
         # No subcommand, generate rate card image
-        await _generate_ratecard(message)
+        await _generate_ratecard(message, None)
         return
 
     subcommand = parts[1].lower()
@@ -603,7 +603,7 @@ async def _handle_ratecard_command(message: discord.Message, parts: list[str]) -
         await _generate_ratecard(message, subcommand)
 
 
-async def _generate_ratecard(message: discord.Message, template: str = "minimal") -> None:
+async def _generate_ratecard(message: discord.Message, template: Optional[str] = None) -> None:
     """Generate and send rate card image."""
     user_id = message.author.id
 
@@ -619,14 +619,16 @@ async def _generate_ratecard(message: discord.Message, template: str = "minimal"
         )
         return
 
-    # Validate template
+    # Determine template
     valid_templates = ["minimal", "colorful", "detailed", "professional"]
+    if template is None:
+        template = settings.get("template", "minimal")
     if template not in valid_templates:
         template = settings.get("template", "minimal")
 
     # Build profile dict for template
     profile = {
-        "bio": settings.get("subtitle", "Quality digital artwork tailored to your vision"),
+        "bio": settings.get("subtitle", ""),
         "title": settings.get("title", "Commission Rates"),
         "status": settings.get("status", "open"),
         "currency": settings.get("currency", "$"),

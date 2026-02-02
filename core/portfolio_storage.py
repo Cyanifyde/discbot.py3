@@ -351,9 +351,12 @@ class PortfolioStore:
             data = await self._read_portfolio()
             return data.get("rate_card_settings", {
                 "title": "Commission Rates",
-                "subtitle": "Quality digital artwork tailored to your vision",
+                # Keep subtitle empty by default; templates render it but do not
+                # inject placeholder copy unless the user sets it.
+                "subtitle": "",
                 "status": "open",
                 "currency": "$",
+                "template": "minimal",
             })
 
     async def update_rate_card_settings(self, settings: Dict[str, Any]) -> None:
