@@ -219,8 +219,10 @@ class RenderService:
             return self._render_placeholder(width, height)
 
         try:
-            # Inject page width only, let height be auto-calculated
-            page_style = f"<style>@page {{ size: {width}px auto; margin: 0; }}</style>"
+            # WeasyPrint requires explicit page size - render tall, then crop
+            # Use a generous height and trim empty space from bottom
+            render_height = max(height, 1200)
+            page_style = f"<style>@page {{ size: {width}px {render_height}px; margin: 0; }}</style>"
             html_with_size = html.replace("</head>", f"{page_style}</head>")
             
             # WeasyPrint v53+ removed write_png(), must use PDF then convert
@@ -236,26 +238,48 @@ class RenderService:
                     # Get first page
                     page = pdf_document[0]
                     
-                    # Render page to pixmap (image) at 150 DPI
-                    zoom = 150 / 72  # 150 DPI (72 is default)
+                    # Render page to pixmap (image) at 2x for quality
+                    zoom = 2.0
                     mat = fitz.Matrix(zoom, zoom)
                     pix = page.get_pixmap(matrix=mat)
                     
-                    # Convert to PIL Image for cropping
+                    # Convert to PIL Image
                     pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                    pdf_document.close()
                     
-                    # Crop whitespace from bottom (and other edges)
-                    # getbbox() returns bounding box of non-white content
-                    bbox = pil_img.getbbox()
-                    if bbox:
-                        pil_img = pil_img.crop(bbox)
+                    # Crop empty space from bottom only
+                    # Scan from bottom to find where content ends
+                    img_array = pil_img.load()
+                    img_width, img_height = pil_img.size
+                    
+                    # Get the background color from bottom-left corner (should be empty bg)
+                    bg_color = img_array[5, img_height - 5]
+                    
+                    # Find the last row that differs from background
+                    content_bottom = img_height
+                    for y in range(img_height - 1, 0, -1):
+                        row_has_content = False
+                        for x in range(0, img_width, 10):  # Sample every 10 pixels for speed
+                            pixel = img_array[x, y]
+                            # Check if pixel differs significantly from background
+                            if abs(pixel[0] - bg_color[0]) > 10 or \
+                               abs(pixel[1] - bg_color[1]) > 10 or \
+                               abs(pixel[2] - bg_color[2]) > 10:
+                                row_has_content = True
+                                break
+                        if row_has_content:
+                            content_bottom = y + 20  # Add small padding
+                            break
+                    
+                    # Crop to content
+                    if content_bottom < img_height:
+                        pil_img = pil_img.crop((0, 0, img_width, min(content_bottom, img_height)))
                     
                     # Convert back to JPEG bytes
                     buffer = io.BytesIO()
-                    pil_img.save(buffer, format="JPEG", quality=95, optimize=True)
+                    pil_img.save(buffer, format="JPEG", quality=92, optimize=True)
                     buffer.seek(0)
                     
-                    pdf_document.close()
                     return buffer.getvalue()
                     
                 except Exception as pdf_error:
