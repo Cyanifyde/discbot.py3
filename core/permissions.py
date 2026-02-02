@@ -23,6 +23,9 @@ AVAILABLE_MODULES = {
     "inactivity": "Enforce actions against inactive users",
     "verification": "Role-based verification via buttons",
     "autoresponder": "Automatic responses to triggers",
+    "moderation": "Warnings, mutes, bans, kicks, and mod notes",
+    "serverstats": "Display server statistics and information",
+    "serverlink": "Cross-server linking for syncing moderation actions",
 }
 
 # Available commands that can have role restrictions
@@ -31,6 +34,13 @@ AVAILABLE_COMMANDS = {
     "inactivity": ["inactivity enable", "inactivity disable", "inactivity status", "inactivity help"],
     "verification": ["addverification", "removeverification"],
     "autoresponder": ["addresponse", "listresponses", "removeresponse"],
+    "moderation": [
+        "warn", "warnings", "clearwarning", "clearwarnings",
+        "mute", "unmute", "ban", "unban", "kick",
+        "note", "notes", "clearnote",
+    ],
+    "serverstats": ["serverstats"],
+    "serverlink": ["linkserver", "addlink", "links", "unlink", "linksettings", "linkprotection"],
 }
 
 
