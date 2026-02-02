@@ -11,7 +11,6 @@ def setup_routes(app, bot):
     app.router.add_get('/owner', handle_dashboard)
     app.router.add_get('/owner/servers', handle_servers)
     app.router.add_post('/owner/servers', handle_servers_post)
-    app.router.add_get('/owner/federations', handle_federations)
     app.router.add_get('/owner/ai_checker', handle_ai_checker)
     app.router.add_post('/owner/ai_checker', handle_ai_checker_post)
     app.router.add_get('/owner/settings', handle_settings)
@@ -41,7 +40,6 @@ async def handle_dashboard(request):
                 <h1>Bot Owner Dashboard</h1>
                 <nav>
                     <a href="/owner/servers">Servers</a>
-                    <a href="/owner/federations">Federations</a>
                     <a href="/owner/ai_checker">AI Checker</a>
                     <a href="/owner/settings">Settings</a>
                     <a href="/owner/maintenance">Maintenance</a>
@@ -90,7 +88,6 @@ async def handle_dashboard(request):
                     <h2>Quick Actions</h2>
                     <div class="button-grid">
                         <a href="/owner/servers" class="button">Manage Servers</a>
-                        <a href="/owner/federations" class="button">View Federations</a>
                         <a href="/owner/ai_checker" class="button">AI Checker Module</a>
                         <a href="/owner/settings" class="button">Global Settings</a>
                         <a href="/owner/maintenance" class="button">Maintenance</a>
@@ -174,32 +171,6 @@ async def handle_servers_post(request):
             await guild.leave()
 
     return web.HTTPFound('/owner/servers')
-
-
-@require_auth('owner')
-async def handle_federations(request):
-    """Federation overview page."""
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Federation Overview</title>
-        <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <div class="container">
-            <header>
-                <h1>Federation Overview</h1>
-                <a href="/owner" class="button">← Back to Dashboard</a>
-            </header>
-            <main>
-                <p>View all federations across all servers (TODO)</p>
-            </main>
-        </div>
-    </body>
-    </html>
-    """
-    return web.Response(text=html, content_type='text/html')
 
 
 @require_auth('owner')

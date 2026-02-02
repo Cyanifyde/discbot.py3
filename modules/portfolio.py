@@ -49,7 +49,7 @@ def setup_portfolio() -> None:
             ("portfolio category <id> <category>", "Set category for an entry"),
             ("portfolio tag <id> <tags...>", "Add tags to an entry"),
             ("portfolio feature <id>", "Set entry as featured"),
-            ("portfolio privacy <id> <public|federation|private>", "Set entry privacy"),
+            ("portfolio privacy <id> <public|private>", "Set entry privacy"),
             ("portfolio view [@user] [category]", "View portfolio"),
             ("portfolio reorder <id> <position>", "Change entry display order"),
             ("portfolio beforeafter <before_url> <after_url> [title]", "Add before/after entry"),
@@ -303,21 +303,23 @@ async def _handle_feature(message: discord.Message, parts: list[str]) -> None:
 
 
 async def _handle_privacy(message: discord.Message, parts: list[str]) -> None:
-    """Handle 'portfolio privacy <id> <public|federation|private>' command."""
+    """Handle 'portfolio privacy <id> <public|private>' command."""
     if len(parts) < 3:
-        await message.reply(" Usage: `portfolio privacy <id> <public|federation|private>`")
+        await message.reply(" Usage: `portfolio privacy <id> <public|private>`")
         return
 
     args = parts[2].split(maxsplit=1)
     if len(args) < 2:
-        await message.reply(" Usage: `portfolio privacy <id> <public|federation|private>`")
+        await message.reply(" Usage: `portfolio privacy <id> <public|private>`")
         return
 
     entry_id = args[0]
     privacy = args[1].lower()
 
-    if privacy not in ["public", "federation", "private"]:
-        await message.reply(" Privacy must be: `public`, `federation`, or `private`")
+    if privacy == "federation":
+        privacy = "private"
+    if privacy not in ["public", "private"]:
+        await message.reply(" Privacy must be: `public` or `private`")
         return
 
     user_id = message.author.id
@@ -387,7 +389,7 @@ async def _handle_view(message: discord.Message, parts: list[str], bot: discord.
 
     # Show first 10 entries
     for entry in entries[:10]:
-        privacy_emoji = {"public": "", "federation": "", "private": ""}
+        privacy_emoji = {"public": "", "private": ""}
         privacy_str = privacy_emoji.get(entry.privacy, "")
 
         value = f"**Category:** {entry.category}"

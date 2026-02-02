@@ -263,7 +263,8 @@ class PortfolioStore:
         """Get default privacy setting."""
         async with self._lock:
             data = await self._read_portfolio()
-            return data["default_privacy"]
+            default_privacy = data["default_privacy"]
+            return "private" if default_privacy == "federation" else default_privacy
 
     async def set_default_privacy(self, privacy: str) -> None:
         """Set default privacy setting."""

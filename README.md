@@ -1,12 +1,11 @@
 # Discord Bot
 
-Modular Discord bot focused on moderation, commissions, portfolios, federation, trust, automation, and utilities.
+Modular Discord bot focused on moderation, commissions, portfolios, trust, automation, and utilities.
 
 ## Feature Overview
 
 - Moderation: warnings, mutes, bans, kicks, and mod notes, with optional cross-server sync.
 - Server Link and Sync: parent/child links, upstream approvals, and sync protection.
-- Federation: create/join/leave federations, invites, member tiers, blocklist, voting, settings, audit, announcements, and stats.
 - Trust and Vouching: trust scores, tiers, vouching, history, and permission checks.
 - Commissions: create and manage commissions with stages, waitlist, deadlines, tags, revisions, blacklist, invoices, contracts, payment confirmation, search, and summary.
 - Portfolio: add/remove entries, tags, categories, featured entries, privacy controls, reorder, before/after, batch add, and stats.

@@ -5,7 +5,7 @@ Trust scoring is based on:
 - children_count (15%): Number of servers where user is trusted
 - upflow_status (20%): Upstream approval success rate
 - vouches (25%): Verified vouches from other users
-- link_age (15%): How long user has been in federation
+- link_age (15%): How long user has been in the server
 - approval_rate (25%): Mod action approval rate
 """
 from __future__ import annotations
@@ -191,7 +191,7 @@ class TrustService:
 
     async def _calculate_link_age(self, user_id: int, guild_id: int) -> float:
         """
-        Calculate score based on how long user has been in the federation.
+        Calculate score based on how long user has been in the server.
         Returns 0-100.
         """
         guild = self.bot.get_guild(guild_id)

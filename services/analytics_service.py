@@ -236,23 +236,6 @@ class AnalyticsService:
 
         return combined_stats
 
-    def get_federation_stats(self, federation_id: str) -> Dict[str, Any]:
-        """
-        Get federation statistics.
-
-        Args:
-            federation_id: Federation ID
-
-        Returns:
-            Dictionary of federation statistics
-        """
-        # This would integrate with federation_service to get stats
-        # For now, return placeholder structure
-        from services.federation_service import FederationService
-
-        fed_service = FederationService()
-        return fed_service.get_federation_stats(federation_id)
-
     def get_bot_stats(self) -> Dict[str, Any]:
         """
         Get global bot statistics.

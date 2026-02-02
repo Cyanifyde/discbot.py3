@@ -39,6 +39,7 @@ def setup_trust() -> None:
             ("vouch @user <proof_url>", "Vouch for another user with transaction proof"),
             ("vouch list [@user]", "View vouches received by a user"),
             ("vouch given [@user]", "View vouches given by a user"),
+            ("vouch verify <vouch_id>", "Verify a vouch (mod only)"),
             ("vouch remove <vouch_id>", "Request removal of a vouch (mod only)"),
             ("trust help", "Show this help message"),
         ],
@@ -86,6 +87,9 @@ async def handle_trust_command(message: discord.Message, bot: discord.Client) ->
             return True
         elif subcommand == "given":
             await _handle_vouch_given(message, parts)
+            return True
+        elif subcommand == "verify":
+            await _handle_vouch_verify(message, parts, bot)
             return True
         elif subcommand == "remove":
             await _handle_vouch_remove(message, parts)
@@ -183,7 +187,7 @@ async def _handle_trust_history(
 
     # Check permissions - only mods or self can view history
     if target_user.id != message.author.id:
-        if not await can_use_command(message.author, message.guild, MODULE_NAME):
+        if not isinstance(message.author, discord.Member) or not await can_use_command(message.author, "trust history"):
             await message.channel.send(" You don't have permission to view other users' trust history.")
             return
 
@@ -357,7 +361,7 @@ async def _handle_vouch_list(message: discord.Message, parts: list[str]) -> None
             from_name = from_user.display_name if from_user else f"User {vouch.from_user_id}"
 
             mutual_text = " (Mutual)" if vouch.mutual else ""
-            verified_text = " " if vouch.verified_by_mod else ""
+            verified_text = " (verified)" if vouch.verified_by_mod else ""
 
             embed.add_field(
                 name=f"{from_name}{mutual_text}{verified_text}",
@@ -405,7 +409,7 @@ async def _handle_vouch_given(message: discord.Message, parts: list[str]) -> Non
             to_name = to_user.display_name if to_user else f"User {vouch.to_user_id}"
 
             mutual_text = " (Mutual)" if vouch.mutual else ""
-            verified_text = " " if vouch.verified_by_mod else ""
+            verified_text = " (verified)" if vouch.verified_by_mod else ""
 
             embed.add_field(
                 name=f"{to_name}{mutual_text}{verified_text}",
@@ -422,10 +426,64 @@ async def _handle_vouch_given(message: discord.Message, parts: list[str]) -> Non
         await message.channel.send(" Error retrieving vouches.")
 
 
+async def _handle_vouch_verify(
+    message: discord.Message,
+    parts: list[str],
+    bot: discord.Client,
+) -> None:
+    """Handle 'vouch verify <vouch_id>' command (mod only)."""
+    if not isinstance(message.author, discord.Member) or not await can_use_command(message.author, "vouch verify"):
+        await message.channel.send(" You don't have permission to verify vouches.")
+        return
+
+    if len(parts) < 3:
+        await message.channel.send(" Usage: `vouch verify <vouch_id>`")
+        return
+
+    vouch_id = parts[2]
+
+    try:
+        store = TrustStore(message.guild.id)
+        await store.initialize()
+
+        vouch = await store.get_vouch(vouch_id)
+        if not vouch:
+            await message.channel.send(f" Vouch `{vouch_id}` not found.")
+            return
+
+        if vouch.verified_by_mod is not None:
+            await message.channel.send(f" Vouch `{vouch_id}` is already verified.")
+            return
+
+        await store.update_vouch(
+            vouch_id,
+            {"verified_by_mod": message.author.id, "verified_at": dt_to_iso(utcnow())},
+        )
+
+        service = get_trust_service(bot)
+        await service.calculate_score(vouch.to_user_id, message.guild.id, store=store)
+
+        to_user = message.guild.get_member(vouch.to_user_id)
+        to_mention = to_user.mention if to_user else f"`{vouch.to_user_id}`"
+
+        embed = discord.Embed(
+            title=" Vouch Verified",
+            description=f"Vouch `{vouch_id}` verified for {to_mention}",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="Verified By", value=message.author.mention, inline=False)
+        await message.channel.send(embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error verifying vouch: {e}", exc_info=True)
+        await message.channel.send(" Error verifying vouch.")
+
+
 async def _handle_vouch_remove(message: discord.Message, parts: list[str]) -> None:
     """Handle 'vouch remove <vouch_id>' command (mod only)."""
     # Check permissions
-    if not await can_use_command(message.author, message.guild, MODULE_NAME):
+    if not isinstance(message.author, discord.Member) or not await can_use_command(message.author, "vouch remove"):
         await message.channel.send(" You don't have permission to remove vouches.")
         return
 

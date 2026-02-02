@@ -26,6 +26,18 @@ AVAILABLE_MODULES = {
     "moderation": "Warnings, mutes, bans, kicks, and mod notes",
     "serverstats": "Display server statistics and information",
     "serverlink": "Cross-server linking for syncing moderation actions",
+    "trust": "Trust scoring, vouches, and reputation utilities",
+    "inviteprotection": "Detect and gate Discord invite links with allowlist/approval workflow",
+    "artsearch": "Search images posted in approved channels",
+    "commissionreviews": "Commission reviews and dispute workflow",
+}
+
+# Default enable/disable state for modules when first added to a guild.
+# Most modules default enabled; potentially disruptive modules default disabled.
+DEFAULT_MODULE_ENABLED = {
+    "inviteprotection": False,
+    "artsearch": False,
+    "commissionreviews": False,
 }
 
 # Available commands that can have role restrictions
@@ -41,6 +53,16 @@ AVAILABLE_COMMANDS = {
     ],
     "serverstats": ["serverstats"],
     "serverlink": ["linkserver", "addlink", "links", "unlink", "linksettings", "linkprotection"],
+    "trust": ["trust history", "vouch verify", "vouch remove"],
+    "inviteprotection": [
+        "invite allowlist",
+        "invite approve",
+        "invite deny",
+        "invite pending",
+        "invite status",
+    ],
+    "artsearch": ["art search", "art channels", "art help"],
+    "commissionreviews": ["review", "review list", "review dispute", "review resolve", "review help"],
 }
 
 
@@ -55,7 +77,7 @@ async def get_guild_permissions(guild_id: int) -> Dict[str, Any]:
         # Default: all modules enabled, no role restrictions (admin-only)
         data = {
             "modules": {
-                module: {"enabled": True, "allowed_roles": []}
+                module: {"enabled": DEFAULT_MODULE_ENABLED.get(module, True), "allowed_roles": []}
                 for module in AVAILABLE_MODULES
             },
             "commands": {}
@@ -70,7 +92,10 @@ async def get_guild_permissions(guild_id: int) -> Dict[str, Any]:
     # Add any missing modules with defaults
     for module in AVAILABLE_MODULES:
         if module not in data["modules"]:
-            data["modules"][module] = {"enabled": True, "allowed_roles": []}
+            data["modules"][module] = {
+                "enabled": DEFAULT_MODULE_ENABLED.get(module, True),
+                "allowed_roles": [],
+            }
     
     return data
 

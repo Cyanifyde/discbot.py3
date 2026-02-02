@@ -4,18 +4,22 @@ Analytics module for viewing statistics.
 import discord
 from datetime import datetime
 from services.analytics_service import AnalyticsService
-from core.help_system import register_command, CommandCategory
+from core.help_system import help_system
 
 
 def register_help():
     """Register analytics commands with the help system."""
-    register_command("stats", CommandCategory.UTILITY, "View statistics", [
-        ("stats commissions [period]", "View commission statistics (period: month/year/all)"),
-        ("stats profile", "View your profile statistics"),
-        ("stats federation", "View federation statistics (admin only)"),
-        ("stats bot", "View bot statistics"),
-        ("stats trends <metric>", "View trends for a metric (e.g., commissions)")
-    ])
+    help_system.register_module(
+        name="Analytics",
+        description="View statistics and trends.",
+        help_command="stats help",
+        commands=[
+            ("stats commissions [period]", "View commission statistics (period: month/year/all)"),
+            ("stats profile", "View your profile statistics"),
+            ("stats bot", "View bot statistics"),
+            ("stats trends <metric>", "View trends for a metric (e.g., commissions)"),
+        ],
+    )
 
 
 async def handle_stats_command(message: discord.Message, args: list) -> bool:
@@ -45,7 +49,6 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
             value=(
                 "`stats commissions [period]` - Commission stats (month/year/all)\n"
                 "`stats profile` - Your profile statistics\n"
-                "`stats federation` - Federation statistics (admin only)\n"
                 "`stats bot` - Bot statistics\n"
                 "`stats trends <metric>` - Trends for a metric"
             ),
@@ -132,53 +135,6 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
             embed.add_field(name="Top Portfolio Pieces", value=portfolio_text or "No data", inline=False)
 
         await message.channel.send(embed=embed)
-        return True
-
-    elif subcommand == "federation":
-        # Federation statistics (admin only)
-        # Check if user has admin permissions
-        if not message.guild or not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ You need administrator permissions to view federation statistics.")
-            return True
-
-        if len(args) < 3:
-            await message.channel.send("❌ Usage: `stats federation <federation_id>`")
-            return True
-
-        federation_id = args[2]
-
-        try:
-            stats = analytics.get_federation_stats(federation_id)
-
-            embed = discord.Embed(
-                title=f"📊 Federation Statistics",
-                description=f"Federation: {stats.get('name', 'Unknown')}",
-                color=0x3498db,
-                timestamp=datetime.now()
-            )
-
-            embed.add_field(name="Member Servers", value=str(stats.get("member_count", 0)), inline=True)
-            embed.add_field(name="Total Users", value=str(stats.get("total_users", 0)), inline=True)
-            embed.add_field(name="Avg Trust Score", value=f"{stats.get('avg_trust_score', 0):.1f}", inline=True)
-
-            if stats.get("synced_actions"):
-                embed.add_field(
-                    name="Synced Actions (30d)",
-                    value=str(stats["synced_actions"]),
-                    inline=True
-                )
-
-            if stats.get("blocklist_hits"):
-                embed.add_field(
-                    name="Blocklist Hits (30d)",
-                    value=str(stats["blocklist_hits"]),
-                    inline=True
-                )
-
-            await message.channel.send(embed=embed)
-        except Exception as e:
-            await message.channel.send(f"❌ Error getting federation stats: {e}")
-
         return True
 
     elif subcommand == "bot":

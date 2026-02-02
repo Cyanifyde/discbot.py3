@@ -169,9 +169,11 @@ class PortfolioService:
         """
         Set privacy level for an entry.
 
-        Privacy levels: public, federation, private
+        Privacy levels: public, private
         """
-        if privacy not in ["public", "federation", "private"]:
+        if privacy == "federation":
+            privacy = "private"
+        if privacy not in ["public", "private"]:
             return False
 
         store = self._get_store(user_id)
@@ -179,7 +181,9 @@ class PortfolioService:
 
     async def set_default_privacy(self, user_id: int, privacy: str) -> None:
         """Set default privacy for new entries."""
-        if privacy not in ["public", "federation", "private"]:
+        if privacy == "federation":
+            privacy = "private"
+        if privacy not in ["public", "private"]:
             privacy = "public"
 
         store = self._get_store(user_id)
@@ -315,18 +319,6 @@ class PortfolioService:
             "categories": category_counts,
             "featured_count": sum(1 for e in entries if e.featured),
         }
-
-    # ─── Federation Sync ──────────────────────────────────────────────────────
-
-    async def sync_to_federation(self, user_id: int) -> List[PortfolioEntry]:
-        """
-        Get entries suitable for federation sync.
-
-        Returns entries with privacy set to "public" or "federation".
-        """
-        store = self._get_store(user_id)
-        entries = await store.get_all_entries()
-        return [e for e in entries if e.privacy in ["public", "federation"]]
 
     # ─── Rate Card ────────────────────────────────────────────────────────────
 

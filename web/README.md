@@ -17,21 +17,9 @@ A web-based administration interface for the Discord bot with an "old internet a
 - **Logs**: View moderation logs and action history with filtering
 - **Bot Persona**: Customize bot name, avatar, and style per server
 
-### Federation Admin Panel (`/federation`)
-- **Dashboard**: Federation overview with health metrics and member count
-- **Member Servers**: Manage member servers, view trust scores and sync status
-- **Trust Network**: Visualize trust relationships across the federation
-- **Sync Settings**: Configure what data syncs and from which tier levels
-- **Cross-Post Channels**: Set up art-share channel configurations
-- **Blocklist**: Manage the federation-wide blocklist
-- **Audit Log**: View sync events and membership changes
-- **Announcements**: Push announcements to all child servers
-- **Applications**: Review and process join requests
-
 ### Bot Owner Panel (`/owner`)
 - **Dashboard**: Global statistics, all servers, and uptime metrics
 - **Servers**: List all servers, per-server controls, and leave server functionality
-- **Federation Management**: Overview of all federations
 - **AI Checker Module**:
   - Pricing configuration (cost per use, bulk discounts, free tier)
   - Server credits management (view/adjust, transaction history)
@@ -96,7 +84,6 @@ The web UI uses Discord OAuth2 for authentication. Users must:
 1. Log in with their Discord account
 2. Have appropriate permissions:
    - **Server Admin Panel**: Administrator permission in the server
-   - **Federation Panel**: Administrator permission in the federation's parent server
    - **Bot Owner Panel**: Must be the bot owner (set via `BOT_OWNER_ID`)
 
 ## Design Philosophy
@@ -131,21 +118,9 @@ The web UI follows an "old internet aesthetic" with:
 - `GET /admin/{guild_id}/logs` - Logs viewer
 - `GET/POST /admin/{guild_id}/persona` - Bot persona
 
-### Federation Routes (requires federation admin)
-- `GET /federation` - Federation selection
-- `GET /federation/{fed_id}/` - Federation dashboard
-- `GET/POST /federation/{fed_id}/members` - Member management
-- `GET /federation/{fed_id}/trust` - Trust network
-- `GET/POST /federation/{fed_id}/sync` - Sync settings
-- `GET/POST /federation/{fed_id}/blocklist` - Blocklist
-- `GET /federation/{fed_id}/audit` - Audit log
-- `GET/POST /federation/{fed_id}/announcements` - Announcements
-- `GET/POST /federation/{fed_id}/applications` - Applications
-
 ### Owner Routes (requires bot owner)
 - `GET /owner` - Owner dashboard
 - `GET/POST /owner/servers` - Server management
-- `GET /owner/federations` - Federation overview
 - `GET/POST /owner/ai_checker` - AI Checker module
 - `GET/POST /owner/settings` - Global settings
 - `GET/POST /owner/maintenance` - Maintenance tools

@@ -9,7 +9,7 @@ from pathlib import Path
 import logging
 
 from web.auth import setup_auth, require_auth
-from web.routes import admin, federation, owner
+from web.routes import admin, owner
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,6 @@ class WebServer:
         # Admin routes
         admin.setup_routes(self.app, self.bot)
 
-        # Federation routes
-        federation.setup_routes(self.app, self.bot)
-
         # Owner routes
         owner.setup_routes(self.app, self.bot)
 
@@ -83,12 +80,6 @@ class WebServer:
                         </div>
 
                         <div class="panel">
-                            <h2>🌐 Federation</h2>
-                            <p>Manage cross-server federations and trust networks</p>
-                            <a href="/federation" class="button">Enter Federation Panel</a>
-                        </div>
-
-                        <div class="panel">
                             <h2>👑 Bot Owner</h2>
                             <p>Global bot management and configuration</p>
                             <a href="/owner" class="button">Enter Owner Panel</a>
@@ -101,7 +92,6 @@ class WebServer:
                             <li>Server administration and module management</li>
                             <li>Moderation tools and auto-mod configuration</li>
                             <li>Commission system management</li>
-                            <li>Federation and trust network control</li>
                             <li>Analytics and statistics</li>
                             <li>Custom commands and automation</li>
                         </ul>

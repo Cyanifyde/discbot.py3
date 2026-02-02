@@ -57,6 +57,10 @@ from modules.commissions import (
     handle_commission_command,
     setup_commissions,
 )
+from modules.commission_reviews import (
+    handle_commission_reviews_command,
+    setup_commission_reviews,
+)
 from modules.portfolio import (
     handle_portfolio_command,
     setup_portfolio,
@@ -64,10 +68,6 @@ from modules.portfolio import (
 from modules.reports import (
     handle_report_command,
     setup_reports,
-)
-from modules.federation import (
-    handle_federation_command,
-    setup_federation,
 )
 from modules.utility import (
     handle_utility_command,
@@ -82,6 +82,10 @@ from modules.communication import (
 from modules.art_tools import (
     handle_art_tools_command,
     setup_art_tools,
+)
+from modules.art_search import (
+    handle_art_search_command,
+    setup_art_search,
 )
 from modules.automation import (
     handle_automation_command,
@@ -98,6 +102,10 @@ from modules.custom_content import (
 from modules.trust import (
     handle_trust_command,
     setup_trust,
+)
+from modules.invite_protection import (
+    handle_invite_protection,
+    setup_invite_protection,
 )
 from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
@@ -151,16 +159,18 @@ class DiscBot(discord.Client):
 
         # Register Phase 2-4 modules
         setup_commissions()
+        setup_commission_reviews()
         setup_portfolio()
         setup_reports()
-        setup_federation()
         setup_utility()
         setup_communication()
         setup_art_tools()
+        setup_art_search()
         setup_automation()
         setup_roles()
         setup_custom_content()
         setup_trust()
+        setup_invite_protection()
 
         await self._register_commands()
         await self.tree.sync()
@@ -311,6 +321,10 @@ class DiscBot(discord.Client):
             await handle_dm_send(self, message)
             return
 
+        # Invite protection runs before other handlers (can delete messages)
+        if await handle_invite_protection(message, self):
+            return
+
         # Check for help command first (before other handlers)
         if await self._handle_help_command(message):
             return
@@ -344,17 +358,19 @@ class DiscBot(discord.Client):
         # Handle Phase 2-4 module commands
         if await handle_commission_command(message, self):
             return
+        if await handle_commission_reviews_command(message, self):
+            return
         if await handle_portfolio_command(message, self):
             return
         if await handle_report_command(message, self):
-            return
-        if await handle_federation_command(message, self):
             return
         if await handle_utility_command(message, self):
             return
         if await handle_communication_command(message, self):
             return
         if await handle_art_tools_command(message, self):
+            return
+        if await handle_art_search_command(message, self):
             return
         if await handle_automation_command(message, self):
             return

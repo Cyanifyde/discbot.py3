@@ -243,7 +243,7 @@ class PortfolioEntry:
     category: str = "general"
     tags: list[str] = field(default_factory=list)
     featured: bool = False
-    privacy: str = "public"  # public/federation/private
+    privacy: str = "public"  # public/private
     commission_example: bool = False
     commission_type: Optional[str] = None
     before_after: Optional[dict[str, str]] = None  # {"before": url, "after": url}
@@ -269,6 +269,9 @@ class PortfolioEntry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PortfolioEntry:
+        privacy = data.get("privacy", "public")
+        if privacy == "federation":
+            privacy = "private"
         return cls(
             id=data.get("id", ""),
             user_id=data.get("user_id", 0),
@@ -277,7 +280,7 @@ class PortfolioEntry:
             category=data.get("category", "general"),
             tags=data.get("tags", []),
             featured=data.get("featured", False),
-            privacy=data.get("privacy", "public"),
+            privacy=privacy,
             commission_example=data.get("commission_example", False),
             commission_type=data.get("commission_type"),
             before_after=data.get("before_after"),
@@ -339,53 +342,6 @@ class UserReport:
             resolved_at=data.get("resolved_at"),
             outcome=data.get("outcome"),
             notes=data.get("notes", []),
-        )
-
-
-@dataclass
-class FederationMember:
-    """Member server in a federation."""
-    guild_id: int
-    guild_name: str
-    federation_id: str
-    tier: str  # observer/member/trusted/core
-    joined_at: str
-    reputation: float = 50.0
-    trust_score: float = 50.0
-    sync_receive: bool = True
-    sync_send: bool = False
-    vote_enabled: bool = False
-    admin_enabled: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "guild_id": self.guild_id,
-            "guild_name": self.guild_name,
-            "federation_id": self.federation_id,
-            "tier": self.tier,
-            "joined_at": self.joined_at,
-            "reputation": self.reputation,
-            "trust_score": self.trust_score,
-            "sync_receive": self.sync_receive,
-            "sync_send": self.sync_send,
-            "vote_enabled": self.vote_enabled,
-            "admin_enabled": self.admin_enabled,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> FederationMember:
-        return cls(
-            guild_id=data.get("guild_id", 0),
-            guild_name=data.get("guild_name", ""),
-            federation_id=data.get("federation_id", ""),
-            tier=data.get("tier", "observer"),
-            joined_at=data.get("joined_at", ""),
-            reputation=data.get("reputation", 50.0),
-            trust_score=data.get("trust_score", 50.0),
-            sync_receive=data.get("sync_receive", True),
-            sync_send=data.get("sync_send", False),
-            vote_enabled=data.get("vote_enabled", False),
-            admin_enabled=data.get("admin_enabled", False),
         )
 
 
