@@ -410,6 +410,11 @@ async def _load_or_default(user_id: int) -> Dict[str, Any]:
     return _normalize_record(record)
 
 
+async def get_profile(user_id: int, guild_id: Optional[int] = None) -> Dict[str, Any]:
+    """Public helper to fetch a normalized profile record."""
+    return await _load_or_default(user_id)
+
+
 def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
     bio = record.get("bio") if isinstance(record.get("bio"), str) else ""
     pronouns = record.get("pronouns") if isinstance(record.get("pronouns"), str) else ""

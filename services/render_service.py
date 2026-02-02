@@ -57,6 +57,7 @@ class RenderService:
     async def render_invoice(
         self,
         commission: Dict[str, Any],
+        profile: Optional[Dict[str, Any]] = None,
         template: str = "default",
     ) -> bytes:
         """
@@ -77,7 +78,7 @@ class RenderService:
             # Fallback to default
             template_obj = self.env.get_template("invoice.html")
 
-        html = template_obj.render(commission=commission)
+        html = template_obj.render(commission=commission, profile=profile or {})
         return await self._html_to_jpg(html, width=800, height=1000)
 
     async def render_rate_card(
