@@ -94,6 +94,11 @@ async def handle_art_tools_command(message: discord.Message, bot: discord.Client
     command = parts[0].lower()
 
     # Route to handlers
+    if command == "art":
+        if len(parts) >= 2 and parts[1].lower() == "help":
+            await _handle_art_help(message)
+            return True
+        return False
     if command == "palette":
         if len(parts) >= 2 and parts[1].lower() == "help":
             await _handle_palette_help(message)
@@ -111,6 +116,15 @@ async def handle_art_tools_command(message: discord.Message, bot: discord.Client
         return True
 
     return False
+
+
+async def _handle_art_help(message: discord.Message) -> None:
+    """Handle 'art help' command."""
+    embed = help_system.get_module_help("Art Tools")
+    if embed:
+        await message.reply(embed=embed)
+    else:
+        await message.reply(" Help information not available.")
 
 
 # ─── Color Palette Generator ──────────────────────────────────────────────────

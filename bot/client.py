@@ -102,7 +102,6 @@ from modules.trust import (
 from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
-from services.scanner import restore_state as restore_scanner_state
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
@@ -184,8 +183,7 @@ class DiscBot(discord.Client):
             # Restore verification buttons from saved data
             await restore_verification_views(self)
 
-            # Restore service states (scanner, inactivity)
-            await restore_scanner_state(self)
+            # Restore service states (inactivity)
             await restore_inactivity_state(self)
 
             self._status_task = asyncio.create_task(self._status_loop())
@@ -352,9 +350,16 @@ class DiscBot(discord.Client):
         asyncio.create_task(_safe_record_message())
 
         # Build and enqueue scan jobs if applicable (one per attachment)
-        jobs = state.job_factory.build_jobs_for_message(message)
-        for job in jobs:
-            await state.enqueue_job(job.to_dict())
+        try:
+            from services.scanner import is_enabled as scanner_is_enabled
+            scanner_on = await scanner_is_enabled(message.guild.id)
+        except Exception:
+            scanner_on = False
+
+        if scanner_on:
+            jobs = state.job_factory.build_jobs_for_message(message)
+            for job in jobs:
+                await state.enqueue_job(job.to_dict())
 
     # ─── Interaction Events ───────────────────────────────────────────────────
 
