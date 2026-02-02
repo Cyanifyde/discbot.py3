@@ -190,11 +190,12 @@ class RenderService:
         if not HAS_WEASYPRINT:
             raise RuntimeError("WeasyPrint not available")
 
-        doc = HTML(string=html)
-
-        # WeasyPrint write_png returns bytes when target is None
         try:
-            png_bytes = doc.write_png()
+            # WeasyPrint requires: HTML -> render() -> Document -> write_png()
+            html_doc = HTML(string=html)
+            document = html_doc.render()
+            png_bytes = document.write_png()
+
             if png_bytes:
                 img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
                 out = io.BytesIO()
