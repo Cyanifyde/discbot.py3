@@ -33,6 +33,9 @@ def setup_reports() -> None:
             ("report resolve <id> [notes]", "Resolve a report (mod only)"),
             ("report dismiss <id> [reason]", "Dismiss a report (mod only)"),
             ("report stats", "View report statistics (mod only)"),
+            ("report categories list", "List report categories (mod only)"),
+            ("report categories add <name>", "Add report category (mod only)"),
+            ("report categories remove <name>", "Remove report category (mod only)"),
             ("report help", "Show this help message"),
         ],
     )
@@ -63,6 +66,10 @@ async def handle_report_command(message: discord.Message, bot: discord.Client) -
     if command != "report":
         return False
 
+    if subcommand == "categories":
+        await _handle_categories(message, parts)
+        return True
+
     # Handle user report submission (doesn't require mod permissions)
     if subcommand in ("submit", "@") or (message.mentions and len(parts) >= 3):
         await _handle_submit(message, parts)
@@ -92,6 +99,58 @@ async def handle_report_command(message: discord.Message, bot: discord.Client) -
         return True
 
     return False
+
+
+async def _handle_categories(message: discord.Message, parts: list[str]) -> None:
+    """Manage report categories (mod only)."""
+    if not message.author.guild_permissions.manage_messages:
+        await message.reply(" You need Manage Messages permission to manage report categories.")
+        return
+
+    if len(parts) < 3:
+        await message.reply(" Usage: `report categories <list|add|remove> ...`")
+        return
+
+    args = parts[2].split(maxsplit=1)
+    action = args[0].lower() if args else ""
+    guild_id = message.guild.id
+
+    if action == "list":
+        categories = await report_service.get_categories(guild_id)
+        if not categories:
+            await message.reply(" No categories configured.")
+            return
+        await message.reply(
+            "**Report Categories:**\n" + "\n".join(f"- `{c}`" for c in categories),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return
+
+    if action in {"add", "remove"}:
+        if len(args) < 2:
+            await message.reply(f" Usage: `report categories {action} <name>`")
+            return
+        name = args[1].strip().lower()
+        if not name:
+            await message.reply(f" Usage: `report categories {action} <name>`")
+            return
+
+        if action == "add":
+            ok = await report_service.add_category(guild_id, name)
+            if ok:
+                await message.reply(f" Category added: `{name}`")
+            else:
+                await message.reply(" Category already exists (or invalid).")
+            return
+
+        ok = await report_service.remove_category(guild_id, name)
+        if ok:
+            await message.reply(f" Category removed: `{name}`")
+        else:
+            await message.reply(" Category not found.")
+        return
+
+    await message.reply(" Usage: `report categories <list|add|remove> ...`")
 
 
 # ─── Command Handlers ─────────────────────────────────────────────────────────
