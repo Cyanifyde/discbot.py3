@@ -381,59 +381,125 @@ class DiscBot(discord.Client):
         # Check for help command first (before other handlers)
         if await self._handle_help_command(message):
             return
+        # Fast dispatch: only call handlers that match the first token.
+        content = (message.content or "").strip()
+        if content:
+            parts = content.split()
+            cmd0 = parts[0].lower()
+            cmd1 = parts[1].lower() if len(parts) > 1 else ""
 
-        # Handle auto-responder commands
-        if await handle_list_responses_command(message):
-            return
-        if await handle_add_response_command(message):
-            return
-        if await handle_remove_response_command(message):
-            return
+            # Auto-responder admin commands
+            if cmd0 == "listresponses" and await handle_list_responses_command(message):
+                return
+            if cmd0 == "addresponse" and await handle_add_response_command(message):
+                return
+            if cmd0 == "removeresponse" and await handle_remove_response_command(message):
+                return
 
-        # Handle admin text commands (before guild state check)
-        if await handle_modules_command(message):
-            return
-        if await handle_verification_command(message, self):
-            return
-        if await handle_remove_verification_command(message, self):
-            return
-        if await handle_scanner_command(message, self):
-            return
-        if await handle_inactivity_command(message, self):
-            return
-        if await handle_moderation_command(message, self):
-            return
-        if await handle_serverstats_command(message, self):
-            return
-        if await handle_server_link_command(message, self):
-            return
+            # Admin / core commands
+            if cmd0 == "modules" and await handle_modules_command(message):
+                return
 
-        if await handle_commission_command(message, self):
-            return
-        if await handle_commission_reviews_command(message, self):
-            return
-        if await handle_portfolio_command(message, self):
-            return
-        if await handle_report_command(message, self):
-            return
-        if await handle_utility_command(message, self):
-            return
-        if await handle_communication_command(message, self):
-            return
-        if await handle_art_tools_command(message, self):
-            return
-        if await handle_art_search_command(message, self):
-            return
-        if await handle_automation_command(message, self):
-            return
-        if await handle_roles_command(message, self):
-            return
-        if await handle_custom_content_command(message, self):
-            return
-        if await handle_analytics_command(message, self):
-            return
-        if await handle_trust_command(message, self):
-            return
+            if cmd0 in {"verification", "addverification"} and await handle_verification_command(message, self):
+                return
+            if cmd0 == "removeverification" and await handle_remove_verification_command(message, self):
+                return
+
+            if cmd0 == "scanner" and await handle_scanner_command(message, self):
+                return
+            if cmd0 == "inactivity" and await handle_inactivity_command(message, self):
+                return
+
+            # Moderation vs Utility note/notes name collision:
+            # - Utility personal notes: `note add/view/edit/remove`, `notes`
+            # - Moderation notes: `note @user ...`, `notes @user`
+            if cmd0 == "note" and cmd1 in {"add", "view", "edit", "remove", "help"}:
+                if await handle_utility_command(message, self):
+                    return
+            if cmd0 == "notes" and not message.mentions:
+                if await handle_utility_command(message, self):
+                    return
+
+            mod_roots = {
+                "moderation",
+                "warn",
+                "warnings",
+                "clearwarning",
+                "clearwarnings",
+                "mute",
+                "unmute",
+                "ban",
+                "unban",
+                "kick",
+                "note",
+                "notes",
+                "clearnote",
+            }
+            if cmd0 in mod_roots and await handle_moderation_command(message, self):
+                return
+
+            if cmd0 in {"serverstats", "botstatus"} and await handle_serverstats_command(message, self):
+                return
+
+            server_link_roots = {
+                "serverlink",
+                "linkserver",
+                "addlink",
+                "links",
+                "unlink",
+                "linksettings",
+                "linkprotection",
+            }
+            if cmd0 in server_link_roots and await handle_server_link_command(message, self):
+                return
+
+            # Phase 2-4 module commands
+            if cmd0 == "commission" and await handle_commission_command(message, self):
+                return
+            if cmd0 == "review" and await handle_commission_reviews_command(message, self):
+                return
+            if cmd0 in {"portfolio", "ratecard"} and await handle_portfolio_command(message, self):
+                return
+            if cmd0 == "report" and await handle_report_command(message, self):
+                return
+
+            utility_roots = {"utility", "bookmark", "afk", "note", "notes", "alias", "export"}
+            if cmd0 in utility_roots and await handle_utility_command(message, self):
+                return
+
+            communication_roots = {"communication", "feedback", "notify", "ack"}
+            if cmd0 in communication_roots and await handle_communication_command(message, self):
+                return
+
+            # Art: `art help` (tools), `art search/channels` (search), plus `palette/prompt/artdice`.
+            if cmd0 in {"art", "palette", "prompt", "artdice"}:
+                if await handle_art_tools_command(message, self):
+                    return
+                if await handle_art_search_command(message, self):
+                    return
+            if cmd0 == "artsearch" and await handle_art_search_command(message, self):
+                return
+
+            if cmd0 in {"automation", "trigger", "schedule", "vacation"} and await handle_automation_command(message, self):
+                return
+
+            roles_roots = {"roles", "temprole", "requestrole", "approverole", "rolebundle", "reactionrole"}
+            if cmd0 in roles_roots and await handle_roles_command(message, self):
+                return
+
+            if cmd0 in {"custom", "customcmd", "form"} and await handle_custom_content_command(message, self):
+                return
+
+            if cmd0 == "stats" and await handle_analytics_command(message, self):
+                return
+
+            trust_roots = {"trust", "vouch"}
+            if cmd0 in trust_roots and await handle_trust_command(message, self):
+                return
+
+            # Custom commands can be any single word; handler uses a short-lived cache to avoid disk IO.
+            if await handle_custom_content_command(message, self):
+                return
 
         state = self._get_guild_state(message.guild.id)
         if not state:

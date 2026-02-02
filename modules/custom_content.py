@@ -6,6 +6,7 @@ Provides guild-specific custom commands, form builder, and advanced auto-respons
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Optional
 
@@ -18,6 +19,35 @@ from core.custom_content_storage import CustomContentStore
 logger = logging.getLogger("discbot.custom_content")
 
 MODULE_NAME = "custom_content"
+
+_COMMAND_CACHE_TTL_SECONDS = 30.0
+_COMMAND_NAME_CACHE: dict[int, tuple[float, set[str]]] = {}
+
+
+def _touch_command_cache(guild_id: int, *, add: Optional[str] = None, remove: Optional[str] = None) -> None:
+    cached = _COMMAND_NAME_CACHE.get(guild_id)
+    if not cached:
+        return
+    ts, names = cached
+    if add:
+        names.add(add)
+    if remove:
+        names.discard(remove)
+    _COMMAND_NAME_CACHE[guild_id] = (ts, names)
+
+
+async def _get_cached_command_names(guild_id: int) -> set[str]:
+    now = time.monotonic()
+    cached = _COMMAND_NAME_CACHE.get(guild_id)
+    if cached and now - cached[0] < _COMMAND_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    store = CustomContentStore(guild_id)
+    await store.initialize()
+    cmds = await store.get_all_custom_commands()
+    names = set(cmds.keys())
+    _COMMAND_NAME_CACHE[guild_id] = (now, names)
+    return names
 
 
 def setup_custom_content() -> None:
@@ -81,6 +111,11 @@ async def handle_custom_content_command(message: discord.Message, bot: discord.C
         return True
 
     # Check if it's a custom command
+    # Avoid disk work for normal chat by first consulting a short-lived in-memory cache.
+    names = await _get_cached_command_names(message.guild.id)
+    if command not in names:
+        return False
+
     guild_id = message.guild.id
     store = CustomContentStore(guild_id)
     await store.initialize()
@@ -143,6 +178,7 @@ async def _handle_customcmd_add(message: discord.Message, parts: list[str]) -> N
     await store.initialize()
 
     command = await store.add_custom_command(cmd_name, response)
+    _touch_command_cache(guild_id, add=cmd_name)
 
     await message.reply(
         f" Custom command created!\n"
@@ -224,6 +260,7 @@ async def _handle_customcmd_remove(message: discord.Message, parts: list[str]) -
     success = await store.remove_custom_command(cmd_name)
 
     if success:
+        _touch_command_cache(guild_id, remove=cmd_name)
         await message.reply(f" Custom command `{cmd_name}` removed")
     else:
         await message.reply(f" No custom command found with name `{cmd_name}`")
