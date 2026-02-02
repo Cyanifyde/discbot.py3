@@ -2,7 +2,7 @@
 Render service - converts HTML templates to JPG images.
 
 Uses Jinja2 for templating and Pillow for image rendering.
-For more complex rendering, uses Pillow-based drawing for key outputs.
+For more complex rendering, uses WeasyPrint for PDF then converts to image.
 """
 from __future__ import annotations
 
@@ -29,6 +29,13 @@ try:
     HAS_WEASYPRINT = True
 except ImportError:
     HAS_WEASYPRINT = False
+
+# Try pdf2image for PDF to PNG conversion (requires poppler)
+try:
+    from pdf2image import convert_from_bytes
+    HAS_PDF2IMAGE = True
+except ImportError:
+    HAS_PDF2IMAGE = False
 
 from core.paths import BASE_DIR
 
@@ -191,21 +198,33 @@ class RenderService:
             raise RuntimeError("WeasyPrint not available")
 
         try:
-            # WeasyPrint requires: HTML -> render() -> Document -> write_png()
+            # WeasyPrint v53+ removed write_png(), must use PDF then convert
             html_doc = HTML(string=html)
-            document = html_doc.render()
-            png_bytes = document.write_png()
+            pdf_bytes = html_doc.write_pdf()
 
-            if png_bytes:
-                img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-                out = io.BytesIO()
-                img.save(out, format="JPEG", quality=95)
-                out.seek(0)
-                return out.getvalue()
+            if pdf_bytes and HAS_PDF2IMAGE:
+                # Convert PDF to image using pdf2image (requires poppler)
+                images = convert_from_bytes(pdf_bytes, dpi=150)
+                if images:
+                    img = images[0].convert("RGB")
+                    out = io.BytesIO()
+                    img.save(out, format="JPEG", quality=95)
+                    out.seek(0)
+                    return out.getvalue()
+            elif pdf_bytes and HAS_PILLOW:
+                # Fallback: try to open PDF directly with Pillow (unlikely to work)
+                try:
+                    img = Image.open(io.BytesIO(pdf_bytes)).convert("RGB")
+                    out = io.BytesIO()
+                    img.save(out, format="JPEG", quality=95)
+                    out.seek(0)
+                    return out.getvalue()
+                except Exception:
+                    pass
         except Exception as e:
-            logger.warning("WeasyPrint PNG rendering failed: %s", e)
+            logger.warning("WeasyPrint rendering failed: %s", e)
 
-        # Fallback to placeholder if PNG rendering fails
+        # Fallback to placeholder if rendering fails
         return self._render_placeholder(width, height)
 
 
