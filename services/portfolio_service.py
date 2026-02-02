@@ -328,6 +328,47 @@ class PortfolioService:
         entries = await store.get_all_entries()
         return [e for e in entries if e.privacy in ["public", "federation"]]
 
+    # ─── Rate Card ────────────────────────────────────────────────────────────
+
+    async def get_rates(self, user_id: int) -> Dict[str, Any]:
+        """Get all commission rates for a user."""
+        store = self._get_store(user_id)
+        await store.initialize()
+        return await store.get_rates()
+
+    async def set_rate(
+        self,
+        user_id: int,
+        name: str,
+        price: float,
+        description: str = "",
+    ) -> None:
+        """Set a commission rate."""
+        store = self._get_store(user_id)
+        await store.initialize()
+        await store.set_rate(name, price, description)
+
+    async def remove_rate(self, user_id: int, name: str) -> bool:
+        """Remove a commission rate."""
+        store = self._get_store(user_id)
+        return await store.remove_rate(name)
+
+    async def get_rate_card_settings(self, user_id: int) -> Dict[str, Any]:
+        """Get rate card display settings."""
+        store = self._get_store(user_id)
+        await store.initialize()
+        return await store.get_rate_card_settings()
+
+    async def update_rate_card_settings(
+        self,
+        user_id: int,
+        settings: Dict[str, Any],
+    ) -> None:
+        """Update rate card display settings."""
+        store = self._get_store(user_id)
+        await store.initialize()
+        await store.update_rate_card_settings(settings)
+
 
 # Global service instance
 portfolio_service = PortfolioService()

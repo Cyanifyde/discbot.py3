@@ -67,7 +67,10 @@ def setup_art_tools() -> None:
             ("prompt custom <subject> <action> <setting>", "Create custom prompt"),
             ("artdice <sides>", "Roll art-themed dice"),
             ("artdice challenge", "Roll for art challenge"),
-            ("ratecard [type]", "Generate rate card template"),
+            ("ratecard [type]", "Generate rate card template (standard/character/background)"),
+            ("ratecard standard", "Standard commission rate card template"),
+            ("ratecard character", "Character commission rate card template"),
+            ("ratecard background", "Background/scene rate card template"),
         ],
     )
 

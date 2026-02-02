@@ -50,14 +50,29 @@ class ModuleHelp:
         )
         
         if self.commands:
-            commands_text = "\n".join(
-                f"**`{cmd}`** - {desc}" for cmd, desc in self.commands
-            )
-            embed.add_field(
-                name="Commands",
-                value=commands_text,
-                inline=False
-            )
+            lines = [f"**`{cmd}`** - {desc}" for cmd, desc in self.commands]
+            chunks: list[str] = []
+            current: list[str] = []
+            current_len = 0
+            for line in lines:
+                line_len = len(line) + (1 if current else 0)
+                if current and current_len + line_len > 1024:
+                    chunks.append("\n".join(current))
+                    current = [line]
+                    current_len = len(line)
+                else:
+                    current.append(line)
+                    current_len += line_len
+            if current:
+                chunks.append("\n".join(current))
+
+            for index, chunk in enumerate(chunks, start=1):
+                field_name = "Commands" if index == 1 else f"Commands (cont. {index})"
+                embed.add_field(
+                    name=field_name,
+                    value=chunk,
+                    inline=False
+                )
         
         return embed
 

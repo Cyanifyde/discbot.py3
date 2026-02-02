@@ -39,6 +39,13 @@ class PortfolioStore:
             "categories": ["illustrations", "icons", "reference_sheets"],
             "custom_order": [],
             "default_privacy": "public",
+            "rates": {},
+            "rate_card_settings": {
+                "title": "Commission Rates",
+                "subtitle": "Quality digital artwork tailored to your vision",
+                "status": "open",
+                "currency": "$",
+            },
         }
         data = await read_json(self.portfolio_path, default=default)
         if not isinstance(data, dict):
@@ -277,3 +284,51 @@ class PortfolioStore:
         async with self._lock:
             data = await self._read_portfolio()
             return len(data["entries"])
+
+    # ─── Rates ────────────────────────────────────────────────────────────────
+
+    async def get_rates(self) -> Dict[str, Any]:
+        """Get all commission rates."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            return data.get("rates", {})
+
+    async def set_rate(self, name: str, price: float, description: str = "") -> None:
+        """Set a commission rate."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            data["rates"][name] = {
+                "price": price,
+                "description": description,
+            }
+            await self._write_portfolio(data)
+
+    async def remove_rate(self, name: str) -> bool:
+        """Remove a commission rate."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            if name in data["rates"]:
+                del data["rates"][name]
+                await self._write_portfolio(data)
+                return True
+            return False
+
+    async def get_rate_card_settings(self) -> Dict[str, Any]:
+        """Get rate card display settings."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            return data.get("rate_card_settings", {
+                "title": "Commission Rates",
+                "subtitle": "Quality digital artwork tailored to your vision",
+                "status": "open",
+                "currency": "$",
+            })
+
+    async def update_rate_card_settings(self, settings: Dict[str, Any]) -> None:
+        """Update rate card display settings."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            current = data.get("rate_card_settings", {})
+            current.update(settings)
+            data["rate_card_settings"] = current
+            await self._write_portfolio(data)

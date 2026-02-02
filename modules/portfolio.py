@@ -5,6 +5,7 @@ Provides commands for managing artwork portfolios with categories, privacy, and 
 """
 from __future__ import annotations
 
+import io
 import logging
 import re
 from typing import Optional
@@ -50,6 +51,15 @@ def setup_portfolio() -> None:
             ("portfolio beforeafter <before_url> <after_url> [title]", "Add before/after entry"),
             ("portfolio batch <url1> <url2> ...", "Add multiple entries at once"),
             ("portfolio stats", "View portfolio statistics"),
+            ("ratecard", "Generate your rate card image"),
+            ("ratecard set <name> <price> [desc]", "Set a rate (e.g. 'Sketch' 25)"),
+            ("ratecard remove <name>", "Remove a rate"),
+            ("ratecard list", "List all your rates"),
+            ("ratecard title <title>", "Set rate card title"),
+            ("ratecard subtitle <text>", "Set rate card subtitle"),
+            ("ratecard status <open|closed>", "Set commission status"),
+            ("ratecard currency <symbol>", "Set currency symbol (default: $)"),
+            ("ratecard template <style>", "Styles: minimal, colorful, detailed, professional"),
             ("portfolio help", "Show this help message"),
         ],
     )
