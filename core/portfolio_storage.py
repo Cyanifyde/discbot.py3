@@ -45,6 +45,7 @@ class PortfolioStore:
                 "subtitle": "Quality digital artwork tailored to your vision",
                 "status": "open",
                 "currency": "$",
+                "image": None,
             },
         }
         data = await read_json(self.portfolio_path, default=default)
@@ -293,15 +294,46 @@ class PortfolioStore:
             data = await self._read_portfolio()
             return data.get("rates", {})
 
-    async def set_rate(self, name: str, price: float, description: str = "") -> None:
+    async def set_rate(self, name: str, price: float, description: str = "", image: str = None) -> None:
         """Set a commission rate."""
         async with self._lock:
             data = await self._read_portfolio()
+            existing = data["rates"].get(name, {})
             data["rates"][name] = {
                 "price": price,
                 "description": description,
+                "image": image if image is not None else existing.get("image"),
             }
             await self._write_portfolio(data)
+
+    async def set_rate_image(self, name: str, image: str) -> bool:
+        """Set image for a specific rate."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            if name not in data["rates"]:
+                return False
+            if isinstance(data["rates"][name], dict):
+                data["rates"][name]["image"] = image
+            else:
+                # Convert old format
+                data["rates"][name] = {
+                    "price": data["rates"][name],
+                    "description": "",
+                    "image": image,
+                }
+            await self._write_portfolio(data)
+            return True
+
+    async def remove_rate_image(self, name: str) -> bool:
+        """Remove image from a specific rate."""
+        async with self._lock:
+            data = await self._read_portfolio()
+            if name not in data["rates"]:
+                return False
+            if isinstance(data["rates"][name], dict):
+                data["rates"][name]["image"] = None
+                await self._write_portfolio(data)
+            return True
 
     async def remove_rate(self, name: str) -> bool:
         """Remove a commission rate."""

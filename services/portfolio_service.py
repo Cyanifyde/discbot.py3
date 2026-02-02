@@ -353,6 +353,17 @@ class PortfolioService:
         store = self._get_store(user_id)
         return await store.remove_rate(name)
 
+    async def set_rate_image(self, user_id: int, name: str, image: str) -> bool:
+        """Set image for a specific rate."""
+        store = self._get_store(user_id)
+        await store.initialize()
+        return await store.set_rate_image(name, image)
+
+    async def remove_rate_image(self, user_id: int, name: str) -> bool:
+        """Remove image from a specific rate."""
+        store = self._get_store(user_id)
+        return await store.remove_rate_image(name)
+
     async def get_rate_card_settings(self, user_id: int) -> Dict[str, Any]:
         """Get rate card display settings."""
         store = self._get_store(user_id)

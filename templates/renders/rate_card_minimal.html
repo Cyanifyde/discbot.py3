@@ -87,13 +87,23 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
+        .showcase-image {
+            width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+            margin-bottom: 20px;
+            border: 1px solid #e5e7eb;
+        }
     </style>
 </head>
 <body>
     <div class="rate-card">
+        {% if profile.image %}
+        <img src="{{ profile.image }}" alt="Artwork showcase" class="showcase-image">
+        {% endif %}
         <div class="header">
             <h1>{{ profile.title if profile.title else "Commission Rates" }}</h1>
-            <p class="subtitle">{{ profile.bio[:100] if profile.bio else "Quality digital artwork tailored to your vision" }}</p>
+            <p class="subtitle">{{ profile.bio[:100] if profile.bio else "" }}</p>
         </div>
 
         <div class="rates-list">

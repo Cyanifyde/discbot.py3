@@ -5,12 +5,15 @@ Provides commands for managing artwork portfolios with categories, privacy, and 
 """
 from __future__ import annotations
 
+import base64
 import io
 import logging
 import re
 from typing import Optional
 
+import aiohttp
 import discord
+from PIL import Image
 
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
@@ -60,6 +63,7 @@ def setup_portfolio() -> None:
             ("ratecard subtitle <text>", "Set rate card subtitle"),
             ("ratecard status <open|closed>", "Set commission status"),
             ("ratecard currency <symbol>", "Set currency symbol (default: $)"),
+            ("ratecard image <url|remove>", "Set showcase image (or attach image)"),
             ("ratecard template <style>", "Styles: minimal, colorful, detailed, professional"),
             ("portfolio help", "Show this help message"),
         ],
@@ -587,6 +591,8 @@ async def _handle_ratecard_command(message: discord.Message, parts: list[str]) -
         await _handle_ratecard_setting(message, parts, "currency")
     elif subcommand == "template":
         await _handle_ratecard_template(message, parts)
+    elif subcommand == "image":
+        await _handle_ratecard_image(message, parts)
     elif subcommand == "help":
         help_text = help_system.get_module_help("Portfolio")
         if help_text:
@@ -623,6 +629,7 @@ async def _generate_ratecard(message: discord.Message, template: str = "minimal"
         "title": settings.get("title", "Commission Rates"),
         "status": settings.get("status", "open"),
         "currency": settings.get("currency", "$"),
+        "image": settings.get("image"),
     }
 
     # Format rates for template (name -> price)
@@ -774,4 +781,120 @@ async def _handle_ratecard_template(message: discord.Message, parts: list[str]) 
 
     await portfolio_service.update_rate_card_settings(message.author.id, {"template": template})
     await message.reply(f"Default template set to: **{template}**")
+
+
+async def _handle_ratecard_image(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'ratecard image <rate_name> [remove]' - set or remove image for a specific rate."""
+    user_id = message.author.id
+
+    # Need at least the rate name
+    if len(parts) < 3 and not message.attachments:
+        rates = await portfolio_service.get_rates(user_id)
+        if rates:
+            rate_names = ", ".join(rates.keys())
+            await message.reply(
+                f"Usage: `ratecard image <rate_name>` + attach an image\n"
+                f"To remove: `ratecard image <rate_name> remove`\n"
+                f"Your rates: {rate_names}"
+            )
+        else:
+            await message.reply(
+                "You need to set rates first with `ratecard set <name> <price>`"
+            )
+        return
+
+    rate_name = parts[2].strip() if len(parts) >= 3 else None
+
+    # Check if this rate exists
+    rates = await portfolio_service.get_rates(user_id)
+    if rate_name and rate_name.lower() not in [r.lower() for r in rates.keys()]:
+        # Check for remove command on showcase image
+        if rate_name.lower() in ["remove", "clear"]:
+            await portfolio_service.update_rate_card_settings(user_id, {"image": None})
+            await message.reply("Showcase image removed.")
+            return
+        await message.reply(
+            f"Rate '{rate_name}' not found.\n"
+            f"Your rates: {', '.join(rates.keys())}"
+        )
+        return
+
+    # Find exact rate name (case-insensitive match)
+    actual_rate_name = next((r for r in rates.keys() if r.lower() == rate_name.lower()), rate_name)
+
+    # Check for remove subcommand
+    if len(parts) >= 4 and parts[3].strip().lower() in ["remove", "clear"]:
+        success = await portfolio_service.remove_rate_image(user_id, actual_rate_name)
+        if success:
+            await message.reply(f"Image removed from **{actual_rate_name}**")
+        else:
+            await message.reply(f"Failed to remove image from **{actual_rate_name}**")
+        return
+
+    # Need an attachment
+    if not message.attachments:
+        await message.reply(
+            f"Please attach an image to set for **{actual_rate_name}**\n"
+            f"Usage: `ratecard image {actual_rate_name}` + attach image"
+        )
+        return
+
+    attachment = message.attachments[0]
+    if not attachment.content_type or not attachment.content_type.startswith("image/"):
+        await message.reply("Attached file is not an image.")
+        return
+
+    # Download and convert image to webp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(attachment.url) as resp:
+                if resp.status != 200:
+                    await message.reply("Failed to download image.")
+                    return
+                image_data = await resp.read()
+
+        # Convert to webp with compression
+        img = Image.open(io.BytesIO(image_data))
+
+        # Convert to RGB if necessary (for transparency handling)
+        if img.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        # Resize if too large (max 400px on longest side for rate thumbnails)
+        max_size = 400
+        if img.width > max_size or img.height > max_size:
+            ratio = min(max_size / img.width, max_size / img.height)
+            new_size = (int(img.width * ratio), int(img.height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Save as webp with compression
+        webp_buffer = io.BytesIO()
+        img.save(webp_buffer, format="WEBP", quality=80, method=6)
+        webp_buffer.seek(0)
+
+        # Convert to base64 data URI for embedding in HTML
+        webp_base64 = base64.b64encode(webp_buffer.getvalue()).decode("utf-8")
+        data_uri = f"data:image/webp;base64,{webp_base64}"
+
+        # Save to rate
+        success = await portfolio_service.set_rate_image(user_id, actual_rate_name, data_uri)
+
+        if success:
+            size_kb = len(webp_buffer.getvalue()) / 1024
+            await message.reply(
+                f"Image set for **{actual_rate_name}**\n"
+                f"Converted to WebP ({size_kb:.1f} KB)"
+            )
+        else:
+            await message.reply(f"Failed to set image for **{actual_rate_name}**")
+
+    except Exception as e:
+        logger.error("Failed to process rate image: %s", e)
+        await message.reply("Failed to process image. Please try a different image.")
 
