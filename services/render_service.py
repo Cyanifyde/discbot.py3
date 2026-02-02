@@ -27,6 +27,9 @@ class RenderService:
     ) -> bytes:
         return await asyncio.to_thread(self._render_palette_sync, colors, method, count)
 
+    async def render_color_patch(self, hex_color: str, *, size: int = 96) -> bytes:
+        return await asyncio.to_thread(self._render_color_patch_sync, hex_color, int(size))
+
     def _render_palette_sync(self, colors: list[str], method: str, count: int) -> bytes:
         width = 800
         height = 400
@@ -82,6 +85,25 @@ class RenderService:
         img.save(buf, format="JPEG", quality=92, optimize=True)
         return buf.getvalue()
 
+    def _render_color_patch_sync(self, hex_color: str, size: int) -> bytes:
+        size = max(16, min(256, int(size)))
+        try:
+            h = (hex_color or "").lstrip("#")
+            r = int(h[0:2], 16)
+            g = int(h[2:4], 16)
+            b = int(h[4:6], 16)
+            rgb = (r, g, b)
+        except Exception:
+            rgb = (180, 180, 180)
+
+        img = Image.new("RGB", (size, size), color=rgb)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, size - 1, size - 1], outline=(0, 0, 0), width=2)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
 
 _render_service: Optional[RenderService] = None
 
@@ -99,4 +121,3 @@ def __getattr__(name: str):
     if name == "render_service":
         return get_render_service()
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-

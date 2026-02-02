@@ -28,13 +28,30 @@ class InviteProtectionStore:
         await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     async def _read(self) -> Dict[str, Any]:
-        data = await read_json(self.data_path, default={"allowlist": {}, "pending": {}})
+        data = await read_json(
+            self.data_path,
+            default={"allowlist": {}, "pending": {}, "config": {"modlog_channel_id": None}},
+        )
         if not isinstance(data, dict):
-            return {"allowlist": {}, "pending": {}}
+            return {"allowlist": {}, "pending": {}, "config": {"modlog_channel_id": None}}
         if "allowlist" not in data or not isinstance(data.get("allowlist"), dict):
             data["allowlist"] = {}
         if "pending" not in data or not isinstance(data.get("pending"), dict):
             data["pending"] = {}
+        if "config" not in data or not isinstance(data.get("config"), dict):
+            data["config"] = {"modlog_channel_id": None}
+        if "modlog_channel_id" not in data["config"]:
+            data["config"]["modlog_channel_id"] = None
+        # Backfill newer fields on pending entries.
+        try:
+            for _pid, entry in list(data["pending"].items()):
+                if not isinstance(entry, dict):
+                    continue
+                entry.setdefault("content_snippet", "")
+                entry.setdefault("notice_channel_id", None)
+                entry.setdefault("notice_message_id", None)
+        except Exception:
+            pass
         return data
 
     async def _write(self, data: Dict[str, Any]) -> None:
@@ -77,6 +94,8 @@ class InviteProtectionStore:
         posted_by: int,
         channel_id: int,
         message_id: int,
+        *,
+        content_snippet: Optional[str] = None,
     ) -> str:
         async with self._lock:
             data = await self._read()
@@ -93,6 +112,9 @@ class InviteProtectionStore:
                 "posted_at": dt_to_iso(utcnow()),
                 "channel_id": channel_id,
                 "message_id": message_id,
+                "content_snippet": (content_snippet or "")[:500],
+                "notice_channel_id": None,
+                "notice_message_id": None,
             }
             await self._write(data)
             return pending_id
@@ -113,6 +135,18 @@ class InviteProtectionStore:
             if pending_id not in data["pending"]:
                 return False
             del data["pending"][pending_id]
+            await self._write(data)
+            return True
+
+    async def set_pending_notice(self, pending_id: str, *, notice_channel_id: int, notice_message_id: int) -> bool:
+        async with self._lock:
+            data = await self._read()
+            entry = data["pending"].get(pending_id)
+            if not isinstance(entry, dict):
+                return False
+            entry["notice_channel_id"] = int(notice_channel_id)
+            entry["notice_message_id"] = int(notice_message_id)
+            data["pending"][pending_id] = entry
             await self._write(data)
             return True
 
@@ -173,6 +207,18 @@ class InviteProtectionStore:
         token = token.strip()
         if not token:
             return None
+
+    async def set_modlog_channel(self, channel_id: Optional[int]) -> None:
+        async with self._lock:
+            data = await self._read()
+            data["config"]["modlog_channel_id"] = channel_id
+            await self._write(data)
+
+    async def get_modlog_channel(self) -> Optional[int]:
+        async with self._lock:
+            data = await self._read()
+            cid = data.get("config", {}).get("modlog_channel_id")
+            return int(cid) if cid else None
 
         async with self._lock:
             data = await self._read()

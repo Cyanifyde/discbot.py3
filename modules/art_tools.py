@@ -303,8 +303,50 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         await message.reply(" Failed to render palette.")
         return
 
-    file = discord.File(fp=io.BytesIO(image_bytes), filename="palette.jpg")
-    await message.reply(file=file)
+    files: list[discord.File] = []
+    embeds: list[discord.Embed] = []
+
+    for idx, c in enumerate(colors, start=1):
+        hex_upper = (c or "").upper()
+        try:
+            color_int = int((c or "").lstrip("#"), 16)
+            embed_color = discord.Color(color_int)
+        except Exception:
+            embed_color = discord.Color.blurple()
+
+        try:
+            patch_bytes = await render_service.render_color_patch(c, size=96)
+            patch_name = f"swatch_{idx}.png"
+            files.append(discord.File(fp=io.BytesIO(patch_bytes), filename=patch_name))
+        except Exception:
+            patch_name = None
+
+        e = discord.Embed(
+            title=hex_upper or f"Color {idx}",
+            description=f"Color {idx}/{len(colors)}",
+            color=embed_color,
+        )
+        if patch_name:
+            e.set_thumbnail(url=f"attachment://{patch_name}")
+        embeds.append(e)
+
+    palette_name = "palette.jpg"
+    files.append(discord.File(fp=io.BytesIO(image_bytes), filename=palette_name))
+
+    summary = discord.Embed(
+        title=f"Palette ({method_label}) — {len(colors)} color(s)",
+        description=" ".join(f"`{c.upper()}`" for c in colors),
+        color=discord.Color.dark_teal(),
+        timestamp=discord.utils.utcnow(),
+    )
+    summary.set_image(url=f"attachment://{palette_name}")
+    embeds.append(summary)
+
+    await message.reply(
+        embeds=embeds,
+        files=files,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 async def _handle_palette_help(message: discord.Message) -> None:

@@ -59,6 +59,7 @@ AVAILABLE_COMMANDS = {
         "invite allowlist",
         "invite approve",
         "invite deny",
+        "invite modlog",
         "invite pending",
         "invite status",
     ],
