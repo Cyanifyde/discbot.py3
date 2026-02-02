@@ -178,7 +178,7 @@ def setup_verification() -> None:
         commands=[
             ("verification help", "Show all verification commands"),
             ("addverification #channel \"message\" unverified_id verified_id", "Set up verification button"),
-            ("removeverification message_id", "Remove verification button (auto-finds channel)"),
+            ("removeverification message_id", "Remove a verification button"),
         ]
     )
     
@@ -431,11 +431,10 @@ async def handle_remove_verification_command(
     match = REMOVE_COMMAND_PATTERN.match(content)
     if not match:
         await message.reply(
-            "**Invalid format.**\\n"
-            "```\\n"
-            "removeverification message_id\\n"
-            "```\\n"
-            "The bot will automatically find which channel the message is in.",
+            "**Invalid format.**\n"
+            "```\n"
+            "removeverification message_id\n"
+            "```",
             mention_author=False,
         )
         return True
@@ -443,50 +442,44 @@ async def handle_remove_verification_command(
     channel_id_str = match.group(1)  # Optional channel mention
     message_id = int(match.group(2))
     
-    # Try to find the verification button in module memory first
+    # Look up the verification button from stored data
     data = await get_guild_module_data(message.guild.id, MODULE_NAME)
     if not isinstance(data, dict):
         data = {}
     
-    buttons = data.get("buttons", {})
-    if not isinstance(buttons, dict):
-        buttons = {}
+    buttons = data.get("buttons", [])
+    if not isinstance(buttons, list):
+        buttons = []
     
-    # Get channel from memory or command parameter
+    # Find button info by message_id
     target_channel = None
-    if str(message_id) in buttons:
-        # Found in memory
-        button_info = buttons[str(message_id)]
-        stored_channel_id = button_info.get("channel_id")
-        if stored_channel_id:
-            target_channel = message.guild.get_channel(stored_channel_id)
+    button_info = None
+    for btn in buttons:
+        if isinstance(btn, dict) and btn.get("message_id") == message_id:
+            button_info = btn
+            stored_channel_id = btn.get("channel_id")
+            if stored_channel_id:
+                target_channel = message.guild.get_channel(stored_channel_id)
+            break
     
     # Fallback to channel parameter if provided
     if not target_channel and channel_id_str:
         target_channel = message.guild.get_channel(int(channel_id_str))
     
-    # If still not found, search all channels (last resort)
     if not target_channel:
-        await message.reply(
-            "Searching for the verification message...",
-            mention_author=False,
-        )
-        for channel in message.guild.text_channels:
-            try:
-                test_message = await channel.fetch_message(message_id)
-                target_channel = channel
-                break
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                continue
-    
-    if not target_channel:
-        await message.reply(
-            f"Could not find message `{message_id}` in any channel.\\n"
-            f"It may have already been deleted.",
-            mention_author=False,
-        )
-        # Clean up from memory anyway
-        await remove_verification_button(message.guild.id, message_id)
+        if button_info:
+            # We have the record but channel is gone
+            await remove_verification_button(message.guild.id, message_id)
+            await message.reply(
+                f"Verification button record removed. The channel no longer exists.",
+                mention_author=False,
+            )
+        else:
+            await message.reply(
+                f"Could not find verification button with message ID `{message_id}`.\n"
+                f"Use `removeverification #channel message_id` if you know the channel.",
+                mention_author=False,
+            )
         return True
     
     if not isinstance(target_channel, discord.TextChannel):
