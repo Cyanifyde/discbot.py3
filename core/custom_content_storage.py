@@ -93,6 +93,30 @@ class CustomContentStore:
 
             return False
 
+    async def update_custom_command(
+        self,
+        name: str,
+        *,
+        response: Optional[str] = None,
+        embed_data: Optional[Dict[str, Any]] = None,
+        permissions: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Update an existing custom command. Returns updated command if found."""
+        async with self._lock:
+            data = await self._read_commands()
+            cmd = data["commands"].get(name)
+            if not isinstance(cmd, dict):
+                return None
+            if response is not None:
+                cmd["response"] = response
+            if embed_data is not None:
+                cmd["embed_data"] = embed_data
+            if permissions is not None:
+                cmd["permissions"] = permissions
+            data["commands"][name] = cmd
+            await self._write_commands(data)
+            return cmd
+
     async def increment_command_usage(self, name: str) -> None:
         """Increment usage count for a command."""
         async with self._lock:
@@ -153,6 +177,43 @@ class CustomContentStore:
         async with self._lock:
             data = await self._read_forms()
             return data["forms"]
+
+    async def remove_form(self, form_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Remove a form template by ID prefix or name.
+
+        Also removes submissions for that form.
+        Returns the removed form if found.
+        """
+        async with self._lock:
+            data = await self._read_forms()
+            forms = data.get("forms", {})
+            if not isinstance(forms, dict):
+                return None
+
+            target_id: Optional[str] = None
+            removed: Optional[Dict[str, Any]] = None
+            for fid, form in forms.items():
+                if not isinstance(form, dict):
+                    continue
+                name = form.get("name", "")
+                if fid.startswith(form_id) or (isinstance(name, str) and name.lower() == form_id.lower()):
+                    target_id = fid
+                    removed = form
+                    break
+
+            if not target_id or removed is None:
+                return None
+
+            del forms[target_id]
+            data["forms"] = forms
+
+            submissions = data.get("submissions", [])
+            if isinstance(submissions, list):
+                data["submissions"] = [s for s in submissions if isinstance(s, dict) and s.get("form_id") != target_id]
+
+            await self._write_forms(data)
+            return removed
 
     async def add_form_submission(
         self,

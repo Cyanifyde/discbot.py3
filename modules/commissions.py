@@ -6,6 +6,8 @@ Provides commands for artists to manage their commission queues, waitlists, and 
 from __future__ import annotations
 
 import logging
+import json
+import io
 from typing import Optional
 
 import discord
@@ -46,7 +48,12 @@ def setup_commissions() -> None:
             ("commission blacklist list", "View blacklisted clients"),
             ("commission invoice <id>", "Show invoice (embed)"),
             ("commission contract <id>", "Show contract terms (embed)"),
+            ("commission tos set <url>", "Set Terms of Service URL (for contract embed)"),
+            ("commission tos clear", "Clear Terms of Service URL"),
+            ("commission tos view", "View Terms of Service URL"),
             ("commission payment confirm <id>", "Confirm payment received"),
+            ("commission archive <id>", "Archive a commission (moves to history)"),
+            ("commission export <id>", "Export a commission as JSON"),
             ("commission summary", "View commission statistics"),
             ("commission quickadd @client <price> <type> [deadline]", "Quick-add commission"),
             ("commission search <query>", "Search commissions by tag or client"),
@@ -123,8 +130,17 @@ async def handle_commission_command(message: discord.Message, bot: discord.Clien
     elif subcommand == "contract":
         await _handle_contract(message, parts, bot)
         return True
+    elif subcommand == "tos":
+        await _handle_tos(message, parts)
+        return True
     elif subcommand == "payment":
         await _handle_payment(message, parts)
+        return True
+    elif subcommand == "archive":
+        await _handle_archive(message, parts)
+        return True
+    elif subcommand == "export":
+        await _handle_export(message, parts)
         return True
     elif subcommand == "summary":
         await _handle_summary(message)
@@ -806,6 +822,126 @@ async def _handle_contract(message: discord.Message, parts: list[str], bot: disc
     except Exception as e:
         logger.error("Failed to build contract embed: %s", e)
         await message.reply(" Failed to show contract terms.")
+
+
+async def _handle_tos(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'commission tos <set|clear|view>' commands."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `commission tos <set|clear|view> ...`")
+        return
+
+    args = parts[2].split(maxsplit=1)
+    action = args[0].lower() if args else ""
+    artist_id = message.author.id
+    guild_id = message.guild.id
+
+    store = commission_service._get_store(guild_id, artist_id)
+    await store.initialize()
+
+    if action == "view":
+        url = await store.get_tos_url()
+        if url:
+            await message.reply(f" TOS URL: {url}")
+        else:
+            await message.reply(" No TOS URL is set.")
+        return
+
+    if action == "clear":
+        await store.set_tos_url(None)
+        await message.reply(" TOS URL cleared.")
+        return
+
+    if action == "set":
+        if len(args) < 2:
+            await message.reply(" Usage: `commission tos set <url>`")
+            return
+        url = args[1].strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            await message.reply(" Please provide a valid http(s) URL.")
+            return
+        await store.set_tos_url(url)
+        await message.reply(" TOS URL set.")
+        return
+
+    await message.reply(" Usage: `commission tos <set|clear|view> ...`")
+
+
+async def _find_commission_by_prefix(
+    *,
+    artist_id: int,
+    guild_id: int,
+    prefix: str,
+    include_history: bool,
+):
+    prefix = (prefix or "").strip()
+    if not prefix:
+        return None, False
+    active = await commission_service.get_active_commissions(artist_id, guild_id)
+    match = [c for c in active if c.id.startswith(prefix)]
+    if match:
+        return match[0], False
+    if not include_history:
+        return None, False
+    history = await commission_service.get_commission_history(artist_id, guild_id, limit=None)
+    match_h = [c for c in history if c.id.startswith(prefix)]
+    if match_h:
+        return match_h[0], True
+    return None, False
+
+
+async def _handle_archive(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'commission archive <id>' command."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `commission archive <id>`")
+        return
+
+    commission_id = parts[2].strip()
+    artist_id = message.author.id
+    guild_id = message.guild.id
+
+    commission, in_history = await _find_commission_by_prefix(
+        artist_id=artist_id,
+        guild_id=guild_id,
+        prefix=commission_id,
+        include_history=False,
+    )
+    if not commission:
+        await message.reply(f" No active commission found with ID starting with `{commission_id}`")
+        return
+
+    store = commission_service._get_store(guild_id, artist_id)
+    removed = await store.remove_commission(commission.id, archive=True)
+    if not removed:
+        await message.reply(" Failed to archive commission.")
+        return
+    await message.reply(f" Commission archived: `{commission.id[:8]}`")
+
+
+async def _handle_export(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'commission export <id>' command."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `commission export <id>`")
+        return
+
+    commission_id = parts[2].strip()
+    artist_id = message.author.id
+    guild_id = message.guild.id
+
+    commission, in_history = await _find_commission_by_prefix(
+        artist_id=artist_id,
+        guild_id=guild_id,
+        prefix=commission_id,
+        include_history=True,
+    )
+    if not commission:
+        await message.reply(f" No commission found with ID starting with `{commission_id}`")
+        return
+
+    payload = commission.to_dict()
+    payload["_export"] = {"source": "history" if in_history else "active"}
+    data = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+    file = discord.File(fp=io.BytesIO(data), filename=f"commission_{commission.id[:8]}.json")
+    await message.reply(" Exported commission JSON:", file=file)
 
 
 async def _handle_payment(message: discord.Message, parts: list[str]) -> None:

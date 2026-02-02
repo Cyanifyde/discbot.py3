@@ -6,12 +6,14 @@ Provides commands for feedback submission, commission announcements, and message
 from __future__ import annotations
 
 import logging
+import shlex
 from typing import Optional
 
 import discord
 
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
+from core.utils import extract_first_message_link
 from services.communication_service import communication_service
 
 logger = logging.getLogger("discbot.communication")
@@ -70,7 +72,7 @@ def setup_communication() -> None:
         description="Create acknowledgments users must click to confirm they've read something.",
         help_command="ack help",
         commands=[
-            ("ack <message_link> <title> <description>", "Create acknowledgment (mod only)"),
+            ("ack create <message_link> <title> <description>", "Create acknowledgment (mod only)"),
             ("ack check", "Check your pending acknowledgments"),
             ("ack stats <message_link>", "View acknowledgment stats (mod only)"),
             ("ack help", "Show this help message"),
@@ -533,7 +535,7 @@ async def _handle_ack(
 ) -> None:
     """Handle acknowledgment commands."""
     if len(parts) < 2:
-        await message.reply(" Usage: `ack <message_link> <title> <description>` or `ack check` or `ack stats <message_link>`")
+        await message.reply(" Usage: `ack create <message_link> <title> <description>` | `ack check` | `ack stats <message_link>`")
         return
 
     subcommand = parts[1].lower()
@@ -542,9 +544,10 @@ async def _handle_ack(
         await _handle_ack_check(message, bot)
     elif subcommand == "stats":
         await _handle_ack_stats(message, parts)
-    else:
-        # Create acknowledgment
+    elif subcommand == "create":
         await _handle_ack_create(message, parts, bot)
+    else:
+        await message.reply(" Usage: `ack create <message_link> <title> <description>` | `ack check` | `ack stats <message_link>`")
 
 
 async def _handle_ack_create(
@@ -558,24 +561,32 @@ async def _handle_ack_create(
         await message.reply(" You need Manage Messages permission to create acknowledgments.")
         return
 
-    if len(parts) < 3:
-        await message.reply(" Usage: `ack <message_link> <title> <description>`")
-        return
-
-    args = parts[1].split(maxsplit=2)
-    if len(args) < 3:
-        await message.reply(" Usage: `ack <message_link> <title> <description>`")
-        return
-
-    message_link = args[0]
-    title = args[1]
-    description = args[2]
-
-    # Parse message link
     try:
-        parts_link = message_link.split("/")
-        message_id = int(parts_link[-1])
-    except (ValueError, IndexError):
+        tokens = shlex.split(message.content)
+    except Exception:
+        tokens = message.content.split()
+
+    # ack create <message_link> <title> <description...>
+    if len(tokens) < 5:
+        await message.reply(
+            " Usage: `ack create <message_link> <title> <description>`\n"
+            "Tip: Wrap multi-word title/description in quotes."
+        )
+        return
+
+    message_link = tokens[2]
+    title = tokens[3]
+    description = " ".join(tokens[4:]).strip()
+
+    trip = extract_first_message_link(message_link, message.guild.id)
+    if not trip:
+        await message.reply(" Invalid message link")
+        return
+    _gid, channel_id_str, message_id_str = trip
+    try:
+        channel_id = int(channel_id_str)
+        message_id = int(message_id_str)
+    except Exception:
         await message.reply(" Invalid message link")
         return
 
@@ -584,18 +595,24 @@ async def _handle_ack_create(
     ack = await communication_service.create_acknowledgment(
         guild_id,
         message_id,
+        channel_id,
         title,
         description,
     )
 
     # Create button view
     view = AcknowledgeButton(guild_id, message_id)
-    
-    await message.reply(
-        f" Acknowledgment created for message!\n**Title:** {title}\n"
-        f"Users can click the button below to acknowledge.",
-        view=view
+
+    jump = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+    embed = discord.Embed(
+        title=title,
+        description=description[:3500],
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow(),
     )
+    embed.add_field(name="Target Message", value=jump, inline=False)
+
+    await message.reply(" Acknowledgment created.", embed=embed, view=view)
 
 
 async def _handle_ack_check(message: discord.Message, bot: discord.Client) -> None:
@@ -617,7 +634,8 @@ async def _handle_ack_check(message: discord.Message, bot: discord.Client) -> No
     )
 
     for ack in pending[:5]:
-        msg_link = f"https://discord.com/channels/{guild_id}/{message.channel.id}/{ack['message_id']}"
+        channel_id = ack.get("channel_id") or message.channel.id
+        msg_link = f"https://discord.com/channels/{guild_id}/{channel_id}/{ack['message_id']}"
         embed.add_field(
             name=ack["title"],
             value=f"{ack['content'][:100]}...\n[Jump to message]({msg_link})",

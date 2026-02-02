@@ -215,6 +215,7 @@ class CommunicationService:
         self,
         guild_id: int,
         message_id: int,
+        channel_id: Optional[int],
         title: str,
         content: str,
         required_role_id: Optional[int] = None,
@@ -226,6 +227,7 @@ class CommunicationService:
             message_id,
             title,
             content,
+            channel_id,
             required_role_id,
         )
 

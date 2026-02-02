@@ -104,6 +104,16 @@ class UtilityStore:
                 return True
             return False
 
+    async def clear_bookmarks(self) -> int:
+        """Remove all bookmarks. Returns the number cleared."""
+        async with self._lock:
+            data = await self._read_bookmarks()
+            bookmarks = data.get("bookmarks", [])
+            count = len(bookmarks) if isinstance(bookmarks, list) else 0
+            data["bookmarks"] = []
+            await self._write_bookmarks(data)
+            return count
+
     async def get_pending_deliveries(self) -> List[Bookmark]:
         """Get bookmarks scheduled for delayed delivery."""
         from .utils import iso_to_dt
@@ -176,6 +186,22 @@ class UtilityStore:
         async with self._lock:
             data = await self._read_notes()
             return data["notes"]
+
+    async def update_note(self, note_id: str, content: str) -> bool:
+        """Update a note by exact ID."""
+        async with self._lock:
+            data = await self._read_notes()
+            notes = data.get("notes", [])
+            if not isinstance(notes, list):
+                return False
+            for note in notes:
+                if not isinstance(note, dict):
+                    continue
+                if note.get("id") == note_id:
+                    note["content"] = content
+                    await self._write_notes(data)
+                    return True
+            return False
 
     async def remove_note(self, note_id: str) -> bool:
         """Remove a note."""

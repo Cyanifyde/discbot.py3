@@ -41,6 +41,9 @@ def setup_portfolio() -> None:
         commands=[
             ("portfolio add <url> [title]", "Add a new entry to your portfolio"),
             ("portfolio remove <id>", "Remove an entry from your portfolio"),
+            ("portfolio show <id>", "Show a single portfolio entry"),
+            ("portfolio edit <id> <field> <value>", "Edit an entry (fields: title, category, url, tags, privacy)"),
+            ("portfolio search <tag|title> <query>", "Search your portfolio by tag or title"),
             ("portfolio category <id> <category>", "Set category for an entry"),
             ("portfolio tag <id> <tags...>", "Add tags to an entry"),
             ("portfolio feature <id>", "Set entry as featured"),
@@ -118,6 +121,15 @@ async def handle_portfolio_command(message: discord.Message, bot: discord.Client
         return True
     elif subcommand == "remove":
         await _handle_remove(message, parts)
+        return True
+    elif subcommand == "show":
+        await _handle_show(message, parts)
+        return True
+    elif subcommand == "edit":
+        await _handle_edit(message, parts)
+        return True
+    elif subcommand == "search":
+        await _handle_search(message, parts)
         return True
     elif subcommand == "category":
         await _handle_category(message, parts)
@@ -208,6 +220,138 @@ async def _handle_remove(message: discord.Message, parts: list[str]) -> None:
         await message.reply(f" Removed **{entry.title}** from your portfolio")
     else:
         await message.reply(" Failed to remove entry")
+
+
+async def _handle_show(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'portfolio show <id>' command."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `portfolio show <id>`")
+        return
+
+    entry_id = parts[2].strip()
+    user_id = message.author.id
+    entries = await portfolio_service.get_portfolio(user_id)
+    matching = [e for e in entries if e.id.startswith(entry_id)]
+    if not matching:
+        await message.reply(f" No entry found with ID starting with `{entry_id}`")
+        return
+
+    entry = matching[0]
+    embed = discord.Embed(
+        title=entry.title or "Untitled",
+        color=discord.Color.blurple(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_image(url=entry.image_url)
+    embed.add_field(name="ID", value=f"`{entry.id[:8]}`", inline=True)
+    embed.add_field(name="Category", value=entry.category or "general", inline=True)
+    embed.add_field(name="Privacy", value=(entry.privacy or "public"), inline=True)
+    if entry.tags:
+        embed.add_field(name="Tags", value=", ".join(f"`{t}`" for t in entry.tags[:30]), inline=False)
+    await message.reply(embed=embed)
+
+
+async def _handle_search(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'portfolio search <tag|title> <query>' command."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `portfolio search <tag|title> <query>`")
+        return
+
+    args = parts[2].split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply(" Usage: `portfolio search <tag|title> <query>`")
+        return
+
+    mode = args[0].lower()
+    query = args[1].strip()
+    if not query:
+        await message.reply(" Please provide a search query.")
+        return
+
+    user_id = message.author.id
+    viewer_id = message.author.id
+
+    if mode == "tag":
+        results = await portfolio_service.search_by_tag(user_id, query, viewer_id=viewer_id)
+    elif mode == "title":
+        entries = await portfolio_service.get_portfolio(user_id, viewer_id=viewer_id)
+        q = query.lower()
+        results = [e for e in entries if q in (e.title or "").lower()]
+    else:
+        await message.reply(" Mode must be `tag` or `title`.")
+        return
+
+    if not results:
+        await message.reply(" No matching entries found.")
+        return
+
+    embed = discord.Embed(
+        title=f"Portfolio Search ({mode})",
+        description=f"Query: `{query}`\nMatches: {len(results)}",
+        color=discord.Color.blurple(),
+        timestamp=discord.utils.utcnow(),
+    )
+    for entry in results[:10]:
+        embed.add_field(
+            name=f"`{entry.id[:8]}` • {entry.title or 'Untitled'}",
+            value=f"{entry.image_url}",
+            inline=False,
+        )
+    await message.reply(embed=embed)
+
+
+async def _handle_edit(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'portfolio edit <id> <field> <value>' command."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `portfolio edit <id> <field> <value>`")
+        return
+
+    args = parts[2].split(maxsplit=2)
+    if len(args) < 3:
+        await message.reply(" Usage: `portfolio edit <id> <field> <value>`")
+        return
+
+    entry_id, field, value = args[0], args[1].lower(), args[2].strip()
+    if not value:
+        await message.reply(" Please provide a value to set.")
+        return
+
+    user_id = message.author.id
+    entries = await portfolio_service.get_portfolio(user_id)
+    matching = [e for e in entries if e.id.startswith(entry_id)]
+    if not matching:
+        await message.reply(f" No entry found with ID starting with `{entry_id}`")
+        return
+
+    entry = matching[0]
+    updates: dict = {}
+    if field == "title":
+        updates["title"] = value
+    elif field == "category":
+        updates["category"] = value
+        await portfolio_service.add_category(user_id, value)
+    elif field == "url":
+        if not URL_PATTERN.match(value):
+            await message.reply(" Invalid image URL.")
+            return
+        updates["image_url"] = value
+    elif field == "tags":
+        tags = [t.strip() for t in value.replace(",", " ").split() if t.strip()]
+        updates["tags"] = tags
+    elif field == "privacy":
+        if value.lower() not in {"public", "private"}:
+            await message.reply(" Privacy must be `public` or `private`.")
+            return
+        updates["privacy"] = value.lower()
+    else:
+        await message.reply(" Unknown field. Use: `title`, `category`, `url`, `tags`, `privacy`.")
+        return
+
+    ok = await portfolio_service.update_entry(user_id, entry.id, updates)
+    if not ok:
+        await message.reply(" Failed to update entry.")
+        return
+    await message.reply(f" Updated `{entry.id[:8]}` ({field}).")
 
 
 async def _handle_category(message: discord.Message, parts: list[str]) -> None:

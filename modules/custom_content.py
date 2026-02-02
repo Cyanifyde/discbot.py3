@@ -27,13 +27,17 @@ def setup_custom_content() -> None:
         description="Custom commands, forms, and enhanced auto-responses.",
         help_command="custom help",
         commands=[
+            ("custom help", "Show this help message"),
             ("customcmd add <name> <response>", "Add custom command (mod only)"),
+            ("customcmd info <name>", "Show custom command details"),
+            ("customcmd edit <name> <response>", "Edit custom command (mod only)"),
             ("customcmd remove <name>", "Remove custom command (mod only)"),
             ("customcmd list", "List custom commands"),
             ("form create <name> <field1> <field2>...", "Create form (mod only)"),
             ("form list", "List forms"),
             ("form submit <form_name>", "Submit a form"),
             ("form responses <form_name>", "View form responses (mod only)"),
+            ("form delete <name>", "Delete form (mod only)"),
         ],
     )
 
@@ -58,6 +62,15 @@ async def handle_custom_content_command(message: discord.Message, bot: discord.C
         return False
 
     command = parts[0].lower()
+
+    # Umbrella help
+    if command == "custom" and len(parts) >= 2 and parts[1].lower() == "help":
+        embed = help_system.get_module_help("Custom Content")
+        if embed:
+            await message.reply(embed=embed)
+        else:
+            await message.reply(" Help information not available.")
+        return True
 
     # Route to handlers
     if command == "customcmd":
@@ -87,19 +100,23 @@ async def handle_custom_content_command(message: discord.Message, bot: discord.C
 async def _handle_customcmd(message: discord.Message, parts: list[str]) -> None:
     """Handle custom command management."""
     if len(parts) < 2:
-        await message.reply(" Usage: `customcmd <add|remove|list>`")
+        await message.reply(" Usage: `customcmd <add|info|edit|remove|list>`")
         return
 
     subcommand = parts[1].lower()
 
     if subcommand == "add":
         await _handle_customcmd_add(message, parts)
+    elif subcommand == "info":
+        await _handle_customcmd_info(message, parts)
+    elif subcommand == "edit":
+        await _handle_customcmd_edit(message, parts)
     elif subcommand == "remove":
         await _handle_customcmd_remove(message, parts)
     elif subcommand == "list":
         await _handle_customcmd_list(message)
     else:
-        await message.reply(" Usage: `customcmd <add|remove|list>`")
+        await message.reply(" Usage: `customcmd <add|info|edit|remove|list>`")
 
 
 async def _handle_customcmd_add(message: discord.Message, parts: list[str]) -> None:
@@ -132,6 +149,59 @@ async def _handle_customcmd_add(message: discord.Message, parts: list[str]) -> N
         f"**Name:** `{cmd_name}`\n"
         f"**Usage:** `{cmd_name}`"
     )
+
+async def _handle_customcmd_info(message: discord.Message, parts: list[str]) -> None:
+    """Show custom command details."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `customcmd info <name>`")
+        return
+
+    cmd_name = parts[2].lower()
+    store = CustomContentStore(message.guild.id)
+    await store.initialize()
+    cmd = await store.get_custom_command(cmd_name)
+    if not cmd:
+        await message.reply(f" No custom command found with name `{cmd_name}`")
+        return
+
+    embed = discord.Embed(
+        title=f"Custom Command: {cmd_name}",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Response", value=(cmd.get("response") or "")[:1024] or "—", inline=False)
+    embed.add_field(name="Uses", value=str(cmd.get("use_count", 0)), inline=True)
+    created_at = (cmd.get("created_at") or "")[:19]
+    if created_at:
+        embed.add_field(name="Created", value=created_at, inline=True)
+    await message.reply(embed=embed)
+
+
+async def _handle_customcmd_edit(message: discord.Message, parts: list[str]) -> None:
+    """Edit a custom command."""
+    if not message.author.guild_permissions.manage_messages:
+        await message.reply(" You need Manage Messages permission to edit custom commands.")
+        return
+
+    if len(parts) < 3:
+        await message.reply(" Usage: `customcmd edit <name> <response>`")
+        return
+
+    args = parts[2].split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply(" Usage: `customcmd edit <name> <response>`")
+        return
+
+    cmd_name = args[0].lower()
+    response = args[1]
+
+    store = CustomContentStore(message.guild.id)
+    await store.initialize()
+    updated = await store.update_custom_command(cmd_name, response=response)
+    if not updated:
+        await message.reply(f" No custom command found with name `{cmd_name}`")
+        return
+    await message.reply(f" Custom command `{cmd_name}` updated.")
 
 
 async def _handle_customcmd_remove(message: discord.Message, parts: list[str]) -> None:
@@ -246,8 +316,10 @@ async def _handle_form(
         await _handle_form_submit(message, parts, bot)
     elif subcommand == "responses":
         await _handle_form_responses(message, parts)
+    elif subcommand == "delete":
+        await _handle_form_delete(message, parts)
     else:
-        await message.reply(" Usage: `form <create|list|submit|responses>`")
+        await message.reply(" Usage: `form <create|list|submit|responses|delete>`")
 
 
 async def _handle_form_create(message: discord.Message, parts: list[str]) -> None:
@@ -387,6 +459,23 @@ async def _handle_form_submit(
         f" Opening form: **{form['name']}**\n"
         "Note: Full modal implementation requires interaction context."
     )
+
+async def _handle_form_delete(message: discord.Message, parts: list[str]) -> None:
+    """Delete a form (mod only)."""
+    if not message.author.guild_permissions.manage_messages:
+        await message.reply(" You need Manage Messages permission to delete forms.")
+        return
+    if len(parts) < 3:
+        await message.reply(" Usage: `form delete <name>`")
+        return
+    form_name = parts[2]
+    store = CustomContentStore(message.guild.id)
+    await store.initialize()
+    removed = await store.remove_form(form_name)
+    if not removed:
+        await message.reply(f" No form found with name `{form_name}`")
+        return
+    await message.reply(f" Form deleted: **{removed.get('name','Unknown')}**")
 
 
 async def _handle_form_responses(message: discord.Message, parts: list[str]) -> None:

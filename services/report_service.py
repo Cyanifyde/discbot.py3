@@ -242,6 +242,32 @@ class ReportService:
         store = self._get_store(guild_id)
         return await store.get_categories()
 
+    async def add_category(self, guild_id: int, category: str) -> bool:
+        """Add a report category. Returns True if added, False if it already existed."""
+        category = (category or "").strip().lower()
+        if not category:
+            return False
+        store = self._get_store(guild_id)
+        categories = await store.get_categories()
+        if category in [c.lower() for c in categories]:
+            return False
+        categories.append(category)
+        await store.update_config({"categories": categories})
+        return True
+
+    async def remove_category(self, guild_id: int, category: str) -> bool:
+        """Remove a report category. Returns True if removed."""
+        category = (category or "").strip().lower()
+        if not category:
+            return False
+        store = self._get_store(guild_id)
+        categories = await store.get_categories()
+        new_categories = [c for c in categories if c.lower() != category]
+        if len(new_categories) == len(categories):
+            return False
+        await store.update_config({"categories": new_categories})
+        return True
+
     async def get_auto_close_days(self, guild_id: int) -> int:
         """Get auto-close days setting."""
         store = self._get_store(guild_id)

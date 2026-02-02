@@ -6,6 +6,7 @@ Provides storage for temporary roles, role requests, bundles, and reaction roles
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -59,6 +60,7 @@ class RolesStore:
             data = await self._read_temp_roles()
 
             temp_role = {
+                "id": str(uuid.uuid4()),
                 "user_id": user_id,
                 "role_id": role_id,
                 "added_at": dt_to_iso(utcnow()),
@@ -69,6 +71,81 @@ class RolesStore:
             data["temp_roles"].append(temp_role)
             await self._write_temp_roles(data)
             return temp_role
+
+    async def get_temp_roles(self) -> List[Dict[str, Any]]:
+        """Get all temporary roles (ensures each entry has an ID)."""
+        async with self._lock:
+            data = await self._read_temp_roles()
+            temp_roles = data.get("temp_roles", [])
+            if not isinstance(temp_roles, list):
+                temp_roles = []
+            changed = False
+            for tr in temp_roles:
+                if isinstance(tr, dict) and not tr.get("id"):
+                    tr["id"] = str(uuid.uuid4())
+                    changed = True
+            if changed:
+                data["temp_roles"] = temp_roles
+                await self._write_temp_roles(data)
+            return [tr for tr in temp_roles if isinstance(tr, dict)]
+
+    async def get_temp_role(self, temp_role_id: str) -> Optional[Dict[str, Any]]:
+        """Get a temp role by ID prefix."""
+        async with self._lock:
+            data = await self._read_temp_roles()
+            temp_roles = data.get("temp_roles", [])
+            if not isinstance(temp_roles, list):
+                return None
+            for tr in temp_roles:
+                if not isinstance(tr, dict):
+                    continue
+                tr_id = tr.get("id")
+                if isinstance(tr_id, str) and tr_id.startswith(temp_role_id):
+                    return tr
+            return None
+
+    async def remove_temp_role_by_id(self, temp_role_id: str) -> Optional[Dict[str, Any]]:
+        """Remove a temporary role entry by ID prefix. Returns removed entry if found."""
+        async with self._lock:
+            data = await self._read_temp_roles()
+            temp_roles = data.get("temp_roles", [])
+            if not isinstance(temp_roles, list):
+                return None
+
+            removed: Optional[Dict[str, Any]] = None
+            kept: list[Dict[str, Any]] = []
+            for tr in temp_roles:
+                if not isinstance(tr, dict):
+                    continue
+                tr_id = tr.get("id")
+                if removed is None and isinstance(tr_id, str) and tr_id.startswith(temp_role_id):
+                    removed = tr
+                    continue
+                kept.append(tr)
+
+            if removed is None:
+                return None
+
+            data["temp_roles"] = kept
+            await self._write_temp_roles(data)
+            return removed
+
+    async def extend_temp_role(self, temp_role_id: str, expires_at: str) -> Optional[Dict[str, Any]]:
+        """Update expires_at for a temp role by ID prefix. Returns updated entry if found."""
+        async with self._lock:
+            data = await self._read_temp_roles()
+            temp_roles = data.get("temp_roles", [])
+            if not isinstance(temp_roles, list):
+                return None
+            for tr in temp_roles:
+                if not isinstance(tr, dict):
+                    continue
+                tr_id = tr.get("id")
+                if isinstance(tr_id, str) and tr_id.startswith(temp_role_id):
+                    tr["expires_at"] = expires_at
+                    await self._write_temp_roles(data)
+                    return tr
+            return None
 
     async def get_expired_temp_roles(self) -> List[Dict[str, Any]]:
         """Get all expired temporary roles."""
@@ -147,8 +224,8 @@ class RolesStore:
         request_id: str,
         status: str,
         reviewer_id: int,
-    ) -> bool:
-        """Update role request status."""
+    ) -> Optional[Dict[str, Any]]:
+        """Update role request status. Returns updated request if found."""
         async with self._lock:
             data = await self._read_requests()
 
@@ -157,9 +234,9 @@ class RolesStore:
                     request["status"] = status
                     request["reviewed_by"] = reviewer_id
                     await self._write_requests(data)
-                    return True
+                    return request
 
-            return False
+            return None
 
     async def get_pending_requests(self) -> List[Dict[str, Any]]:
         """Get all pending role requests."""
@@ -217,6 +294,37 @@ class RolesStore:
             data = await self._read_bundles()
             return data["bundles"]
 
+    async def remove_bundle(self, bundle_id: str) -> Optional[Dict[str, Any]]:
+        """Remove a role bundle by ID prefix or name. Returns removed bundle if found."""
+        async with self._lock:
+            data = await self._read_bundles()
+            bundles = data.get("bundles", [])
+            if not isinstance(bundles, list):
+                return None
+
+            removed: Optional[Dict[str, Any]] = None
+            kept: list[Dict[str, Any]] = []
+            for bundle in bundles:
+                if not isinstance(bundle, dict):
+                    continue
+                bid = bundle.get("id", "")
+                name = bundle.get("name", "")
+                matches = (
+                    (isinstance(bid, str) and bid.startswith(bundle_id))
+                    or (isinstance(name, str) and name.lower() == bundle_id.lower())
+                )
+                if removed is None and matches:
+                    removed = bundle
+                    continue
+                kept.append(bundle)
+
+            if removed is None:
+                return None
+
+            data["bundles"] = kept
+            await self._write_bundles(data)
+            return removed
+
     # ─── Reaction Roles ───────────────────────────────────────────────────────
 
     async def _read_reaction_roles(self) -> Dict[str, Any]:
@@ -246,6 +354,23 @@ class RolesStore:
                 data["reaction_roles"][msg_key] = {}
 
             data["reaction_roles"][msg_key][emoji] = role_id
+            await self._write_reaction_roles(data)
+            return True
+
+    async def remove_reaction_role(self, message_id: int, emoji: str) -> bool:
+        """Remove a reaction role mapping."""
+        async with self._lock:
+            data = await self._read_reaction_roles()
+            msg_key = str(message_id)
+            mappings = data.get("reaction_roles", {}).get(msg_key)
+            if not isinstance(mappings, dict):
+                return False
+            if emoji not in mappings:
+                return False
+            del mappings[emoji]
+            if not mappings:
+                # Remove empty message mapping
+                data.get("reaction_roles", {}).pop(msg_key, None)
             await self._write_reaction_roles(data)
             return True
 

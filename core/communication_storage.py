@@ -249,6 +249,7 @@ class CommunicationStore:
         message_id: int,
         title: str,
         content: str,
+        channel_id: Optional[int] = None,
         required_role_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Create an acknowledgment requirement for a message."""
@@ -257,6 +258,7 @@ class CommunicationStore:
 
             ack = {
                 "message_id": message_id,
+                "channel_id": channel_id,
                 "title": title,
                 "content": content,
                 "required_role_id": required_role_id,
