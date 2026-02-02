@@ -118,20 +118,43 @@ class RenderService:
 
         html = template_obj.render(profile=profile, rates=rates)
 
-        # Calculate height based on content:
-        # - Base: 200px (header ~80, footer ~80, body padding ~40)
-        # - Per rate: 55px without image, 75px with image
-        # - Showcase image: +220px
-        rate_count = len(rates)
-        has_rate_images = any(
-            isinstance(r, dict) and r.get("image") for r in rates.values()
-        )
-        height = 10 + (rate_count * (75 if has_rate_images else 55))
+        # WeasyPrint doesn't reliably "auto-fit" page height; if we don't give a
+        # target height, the PDF->image conversion can include a lot of empty
+        # background. Use template-aware sizing so the screenshot is tightly
+        # cropped to the card.
+        tpl = (template or "minimal").lower()
+        width_by_template = {
+            "minimal": 540,
+            "colorful": 650,
+            "detailed": 700,
+            "professional": 800,
+        }
+        base_by_template = {
+            "minimal": 420,
+            "colorful": 560,
+            "detailed": 640,
+            "professional": 700,
+        }
+        per_rate_by_template = {
+            "minimal": 95,
+            "colorful": 125,
+            "detailed": 125,
+            "professional": 150,
+        }
+
+        width = width_by_template.get(tpl, 540)
+        base = base_by_template.get(tpl, 520)
+        per_rate = per_rate_by_template.get(tpl, 120)
+
+        # Count per-rate thumbnails (not the header profile image)
+        rate_images = sum(1 for r in rates.values() if isinstance(r, dict) and r.get("image"))
+        height = base + (len(rates) * per_rate) + (rate_images * 40)
         if profile.get("image"):
-            height += 220
+            height += 240
+
         # Clamp to reasonable bounds
-        height = max(320, min(height, 1600))
-        return await self._html_to_jpg(html, width=540, height=0)
+        height = max(520, min(height, 2200))
+        return await self._html_to_jpg(html, width=width, height=height)
 
     async def render_contract(
         self,

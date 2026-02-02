@@ -23,24 +23,29 @@ from bot import DiscBot
 # Get configuration from environment
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+_log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
 
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
+    level=_log_level,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("discbot")
-logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
-logging.getLogger("discord").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
-logging.getLogger("asyncio").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
-logging.getLogger("fontTools").setLevel(logging.WARNING)
-logging.getLogger("weasyprint").setLevel(logging.WARNING)
+logging.getLogger().setLevel(_log_level)
+logging.getLogger("discord").setLevel(_log_level)
+logging.getLogger("asyncio").setLevel(_log_level)
 
-# Suppress verbose third-party library logs unless LOG_LEVEL is DEBUG
-if LOG_LEVEL.upper() != "DEBUG":
-    logging.getLogger("fontTools").setLevel(logging.WARNING)
+# Respect LOG_LEVEL for noisy dependencies too (especially fontTools).
+logging.getLogger("fontTools").setLevel(_log_level)
+
+# Keep these quieter unless explicitly debugging.
+if _log_level > logging.DEBUG:
     logging.getLogger("weasyprint").setLevel(logging.WARNING)
     logging.getLogger("pdf2image").setLevel(logging.WARNING)
     logging.getLogger("PIL").setLevel(logging.WARNING)
+else:
+    logging.getLogger("weasyprint").setLevel(_log_level)
+    logging.getLogger("pdf2image").setLevel(_log_level)
+    logging.getLogger("PIL").setLevel(_log_level)
 
 # Debug: show if .env was found
 if not env_path.exists():
