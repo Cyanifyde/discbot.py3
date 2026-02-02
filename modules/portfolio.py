@@ -15,6 +15,7 @@ import discord
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
 from services.portfolio_service import portfolio_service
+from services.render_service import render_service
 
 logger = logging.getLogger("discbot.portfolio")
 

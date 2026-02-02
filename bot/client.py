@@ -331,6 +331,34 @@ class DiscBot(discord.Client):
         if state.is_channel_ignored(message.channel.id):
             return
 
+        # Notify when mentioning AFK users
+        if message.mentions:
+            from core.utility_storage import UtilityStore
+            afk_lines: list[str] = []
+            for user in message.mentions:
+                if user.bot:
+                    continue
+                store = UtilityStore(user.id)
+                await store.initialize()
+                is_afk, afk_message = await store.is_afk()
+                if not is_afk:
+                    continue
+                await store.add_mention({
+                    "author": message.author.display_name,
+                    "author_id": message.author.id,
+                    "channel_id": message.channel.id,
+                    "guild_id": message.guild.id,
+                    "message_id": message.id,
+                    "content": message.content,
+                    "timestamp": utcnow().isoformat(),
+                })
+                if afk_message:
+                    afk_lines.append(f"{user.mention} is AFK: {afk_message}")
+                else:
+                    afk_lines.append(f"{user.mention} is AFK.")
+            if afk_lines:
+                await message.reply("\n".join(afk_lines))
+
         # Run auto-responder with error handling
         async def _safe_auto_responder():
             try:
