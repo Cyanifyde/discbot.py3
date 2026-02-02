@@ -117,7 +117,9 @@ class RenderService:
             template_obj = self.env.get_template("rate_card_minimal.html")
 
         html = template_obj.render(profile=profile, rates=rates)
-        return await self._html_to_jpg(html, width=600, height=800)
+        # Dynamic height: base 250px + 50px per rate item
+        height = 250 + (len(rates) * 50)
+        return await self._html_to_jpg(html, width=540, height=height)
 
     async def render_contract(
         self,

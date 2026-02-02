@@ -516,13 +516,33 @@ async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
         if result["was_afk"]:
             mentions = result["mentions"]
             if mentions:
-                mention_str = "\n".join(
-                    f"• {m.get('author')}: {m.get('content', '')[:50]}"
-                    for m in mentions[:10]
+                lines: list[str] = []
+                for m in mentions[:10]:
+                    author = m.get("author", "Someone")
+                    content = m.get("content", "")
+                    guild_id = m.get("guild_id")
+                    channel_id = m.get("channel_id")
+                    message_id = m.get("message_id")
+                    link = ""
+                    if guild_id and channel_id and message_id:
+                        link = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+                    snippet = content if len(content) <= 120 else f"{content[:117]}..."
+                    if link:
+                        lines.append(f"• {author}: {snippet}\n  {link}")
+                    else:
+                        lines.append(f"• {author}: {snippet}")
+
+                dm_text = (
+                    f"You were mentioned **{len(mentions)}** times while AFK:\n"
+                    + "\n".join(lines)
                 )
-                await message.reply(
-                    f" Welcome back! You were mentioned **{len(mentions)}** times:\n{mention_str}"
-                )
+                try:
+                    await message.author.send(dm_text)
+                    await message.reply(" Welcome back! I sent your AFK recap in DMs.")
+                except discord.Forbidden:
+                    await message.reply(
+                        " Welcome back! I couldn't DM you your AFK recap. Please enable DMs."
+                    )
             else:
                 await message.reply(" Welcome back!")
         else:
