@@ -501,15 +501,24 @@ def _format_bookmark_delivery_text(bookmark: Bookmark, message: Optional[discord
         return base
 
     author = getattr(message.author, "display_name", "Unknown")
+    channel_name = getattr(getattr(message, "channel", None), "name", "")
     content = (message.content or "").strip()
-    if not content and getattr(message, "attachments", None):
+    attachments = list(getattr(message, "attachments", []) or [])
+    if not content and attachments:
         content = "(Attachment only)"
 
     # Keep within Discord 2000-char limit with room for link/note.
     if len(content) > 900:
         content = content[:897] + "..."
 
-    lines = [header, f"From {author}:", content, bookmark.message_link]
+    context = f"In #{channel_name}" if channel_name else ""
+    lines = [header, f"From {author}. {context}".strip(), content, bookmark.message_link]
+
+    if attachments:
+        # Include up to 3 attachment URLs.
+        att_lines = [a.url for a in attachments[:3] if getattr(a, "url", None)]
+        if att_lines:
+            lines.append("\n".join(att_lines))
     if bookmark.note:
         note = bookmark.note if len(bookmark.note) <= 400 else bookmark.note[:397] + "..."
         lines.append(f"Note: {note}")
