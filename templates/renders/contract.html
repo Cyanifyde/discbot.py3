@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Commission Contract</title>
     <style>
+        :root {
+            --bg0: #0b1220;
+            --bg1: #14213d;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --soft: #f1f5f9;
+            --soft-2: #eef2ff;
+            --accent: #2563eb;
+            --success-bg: #f0fdf4;
+            --success-border: #22c55e;
+            --success-text: #166534;
+        }
         @page {
             size: 800px 1200px;
             margin: 0;
@@ -16,35 +30,35 @@
         }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, var(--bg0) 0%, var(--bg1) 100%);
             padding: 30px;
             min-height: 100%;
             line-height: 1.6;
         }
         .contract {
-            background: #ffffff;
+            background: var(--card);
             max-width: 740px;
             margin: 0 auto;
             padding: 50px;
-            border-top: 6px solid #6366f1;
+            border-top: 6px solid var(--accent);
         }
         .header {
             text-align: center;
             padding-bottom: 30px;
             margin-bottom: 35px;
-            border-bottom: 2px solid #e5e7eb;
+            border-bottom: 2px solid var(--border);
         }
         .header h1 {
             font-size: 28px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--text);
             text-transform: uppercase;
             letter-spacing: 3px;
             margin-bottom: 8px;
         }
         .header p {
             font-size: 13px;
-            color: #6b7280;
+            color: var(--muted);
         }
         .section {
             margin-bottom: 30px;
@@ -53,11 +67,11 @@
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: #6366f1;
+            color: var(--accent);
             font-weight: 600;
             margin-bottom: 15px;
             padding-bottom: 8px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border);
         }
         .info-grid {
             display: flex;
