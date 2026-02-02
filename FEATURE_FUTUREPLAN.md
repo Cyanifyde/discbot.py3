@@ -858,29 +858,29 @@ A comprehensive, step-by-step implementation plan for all features in FEATURE_PL
 **File:** `services/analytics_service.py`
 
 #### Storage: `data/analytics/{guild_id}/`
-- [ ] `stats.json` - Aggregate stats
-- [ ] `timeseries/` - Time-bucketed data
+- [x] `stats.json` - Aggregate stats
+- [x] `timeseries/` - Time-bucketed data
 
 #### Metrics to Track
-- [ ] Commission stats: completed, value, avg completion time, by month, by type
-- [ ] Profile stats: views, portfolio views by entry, views by week
-- [ ] Federation stats: synced actions, blocklist hits, reputation avg
-- [ ] Bot stats: uptime, commands run, messages scanned
+- [x] Commission stats: completed, value, avg completion time, by month, by type
+- [x] Profile stats: views, portfolio views by entry, views by week
+- [x] Federation stats: synced actions, blocklist hits, reputation avg
+- [x] Bot stats: uptime, commands run, messages scanned
 
 #### Service Functions
-- [ ] `record_event(guild_id, event_type, data)`
-- [ ] `get_commission_stats(guild_id, period) -> dict`
-- [ ] `get_profile_stats(user_id) -> dict`
-- [ ] `get_federation_stats(federation_id) -> dict`
-- [ ] `get_bot_stats() -> dict`
-- [ ] `calculate_trends(guild_id, metric) -> list`
+- [x] `record_event(guild_id, event_type, data)`
+- [x] `get_commission_stats(guild_id, period) -> dict`
+- [x] `get_profile_stats(user_id) -> dict`
+- [x] `get_federation_stats(federation_id) -> dict`
+- [x] `get_bot_stats() -> dict`
+- [x] `calculate_trends(guild_id, metric) -> list`
 
 #### Commands
-- [ ] `stats commissions [period]`
-- [ ] `stats profile`
-- [ ] `stats federation`
-- [ ] `stats bot`
-- [ ] `stats trends <metric>`
+- [x] `stats commissions [period]`
+- [x] `stats profile`
+- [x] `stats federation`
+- [x] `stats bot`
+- [x] `stats trends <metric>`
 
 ---
 
@@ -889,10 +889,10 @@ A comprehensive, step-by-step implementation plan for all features in FEATURE_PL
 **Directory:** `web/`
 
 #### Technology Stack
-- [ ] Backend: aiohttp (consistent with existing async patterns)
-- [ ] Frontend: Vanilla HTML/CSS/JS ("old internet aesthetic")
-- [ ] Auth: Discord OAuth2
-- [ ] No frameworks
+- [x] Backend: aiohttp (consistent with existing async patterns)
+- [x] Frontend: Vanilla HTML/CSS/JS ("old internet aesthetic")
+- [x] Auth: Discord OAuth2
+- [x] No frameworks
 
 #### Structure
 ```
@@ -944,79 +944,79 @@ web/
 ### 5.3 Server Admin Panel
 
 #### Dashboard
-- [ ] Server overview, quick stats, recent activity
-- [ ] Route: `GET /admin/{guild_id}/`
+- [x] Server overview, quick stats, recent activity
+- [x] Route: `GET /admin/{guild_id}/`
 
 #### Modules
-- [ ] Enable/disable modules, per-module settings
-- [ ] Route: `GET/POST /admin/{guild_id}/modules`
+- [x] Enable/disable modules, per-module settings
+- [x] Route: `GET/POST /admin/{guild_id}/modules`
 
 #### Moderation Settings
-- [ ] Warning thresholds, escalation paths, auto-mod config
-- [ ] Route: `GET/POST /admin/{guild_id}/moderation`
+- [x] Warning thresholds, escalation paths, auto-mod config
+- [x] Route: `GET/POST /admin/{guild_id}/moderation`
 
 #### Auto-Responders
-- [ ] Create/edit/delete, test patterns
-- [ ] Route: `GET/POST /admin/{guild_id}/autoresponders`
+- [x] Create/edit/delete, test patterns
+- [x] Route: `GET/POST /admin/{guild_id}/autoresponders`
 
 #### Custom Commands
-- [ ] Manage commands, view usage
-- [ ] Route: `GET/POST /admin/{guild_id}/commands`
+- [x] Manage commands, view usage
+- [x] Route: `GET/POST /admin/{guild_id}/commands`
 
 #### Forms
-- [ ] Build forms, view submissions
-- [ ] Route: `GET/POST /admin/{guild_id}/forms`
+- [x] Build forms, view submissions
+- [x] Route: `GET/POST /admin/{guild_id}/forms`
 
 #### Roles
-- [ ] Reaction roles, requests queue, temp roles, bundles
-- [ ] Route: `GET/POST /admin/{guild_id}/roles`
+- [x] Reaction roles, requests queue, temp roles, bundles
+- [x] Route: `GET/POST /admin/{guild_id}/roles`
 
 #### Automation
-- [ ] Trigger chains, scheduled actions
-- [ ] Route: `GET/POST /admin/{guild_id}/automation`
+- [x] Trigger chains, scheduled actions
+- [x] Route: `GET/POST /admin/{guild_id}/automation`
 
 #### Commission Settings
-- [ ] Stages, templates, defaults
-- [ ] Route: `GET/POST /admin/{guild_id}/commissions`
+- [x] Stages, templates, defaults
+- [x] Route: `GET/POST /admin/{guild_id}/commissions`
 
 #### Logs
-- [ ] Mod logs, action history, filterable
-- [ ] Route: `GET /admin/{guild_id}/logs`
+- [x] Mod logs, action history, filterable
+- [x] Route: `GET /admin/{guild_id}/logs`
 
 #### Bot Persona
-- [ ] Customize name/avatar/style
-- [ ] Route: `GET/POST /admin/{guild_id}/persona`
+- [x] Customize name/avatar/style
+- [x] Route: `GET/POST /admin/{guild_id}/persona`
 
 ---
 
 ### 5.4 Federation Admin Panel
 
-- [ ] Dashboard - overview, health, member count
-- [ ] Member Servers - manage, trust scores, sync status
-- [ ] Trust Network - visualize relationships
-- [ ] Sync Settings - what syncs, from which tiers
-- [ ] Cross-Post Channels - art-share configs
-- [ ] Blocklist - manage federation blocklist
-- [ ] Audit Log - sync events, membership changes
-- [ ] Announcements - push to children
-- [ ] Applications - review join requests
+- [x] Dashboard - overview, health, member count
+- [x] Member Servers - manage, trust scores, sync status
+- [x] Trust Network - visualize relationships
+- [x] Sync Settings - what syncs, from which tiers
+- [x] Cross-Post Channels - art-share configs
+- [x] Blocklist - manage federation blocklist
+- [x] Audit Log - sync events, membership changes
+- [x] Announcements - push to children
+- [x] Applications - review join requests
 
 ---
 
 ### 5.5 Bot Owner Panel
 
-- [ ] Dashboard - global stats, all servers, uptime
-- [ ] Servers - list, per-server controls, leave
-- [ ] Federation Management - all federations overview
-- [ ] AI Checker Module:
+- [x] Dashboard - global stats, all servers, uptime
+- [x] Servers - list, per-server controls, leave
+- [x] Federation Management - all federations overview
+- [x] AI Checker Module:
   - Pricing (cost per use, bulk discounts, free tier)
   - Server Credits (view/adjust, transactions)
   - Usage Stats (per-server, revenue)
   - Enable/Disable per server
   - Rate Limits
-- [ ] Global Settings - defaults, feature flags
-- [ ] Maintenance - restart, update, backup
-- [ ] Logs - global errors, performance
+- [x] Global Settings - defaults, feature flags
+- [x] Maintenance - restart, update, backup
+- [x] Logs - global errors, performance
 
 ---
 

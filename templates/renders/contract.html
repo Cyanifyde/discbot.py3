@@ -82,22 +82,22 @@
             flex: 1;
             min-width: 180px;
             padding: 15px;
-            background: #f9fafb;
+            background: var(--soft);
         }
         .info-label {
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #6b7280;
+            color: var(--muted);
             margin-bottom: 5px;
         }
         .info-value {
             font-size: 14px;
-            color: #1f2937;
+            color: var(--text);
             font-weight: 500;
         }
         .price-highlight {
-            background: #eef2ff;
+            background: var(--soft-2);
             padding: 20px;
             margin-top: 15px;
             display: flex;
@@ -106,12 +106,12 @@
         }
         .price-label {
             font-size: 14px;
-            color: #4b5563;
+            color: #475569;
         }
         .price-value {
             font-size: 28px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--text);
         }
         .terms-list {
             list-style: none;
@@ -122,8 +122,8 @@
             padding: 12px 0 12px 35px;
             position: relative;
             font-size: 14px;
-            color: #374151;
-            border-bottom: 1px solid #f3f4f6;
+            color: #334155;
+            border-bottom: 1px solid var(--soft);
         }
         .terms-list li:last-child {
             border-bottom: none;
@@ -135,7 +135,7 @@
             top: 12px;
             width: 22px;
             height: 22px;
-            background: #6366f1;
+            background: var(--accent);
             color: white;
             font-size: 11px;
             font-weight: 600;
@@ -144,13 +144,13 @@
             justify-content: center;
         }
         .revision-box {
-            background: #f0fdf4;
-            border-left: 3px solid #22c55e;
+            background: var(--success-bg);
+            border-left: 3px solid var(--success-border);
             padding: 15px 20px;
         }
         .revision-box p {
             font-size: 14px;
-            color: #166534;
+            color: var(--success-text);
         }
         .signatures {
             margin-top: 50px;
@@ -161,25 +161,25 @@
             flex: 1;
         }
         .signature-line {
-            border-top: 2px solid #1f2937;
+            border-top: 2px solid var(--text);
             padding-top: 10px;
             margin-top: 60px;
         }
         .signature-label {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--muted);
             text-transform: uppercase;
             letter-spacing: 1px;
         }
         .footer {
             margin-top: 40px;
             padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--border);
             text-align: center;
         }
         .footer p {
             font-size: 11px;
-            color: #9ca3af;
+            color: #94a3b8;
         }
     </style>
 </head>
@@ -261,7 +261,7 @@
         {% if terms.tos_url %}
         <div class="section">
             <div class="section-title">Additional Terms</div>
-            <p style="font-size: 13px; color: #6b7280;">Full Terms of Service: {{ terms.tos_url }}</p>
+            <p style="font-size: 13px; color: var(--muted);">Full Terms of Service: {{ terms.tos_url }}</p>
         </div>
         {% endif %}
 

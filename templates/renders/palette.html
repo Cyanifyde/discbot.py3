@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Color Palette</title>
     <style>
+        :root {
+            --bg0: #0b1220;
+            --bg1: #14213d;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --soft: #f1f5f9;
+            --accent: #2563eb;
+            --accent-soft: #dbeafe;
+        }
         @page {
             size: 800px 400px;
             margin: 0;
@@ -16,16 +27,16 @@
         }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, var(--bg0) 0%, var(--bg1) 100%);
             padding: 25px;
             min-height: 100%;
         }
         .palette-container {
-            background: #ffffff;
+            background: var(--card);
             padding: 30px;
             max-width: 750px;
             margin: 0 auto;
-            border-top: 5px solid #6366f1;
+            border-top: 5px solid var(--accent);
         }
         .header {
             display: flex;
@@ -33,21 +44,21 @@
             align-items: center;
             margin-bottom: 25px;
             padding-bottom: 15px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border);
         }
         h1 {
             font-size: 22px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--text);
             letter-spacing: -0.5px;
         }
         .method-badge {
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: #6366f1;
+            color: var(--accent);
             font-weight: 600;
-            background: #eef2ff;
+            background: var(--accent-soft);
             padding: 6px 14px;
         }
         .colors {
@@ -73,7 +84,7 @@
             font-family: 'Courier New', monospace;
             font-size: 13px;
             font-weight: 600;
-            color: #1f2937;
+            color: var(--text);
             text-transform: uppercase;
         }
         .footer {
@@ -82,7 +93,7 @@
         }
         .footer p {
             font-size: 11px;
-            color: #9ca3af;
+            color: #94a3b8;
             letter-spacing: 0.5px;
         }
     </style>

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rate Card - Minimal</title>
     <style>
+        :root {
+            --bg0: #0b1220;
+            --bg1: #14213d;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --soft: #f1f5f9;
+            --accent: #2563eb;
+            --accent-2: #06b6d4;
+        }
         @page {
             size: auto;
             margin: 0;
@@ -16,31 +27,31 @@
         }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, var(--bg0) 0%, var(--bg1) 100%);
             padding: 20px;
             margin: 0;
         }
         .rate-card {
-            background: #ffffff;
+            background: var(--card);
             padding: 30px;
-            border-top: 5px solid #6366f1;
+            border-top: 5px solid var(--accent);
         }
         .header {
             text-align: center;
             margin-bottom: 25px;
             padding-bottom: 20px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border);
         }
         h1 {
             font-size: 24px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--text);
             letter-spacing: -0.5px;
             margin-bottom: 6px;
         }
         .subtitle {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--muted);
             line-height: 1.4;
         }
         .rates-list {
@@ -51,7 +62,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 14px 0;
-            border-bottom: 1px solid #f3f4f6;
+            border-bottom: 1px solid var(--soft);
             gap: 12px;
         }
         .rate-item:last-child {
@@ -68,7 +79,7 @@
             height: 80px;
             object-fit: cover;
             border-radius: 8px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--border);
             flex-shrink: 0;
         }
         .rate-name {
@@ -78,29 +89,29 @@
         }
         .rate-description {
             font-size: 11px;
-            color: #6b7280;
+            color: var(--muted);
             margin-top: 2px;
         }
         .rate-price {
             font-size: 18px;
             font-weight: 700;
-            color: #6366f1;
+            color: var(--accent);
             flex-shrink: 0;
         }
         .footer {
             text-align: center;
             padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--border);
         }
         .footer p {
             font-size: 11px;
-            color: #9ca3af;
+            color: #94a3b8;
         }
         .cta {
             display: inline-block;
             margin-top: 12px;
             padding: 8px 20px;
-            background: #6366f1;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
             color: white;
             font-size: 12px;
             font-weight: 600;
@@ -112,7 +123,7 @@
             max-height: 200px;
             object-fit: contain;
             margin-bottom: 20px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--border);
         }
     </style>
 </head>
