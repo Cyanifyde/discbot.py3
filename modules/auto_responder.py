@@ -884,12 +884,12 @@ async def handle_add_response_command(message: discord.Message) -> bool:
     
     if embed_data:
         await message.reply(
-            f'✅ Added embed response for trigger: `{trigger}`',
+            f'Added embed response for trigger: `{trigger}`',
             mention_author=False,
         )
     else:
         await message.reply(
-            f'✅ Added response for trigger: `{trigger}` → `{response[:50]}{"..." if len(response) > 50 else ""}`',
+            f'Added response for trigger: `{trigger}` → `{response[:50]}{"..." if len(response) > 50 else ""}`',
             mention_author=False,
         )
     
@@ -1052,7 +1052,7 @@ async def handle_remove_response_command(message: discord.Message) -> bool:
     await _save_guild_config(message.guild.id, data)
     
     await message.reply(
-        f'✅ Removed trigger: `{trigger}`',
+        f'Removed trigger: `{trigger}`',
         mention_author=False,
     )
     

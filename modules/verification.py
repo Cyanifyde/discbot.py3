@@ -497,7 +497,7 @@ async def handle_remove_verification_command(
     
     if removed:
         await message.reply(
-            f"✅ Verification button removed from {target_channel.mention}!",
+            f"Verification button removed from {target_channel.mention}!",
             mention_author=False,
         )
         logger.info(

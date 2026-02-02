@@ -136,7 +136,7 @@ async def _cmd_list(message: discord.Message) -> None:
     
     for module, description in AVAILABLE_MODULES.items():
         enabled = await is_module_enabled(guild_id, module)
-        status = "✅ Enabled" if enabled else "❌ Disabled"
+        status = "Enabled" if enabled else "Disabled"
         
         role_ids = await get_module_roles(guild_id, module)
         if role_ids:
@@ -185,7 +185,7 @@ async def _cmd_enable(message: discord.Message, args: str) -> None:
     success = await set_module_enabled(message.guild.id, module, True)
     if success:
         await message.reply(
-            f"✅ Module `{module}` has been enabled for this guild.",
+            f"Module `{module}` has been enabled for this guild.",
             mention_author=False,
         )
         logger.info(
@@ -224,7 +224,7 @@ async def _cmd_disable(message: discord.Message, args: str) -> None:
     success = await set_module_enabled(message.guild.id, module, False)
     if success:
         await message.reply(
-            f"❌ Module `{module}` has been disabled for this guild.",
+            f"Module `{module}` has been disabled for this guild.",
             mention_author=False,
         )
         logger.info(
@@ -261,7 +261,7 @@ async def _cmd_permissions(message: discord.Message, args: str) -> None:
         
         lines = [
             f"**Permissions for Module: {target}**",
-            f"Status: {'✅ Enabled' if enabled else '❌ Disabled'}",
+            f"Status: {'Enabled' if enabled else 'Disabled'}",
             ""
         ]
         
@@ -352,7 +352,7 @@ async def _cmd_allow(message: discord.Message, args: str) -> None:
         success = await add_role_to_module(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"✅ Role {role.mention} can now use module `{target}`",
+                f"Role {role.mention} can now use module `{target}`",
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -373,7 +373,7 @@ async def _cmd_allow(message: discord.Message, args: str) -> None:
         success = await add_role_to_command(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"✅ Role {role.mention} can now use command `{target}`",
+                f"Role {role.mention} can now use command `{target}`",
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -428,7 +428,7 @@ async def _cmd_deny(message: discord.Message, args: str) -> None:
         success = await remove_role_from_module(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"✅ Role {role.mention} can no longer use module `{target}`",
+                f"Role {role.mention} can no longer use module `{target}`",
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -449,7 +449,7 @@ async def _cmd_deny(message: discord.Message, args: str) -> None:
         success = await remove_role_from_command(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"✅ Role {role.mention} can no longer use command `{target}`",
+                f"Role {role.mention} can no longer use command `{target}`",
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
             )

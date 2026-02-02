@@ -29,7 +29,7 @@ class ModuleHelp:
             value_parts.append(f"\n**Detailed Help:** `{self.help_command}`")
         
         return {
-            "name": f"📦 {self.name}",
+            "name": self.name,
             "value": "".join(value_parts),
             "inline": False
         }
@@ -37,7 +37,7 @@ class ModuleHelp:
     def to_detailed_embed(self) -> discord.Embed:
         """Create a detailed embed for this module with all commands."""
         embed = discord.Embed(
-            title=f"📦 {self.name}",
+            title=self.name,
             description=self.description,
             color=0x5865F2
         )
@@ -108,7 +108,7 @@ class HelpSystem:
             if name in self._registered_order:
                 self._registered_order.remove(name)
     
-    def get_help_embed(self, title: str = "🤖 Bot Modules") -> discord.Embed:
+    def get_help_embed(self, title: str = "Bot Modules") -> discord.Embed:
         """
         Generate a help embed with module overview.
         

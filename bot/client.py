@@ -44,8 +44,8 @@ from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
 from services.scanner import restore_state as restore_scanner_state
-from services.modules_command import handle_command as handle_modules_command
-from services.modules_command import register_help as register_modules_help
+from modules.modules_command import handle_command as handle_modules_command
+from modules.modules_command import register_help as register_modules_help
 
 from .guild_state import GuildState
 
