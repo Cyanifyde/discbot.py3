@@ -32,6 +32,8 @@ logger = logging.getLogger("discbot")
 logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 logging.getLogger("discord").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 logging.getLogger("asyncio").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
+logging.getLogger("fontTools").setLevel(logging.WARNING)
+logging.getLogger("weasyprint").setLevel(logging.WARNING)
 
 # Suppress verbose third-party library logs unless LOG_LEVEL is DEBUG
 if LOG_LEVEL.upper() != "DEBUG":

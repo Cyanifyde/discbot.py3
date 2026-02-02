@@ -75,6 +75,11 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
     command = parts[0].lower()
 
     # Route to handlers
+    if command == "utility":
+        if len(parts) >= 2 and parts[1].lower() == "help":
+            await _handle_utility_help(message)
+            return True
+        return False
     if command == "bookmark":
         await _handle_bookmark(message, parts)
         return True
@@ -95,6 +100,15 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
         return True
 
     return False
+
+
+async def _handle_utility_help(message: discord.Message) -> None:
+    """Handle 'utility help' command."""
+    embed = help_system.get_module_help("Utility")
+    if embed:
+        await message.reply(embed=embed)
+    else:
+        await message.reply(" Help information not available.")
 
 
 # ─── Bookmark Handlers ────────────────────────────────────────────────────────
