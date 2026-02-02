@@ -530,7 +530,7 @@ async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
         return
 
     # Set AFK
-    afk_message = parts[1] if len(parts) > 1 else None
+    afk_message = " ".join(parts[1:]).strip() if len(parts) > 1 else None
     await store.set_afk(afk_message)
 
     status_text = f" AFK set"
