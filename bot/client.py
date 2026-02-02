@@ -74,7 +74,7 @@ from modules.utility import (
     handle_utility_command,
     setup_utility,
     handle_bookmark_reaction,
-    bookmark_delivery_loop,
+    schedule_existing_delayed_bookmarks,
 )
 from modules.communication import (
     handle_communication_command,
@@ -240,7 +240,8 @@ class DiscBot(discord.Client):
             await restore_scanner_state(self)
 
             self._status_task = asyncio.create_task(self._status_loop())
-            self._bookmark_task = asyncio.create_task(bookmark_delivery_loop(self))
+            # One-time catchup: schedule existing delayed bookmarks (no polling loop).
+            self._bookmark_task = asyncio.create_task(schedule_existing_delayed_bookmarks(self))
 
     async def close(self) -> None:
         """Cleanup when shutting down."""

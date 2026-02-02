@@ -88,8 +88,15 @@ class QueueStore:
 
     async def update_state(self, read_offset: int, queued_jobs: int) -> None:
         async with self.state_lock:
+            read_offset = int(read_offset)
+            queued_jobs = max(0, int(queued_jobs))
+            if (
+                int(self.state.get("read_offset_bytes", 0)) == read_offset
+                and int(self.state.get("queued_jobs", 0)) == queued_jobs
+            ):
+                return
             self.state["read_offset_bytes"] = read_offset
-            self.state["queued_jobs"] = max(0, queued_jobs)
+            self.state["queued_jobs"] = queued_jobs
             await write_json_atomic(self.state_path, self.state)
 
     async def increment_compactions(self) -> None:
@@ -172,14 +179,42 @@ class QueueProcessor:
         return ok
 
     async def _reader_loop(self) -> None:
+        empty_reads = 0
         while not self.stop_event.is_set():
             if self.queue.full():
                 await asyncio.sleep(0.2)
                 continue
+
+            # Avoid spinning up a thread to read the queue file when there's nothing new to read.
+            # When idle, the repeated `asyncio.to_thread()` calls in `read_queue_lines()` can add
+            # measurable CPU overhead, especially across multiple guilds.
+            try:
+                if not self.store.queue_path.exists():
+                    empty_reads = min(empty_reads + 1, 6)
+                    await asyncio.sleep(min(0.5 * (2 ** (empty_reads - 1)), 5.0))
+                    continue
+                size = self.store.queue_path.stat().st_size
+            except OSError:
+                empty_reads = min(empty_reads + 1, 6)
+                await asyncio.sleep(min(0.5 * (2 ** (empty_reads - 1)), 5.0))
+                continue
+
+            if size < self.next_read_offset:
+                # Queue file was truncated/rotated unexpectedly; reset to start to avoid being stuck.
+                self.next_read_offset = 0
+
+            if size <= self.next_read_offset:
+                empty_reads = min(empty_reads + 1, 6)
+                await asyncio.sleep(min(0.5 * (2 ** (empty_reads - 1)), 5.0))
+                continue
+
             lines = await read_queue_lines(self.store.queue_path, self.next_read_offset)
             if not lines:
-                await asyncio.sleep(0.5)
+                # Back off when idle to reduce CPU/IO churn.
+                empty_reads = min(empty_reads + 1, 6)
+                await asyncio.sleep(min(0.5 * (2 ** (empty_reads - 1)), 5.0))
                 continue
+            empty_reads = 0
             for line, end_offset in lines:
                 if not line.strip():
                     self.next_read_offset = end_offset

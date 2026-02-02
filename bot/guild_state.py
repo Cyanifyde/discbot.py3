@@ -156,13 +156,19 @@ class GuildState:
     async def _periodic_queue_state_flush(self) -> None:
         """Periodically save queue state."""
         import random
-        interval = float(self.config.get(K.QUEUE_STATE_FLUSH_INTERVAL_SECONDS, 15))
+        base_interval = float(self.config.get(K.QUEUE_STATE_FLUSH_INTERVAL_SECONDS, 15))
         # Add jitter to prevent thundering herd
-        jitter = random.uniform(0, interval * 0.1)
+        jitter = random.uniform(0, base_interval * 0.1)
         await asyncio.sleep(jitter)
-        
+         
         while True:
             try:
+                # If scanner isn't running, there's no queue state churn; flush rarely.
+                scanner_running = (
+                    self.queue_processor.reader_task is not None
+                    and not self.queue_processor.stop_event.is_set()
+                )
+                interval = base_interval if scanner_running else max(base_interval, 300.0)
                 await asyncio.sleep(interval)
                 await self.queue_store.update_state(
                     self.queue_processor.read_offset_bytes,
@@ -170,7 +176,7 @@ class GuildState:
                 )
             except Exception as e:
                 logger.error("Error in periodic queue state flush for guild %s: %s", self.guild_id, e, exc_info=True)
-                await asyncio.sleep(min(interval, 60))
+                await asyncio.sleep(min(base_interval, 60))
 
     async def _periodic_enforcement(self) -> None:
         """Periodically run inactivity enforcement if enabled."""

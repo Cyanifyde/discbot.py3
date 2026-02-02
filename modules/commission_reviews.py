@@ -42,9 +42,6 @@ async def handle_commission_reviews_command(message: discord.Message, bot: disco
     if not message.guild:
         return False
 
-    if not await is_module_enabled(message.guild.id, MODULE_NAME):
-        return False
-
     content = (message.content or "").strip()
     if not content:
         return False
@@ -57,9 +54,17 @@ async def handle_commission_reviews_command(message: discord.Message, bot: disco
         await _cmd_help(message)
         return True
 
-    sub = parts[1].lower()
+    sub = parts[1].lower().strip(",.!?")
     if sub == "help":
         await _cmd_help(message)
+        return True
+
+    if not await is_module_enabled(message.guild.id, MODULE_NAME):
+        await message.channel.send(
+            "Commission Reviews module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable commissionreviews`",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
         return True
 
     if sub == "list":

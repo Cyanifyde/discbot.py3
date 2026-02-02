@@ -54,9 +54,6 @@ async def handle_art_search_command(message: discord.Message, bot: discord.Clien
     if not message.guild:
         return False
 
-    if not await is_module_enabled(message.guild.id, MODULE_NAME):
-        return False
-
     content = (message.content or "").strip()
     if not content:
         return False
@@ -65,13 +62,13 @@ async def handle_art_search_command(message: discord.Message, bot: discord.Clien
     if not parts:
         return False
 
-    root = parts[0].lower()
+    root = parts[0].lower().strip(",.!?")
     if root not in {"artsearch", "art"}:
         return False
     if len(parts) == 1:
         return False
 
-    sub = parts[1].lower()
+    sub = parts[1].lower().strip(",.!?")
     if sub == "help":
         if root == "artsearch":
             await _cmd_help(message)
@@ -84,6 +81,13 @@ async def handle_art_search_command(message: discord.Message, bot: discord.Clien
         return True
 
     if sub == "search":
+        if not await is_module_enabled(message.guild.id, MODULE_NAME):
+            await message.channel.send(
+                "Art Search module is disabled in this server.\n"
+                "An administrator can enable it with `modules enable artsearch`",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return True
         await _cmd_search(message, parts[2:])
         return True
 

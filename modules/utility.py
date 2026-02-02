@@ -18,7 +18,7 @@ from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
 from core.utility_storage import UtilityStore, GuildUtilityStore
 from core.types import Bookmark
-from core.utils import utcnow, dt_to_iso, parse_duration_extended
+from core.utils import utcnow, dt_to_iso, iso_to_dt, parse_duration_extended
 
 logger = logging.getLogger("discbot.utility")
 
@@ -164,7 +164,7 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
             return True
         return False
     if command == "bookmark":
-        await _handle_bookmark(message, parts)
+        await _handle_bookmark(message, parts, bot)
         return True
     elif command == "afk":
         await _handle_afk(message, parts)
@@ -197,7 +197,7 @@ async def _handle_utility_help(message: discord.Message) -> None:
 # ─── Bookmark Handlers ────────────────────────────────────────────────────────
 
 
-async def _handle_bookmark(message: discord.Message, parts: list[str]) -> None:
+async def _handle_bookmark(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
     """Handle bookmark commands."""
     if len(parts) < 2:
         # No subcommand, bookmark current message
@@ -215,7 +215,7 @@ async def _handle_bookmark(message: discord.Message, parts: list[str]) -> None:
     elif subcommand == "clear":
         await _handle_bookmark_clear(message)
     elif subcommand == "delay":
-        await _handle_bookmark_delay(message, parts)
+        await _handle_bookmark_delay(message, parts, bot)
     elif subcommand == "emoji":
         await _handle_bookmark_emoji(message, parts)
     else:
@@ -354,7 +354,7 @@ async def _handle_bookmark_clear(message: discord.Message) -> None:
     await message.reply(f" Cleared {count} bookmark(s).")
 
 
-async def _handle_bookmark_delay(message: discord.Message, parts: list[str]) -> None:
+async def _handle_bookmark_delay(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
     """Schedule a delayed bookmark delivery."""
     if len(parts) < 4:
         await message.reply(" Usage: `bookmark delay <message_link> <time>`")
@@ -391,6 +391,7 @@ async def _handle_bookmark_delay(message: discord.Message, parts: list[str]) -> 
     )
 
     await store.add_bookmark(bookmark)
+    _schedule_delayed_bookmark(bot, bookmark, store=store)
 
     await message.reply(
         f" Bookmark scheduled for delivery on **{deliver_at.strftime('%Y-%m-%d %H:%M')}**"
@@ -569,6 +570,7 @@ async def handle_bookmark_reaction(
     await store.add_bookmark(bookmark)
 
     if deliver_at:
+        _schedule_delayed_bookmark(bot, bookmark, store=store)
         return
 
     delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
@@ -670,12 +672,63 @@ def _format_bookmark_delivery_text(bookmark: Bookmark, message: Optional[discord
     return "\n".join([l for l in lines if l])
 
 
-async def deliver_pending_bookmarks(bot: discord.Client) -> int:
-    """Send any delayed bookmarks that are due."""
-    import logging
-    logger = logging.getLogger("discbot.utility")
+def _schedule_delayed_bookmark(
+    bot: discord.Client,
+    bookmark: Bookmark,
+    *,
+    store: Optional[UtilityStore] = None,
+) -> None:
+    """Schedule one-shot delivery for a delayed bookmark (no polling)."""
+    deliver_at = iso_to_dt(bookmark.deliver_at)
+    if deliver_at is None:
+        return
+
+    scheduled: set[str] = getattr(bot, "_scheduled_bookmarks", set())
+    tasks: dict[str, asyncio.Task] = getattr(bot, "_scheduled_bookmark_tasks", {})
+    setattr(bot, "_scheduled_bookmarks", scheduled)
+    setattr(bot, "_scheduled_bookmark_tasks", tasks)
+
+    if bookmark.id in scheduled:
+        return
+    scheduled.add(bookmark.id)
+
+    async def _runner() -> None:
+        try:
+            now = utcnow()
+            delay = (deliver_at - now).total_seconds()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
+            user_store = store or UtilityStore(bookmark.user_id)
+            await user_store.initialize()
+            if delivered or permanent_fail:
+                await user_store.remove_bookmark(bookmark.id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Best effort cleanup so stuck deliveries don't churn CPU.
+            try:
+                user_store = store or UtilityStore(bookmark.user_id)
+                await user_store.initialize()
+                await user_store.remove_bookmark(bookmark.id)
+            except Exception:
+                pass
+        finally:
+            scheduled.discard(bookmark.id)
+            tasks.pop(bookmark.id, None)
+
+    tasks[bookmark.id] = asyncio.create_task(_runner())
+
+
+async def schedule_existing_delayed_bookmarks(bot: discord.Client) -> int:
+    """
+    One-time startup catchup: schedule future delayed bookmarks and deliver overdue ones.
+
+    Returns number of overdue bookmarks delivered.
+    """
     sent = 0
     from core.paths import BASE_DIR
+
     base = BASE_DIR / "data" / "utility"
     if not base.exists():
         return 0
@@ -688,41 +741,27 @@ async def deliver_pending_bookmarks(bot: discord.Client) -> int:
         except ValueError:
             continue
 
-        try:
-            store = UtilityStore(user_id)
-            await store.initialize()
-            pending = await store.get_pending_deliveries()
-            for bookmark in pending:
-                try:
-                    delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
-                    if delivered or permanent_fail:
-                        # Delayed bookmarks are one-shot: remove after delivery (or permanent failure).
-                        await store.remove_bookmark(bookmark.id)
-                        if delivered:
-                            sent += 1
-                except Exception as e:
-                    logger.error("Failed to deliver bookmark %s for user %s: %s", bookmark.id, user_id, e)
-                    # Continue with next bookmark
-        except Exception as e:
-            logger.error("Failed to process bookmarks for user %s: %s", user_id, e)
-            # Continue with next user
+        store = UtilityStore(user_id)
+        await store.initialize()
+        bookmarks = await store.get_bookmarks()
+        for bookmark in bookmarks:
+            if bookmark.delivered:
+                continue
+            if not bookmark.deliver_at:
+                continue
+            deliver_at = iso_to_dt(bookmark.deliver_at)
+            if deliver_at is None:
+                continue
+            if deliver_at <= utcnow():
+                delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
+                if delivered or permanent_fail:
+                    await store.remove_bookmark(bookmark.id)
+                    if delivered:
+                        sent += 1
+            else:
+                _schedule_delayed_bookmark(bot, bookmark, store=store)
 
     return sent
-
-
-async def bookmark_delivery_loop(bot: discord.Client) -> None:
-    """Background loop to deliver delayed bookmarks."""
-    import random
-    # Add jitter to prevent thundering herd
-    jitter = random.uniform(0, 6)
-    await asyncio.sleep(jitter)
-    
-    while True:
-        try:
-            await deliver_pending_bookmarks(bot)
-        except Exception as exc:
-            logger.error("Bookmark delivery loop error: %s", exc)
-        await asyncio.sleep(60)
 
 
 # ─── AFK Handlers ─────────────────────────────────────────────────────────────

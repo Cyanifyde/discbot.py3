@@ -37,8 +37,8 @@ AVAILABLE_MODULES = {
 # Most modules default enabled; potentially disruptive modules default disabled.
 DEFAULT_MODULE_ENABLED = {
     "inviteprotection": False,
-    "artsearch": False,
-    "commissionreviews": False,
+    "artsearch": True,
+    "commissionreviews": True,
 }
 
 # Available commands that can have role restrictions

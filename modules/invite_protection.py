@@ -34,7 +34,7 @@ def setup_invite_protection() -> None:
     help_system.register_module(
         name="Invite Protection",
         description="Detect and gate Discord invite links with an allowlist + approval workflow.",
-        help_command="invite status",
+        help_command="invite help",
         commands=[
             ("invite status", "Show invite protection status + counts"),
             ("invite allowlist list", "List allowlisted invite codes"),
