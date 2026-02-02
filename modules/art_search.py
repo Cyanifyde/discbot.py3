@@ -29,7 +29,7 @@ RESULTS_PER_PAGE = 5
 RESULT_BATCH_SIZE = 20
 SCAN_CHUNK_MESSAGES = 200
 MAX_MESSAGES_SCANNED_TOTAL = 50000
-EMBED_THUMB_MAX = 384
+EMBED_THUMB_MAX = 100
 
 
 @dataclass
@@ -349,25 +349,19 @@ class _ArtSearchView(discord.ui.View):
 
         start, page_hits = self._page_hits()
 
-        preview = page_hits[0] if page_hits else None
-        preview_time = None
-        if preview:
-            try:
-                preview_time = datetime.fromisoformat(preview.created_at_iso)
-            except Exception:
-                preview_time = None
+        if page_hits:
+            showing_from = start + 1
+            showing_to = start + len(page_hits)
+            desc = f"Showing results **{showing_from}–{showing_to}**."
+        else:
+            desc = "No results on this page."
 
-        lines: list[str] = []
-        for idx, hit in enumerate(page_hits, start=start + 1):
-            link = _message_link(self.guild_id, hit.channel_id, hit.message_id)
-            lines.append(f"**#{idx}** <#{hit.channel_id}> — `{hit.filename}` ([jump]({link}))")
-
-        desc = "\n".join(lines) if lines else "No results on this page."
+        if not self._scan_complete() and not self.truncated:
+            desc += "\nMore may exist — use **Forward ▶** to keep scanning."
         embed = discord.Embed(
             title=f"Art Search: {self.target_display_name}",
             description=desc,
             color=discord.Color.dark_grey() if self.loading else discord.Color.blurple(),
-            timestamp=preview_time or discord.utils.utcnow(),
         )
 
         footer = f"Page {self.page_index + 1}/{total_pages} • {len(self.hits)} results"
