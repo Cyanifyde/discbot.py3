@@ -242,80 +242,34 @@ class RenderService:
             return self._render_placeholder(width, height)
 
         try:
-            # First pass: ask WeasyPrint's layout engine for the actual rendered box
-            # size of the main container (used by our templates). This uses private
-            # WeasyPrint APIs but avoids guessing and yields tight crops.
-            measured = self._measure_weasyprint_box(html, class_name="rate-card")
-            pad = 20
+            # Measure the full body content height (includes padding and card)
+            measured = self._measure_weasyprint_body(html)
             if measured:
-                width = int(measured["width"]) + (pad * 2)
-                height = int(measured["height"]) + (pad * 2)
+                width = int(measured["width"])
+                height = int(measured["height"])
 
-            # Second pass: render a PDF at the measured size.
+            # Render PDF at measured size - keep original styles including backgrounds
             render_height = max(height, 200)
             page_style = f"<style>@page {{ size: {width}px {render_height}px; margin: 0; }}</style>"
-            # Override template body backgrounds so we capture the card content without
-            # the big gradient/solid page background.
-            pad_style = (
-                f"<style>"
-                f"html,body{{margin:0;overflow:hidden;background:#ffffff !important;}}"
-                f"body{{padding:{pad}px;}}"
-                f"</style>"
-            ) if measured else (
-                "<style>html,body{margin:0;overflow:hidden;background:#ffffff !important;}</style>"
-            )
-            html_with_size = html.replace("</head>", f"{page_style}{pad_style}</head>")
+            html_with_size = html.replace("</head>", f"{page_style}</head>")
 
             html_doc = HTML(string=html_with_size)
             pdf_bytes = html_doc.write_pdf()
 
             if pdf_bytes:
-                # Convert PDF to image using PyMuPDF (pure Python, no system dependencies)
                 try:
-                    # Open PDF from bytes
                     pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
-                    
-                    # Get first page
                     page = pdf_document[0]
                     
-                    # Render page to pixmap (image) at 2x for quality
+                    # Render at 2x for quality
                     zoom = 2.0
                     mat = fitz.Matrix(zoom, zoom)
                     pix = page.get_pixmap(matrix=mat)
                     
-                    # Convert to PIL Image
                     pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
                     pdf_document.close()
                     
-                    # Crop empty space from bottom only
-                    # Scan from bottom to find where content ends
-                    img_array = pil_img.load()
-                    img_width, img_height = pil_img.size
-                    
-                    # Get the background color from bottom-left corner (should be empty bg)
-                    bg_color = img_array[5, img_height - 5]
-                    
-                    # Find the last row that differs from background
-                    content_bottom = img_height
-                    for y in range(img_height - 1, 0, -1):
-                        row_has_content = False
-                        for x in range(0, img_width, 10):  # Sample every 10 pixels for speed
-                            pixel = img_array[x, y]
-                            # Check if pixel differs significantly from background
-                            if abs(pixel[0] - bg_color[0]) > 10 or \
-                               abs(pixel[1] - bg_color[1]) > 10 or \
-                               abs(pixel[2] - bg_color[2]) > 10:
-                                row_has_content = True
-                                break
-                        if row_has_content:
-                            content_bottom = y + 20  # Add small padding
-                            break
-                    
-                    # Crop to content
-                    if content_bottom < img_height:
-                        pil_img = pil_img.crop((0, 0, img_width, min(content_bottom, img_height)))
-                    
-                    # Convert back to JPEG bytes
+                    # No cropping needed - we measured the exact size
                     buffer = io.BytesIO()
                     pil_img.save(buffer, format="JPEG", quality=92, optimize=True)
                     buffer.seek(0)
@@ -329,20 +283,15 @@ class RenderService:
         except Exception as e:
             logger.error("WeasyPrint rendering failed: %s", e)
 
-        # Fallback to placeholder if rendering fails
         return self._render_placeholder(width, height)
 
-    def _measure_weasyprint_box(self, html: str, class_name: str) -> Optional[Dict[str, float]]:
+    def _measure_weasyprint_body(self, html: str) -> Optional[Dict[str, float]]:
         """
-        Measure the rendered size of the first layout box that contains `class_name`.
-
-        This relies on private WeasyPrint APIs (`page._page_box` and box.element/children).
-        If WeasyPrint changes internals, measurement will gracefully fail and we'll fall
-        back to our existing PDF crop logic.
+        Measure the .rate-card element plus body padding to get card + background border.
         """
         try:
-            # Render on a tall page so the element isn't clipped.
-            probe_style = "<style>@page { size: 1200px 5000px; margin: 0; }</style>"
+            # Render on a tall page so content isn't clipped
+            probe_style = "<style>@page { size: 800px 3000px; margin: 0; }</style>"
             html_probe = html.replace("</head>", f"{probe_style}</head>")
             doc = HTML(string=html_probe).render()
             if not doc.pages:
@@ -352,30 +301,46 @@ class RenderService:
             if root is None:
                 return None
 
-            def _has_class(box: Any) -> bool:
+            # Find body for padding values
+            def _find_element(box: Any, tag: str = None, class_name: str = None) -> Optional[Any]:
                 el = getattr(box, "element", None)
-                if el is None:
-                    return False
-                cls = el.get("class") or ""
-                return class_name in cls.split()
-
-            def _walk(box: Any) -> Optional[Any]:
-                if _has_class(box):
-                    return box
+                if el is not None:
+                    if tag and el.tag == tag:
+                        return box
+                    if class_name:
+                        cls = el.get("class") or ""
+                        if class_name in cls.split():
+                            return box
                 for child in getattr(box, "children", []) or []:
-                    found = _walk(child)
-                    if found is not None:
+                    found = _find_element(child, tag, class_name)
+                    if found:
                         return found
                 return None
 
-            target = _walk(root)
-            if target is None:
+            # Get body padding
+            body = _find_element(root, tag="body")
+            body_pad_x = 0
+            body_pad_y = 0
+            if body:
+                body_pad_x = float(getattr(body, "padding_left", 0) or 0) + float(getattr(body, "padding_right", 0) or 0)
+                body_pad_y = float(getattr(body, "padding_top", 0) or 0) + float(getattr(body, "padding_bottom", 0) or 0)
+
+            # Find .rate-card element
+            card = _find_element(root, class_name="rate-card")
+            if card is None:
                 return None
 
-            w = float(getattr(target, "width", 0) or 0)
-            h = float(getattr(target, "height", 0) or 0)
-            if w <= 0 or h <= 0:
+            # Get card dimensions (border_width/height includes padding+border+content)
+            card_w = float(getattr(card, "border_width", 0) or getattr(card, "width", 0) or 0)
+            card_h = float(getattr(card, "border_height", 0) or getattr(card, "height", 0) or 0)
+            
+            if card_w <= 0 or card_h <= 0:
                 return None
+
+            # Total = card + body padding (for background around card)
+            w = card_w + body_pad_x
+            h = card_h + body_pad_y
+                
             return {"width": w, "height": h}
         except Exception as exc:
             logger.debug("WeasyPrint measure failed: %s", exc)
