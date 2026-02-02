@@ -269,11 +269,19 @@ def _message_link(guild_id: int, channel_id: int, message_id: int) -> str:
 def _scaled_image_url(url: str, *, width: int, height: int) -> str:
     try:
         parsed = urlparse(url)
+        netloc = parsed.netloc
+        lower = netloc.lower()
+        # Discord only honors width/height params on the media proxy, not on cdn.*
+        # Example:
+        # - cdn.discordapp.com/... (ignores width/height)
+        # - media.discordapp.net/... (respects width/height)
+        if lower.startswith("cdn.discordapp.com") or lower.startswith("cdn.discordapp.net"):
+            netloc = "media.discordapp.net"
         query = dict(parse_qsl(parsed.query, keep_blank_values=True))
         query["width"] = str(int(width))
         query["height"] = str(int(height))
         new_query = urlencode(query, doseq=True)
-        return urlunparse(parsed._replace(query=new_query))
+        return urlunparse(parsed._replace(netloc=netloc, query=new_query))
     except Exception:
         sep = "&" if "?" in url else "?"
         return f"{url}{sep}width={int(width)}&height={int(height)}"
