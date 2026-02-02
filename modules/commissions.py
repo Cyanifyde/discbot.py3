@@ -954,6 +954,6 @@ async def _handle_help(message: discord.Message) -> None:
     """Handle 'commission help' command."""
     help_text = help_system.get_module_help("Commissions")
     if help_text:
-        await message.reply(help_text)
+        await message.reply(embed=help_text)
     else:
         await message.reply(" Help information not available.")

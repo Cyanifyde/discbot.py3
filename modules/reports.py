@@ -440,7 +440,7 @@ async def _handle_help(message: discord.Message) -> None:
     """Handle 'report help' command."""
     help_text = help_system.get_module_help("Reports")
     if help_text:
-        await message.reply(help_text)
+        await message.reply(embed=help_text)
     else:
         await message.reply(" Help information not available.")
 

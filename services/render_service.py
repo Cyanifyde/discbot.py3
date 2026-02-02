@@ -33,12 +33,12 @@ try:
 except ImportError:
     HAS_WEASYPRINT = False
 
-# Try pdf2image for PDF to PNG conversion (requires poppler)
+# Try PyMuPDF for PDF to image conversion (pure Python, no system dependencies)
 try:
-    from pdf2image import convert_from_bytes
-    HAS_PDF2IMAGE = True
+    import fitz  # PyMuPDF
+    HAS_PYMUPDF = True
 except ImportError:
-    HAS_PDF2IMAGE = False
+    HAS_PYMUPDF = False
 
 from core.paths import BASE_DIR
 
@@ -200,33 +200,39 @@ class RenderService:
         if not HAS_WEASYPRINT:
             raise RuntimeError("WeasyPrint not available")
 
+        if not HAS_PYMUPDF:
+            logger.error("PyMuPDF not available. Install with: pip install pymupdf")
+            return self._render_placeholder(width, height)
+
         try:
             # WeasyPrint v53+ removed write_png(), must use PDF then convert
             html_doc = HTML(string=html)
             pdf_bytes = html_doc.write_pdf()
 
-            if not HAS_PDF2IMAGE:
-                logger.error("pdf2image not available. Install with: pip install pdf2image")
-                logger.error("Also requires poppler: https://github.com/oschwartz10612/poppler-windows/releases")
-                return self._render_placeholder(width, height)
-
             if pdf_bytes:
-                # Convert PDF to image using pdf2image (requires poppler)
+                # Convert PDF to image using PyMuPDF (pure Python, no system dependencies)
                 try:
-                    images = convert_from_bytes(pdf_bytes, dpi=150)
-                    if images:
-                        img = images[0].convert("RGB")
-                        out = io.BytesIO()
-                        img.save(out, format="JPEG", quality=95)
-                        out.seek(0)
-                        return out.getvalue()
+                    # Open PDF from bytes
+                    pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+                    
+                    # Get first page
+                    page = pdf_document[0]
+                    
+                    # Render page to pixmap (image) at 150 DPI
+                    zoom = 150 / 72  # 150 DPI (72 is default)
+                    mat = fitz.Matrix(zoom, zoom)
+                    pix = page.get_pixmap(matrix=mat)
+                    
+                    # Convert pixmap to JPEG bytes
+                    img_bytes = pix.pil_tobytes(format="JPEG", optimize=True, dpi=(150, 150))
+                    
+                    pdf_document.close()
+                    return img_bytes
+                    
                 except Exception as pdf_error:
                     logger.error("PDF to image conversion failed: %s", pdf_error)
-                    logger.error("Ensure poppler is installed and in PATH")
-                    logger.error("Windows: Download from https://github.com/oschwartz10612/poppler-windows/releases")
-                    logger.error("Linux: apt-get install poppler-utils")
-                    logger.error("macOS: brew install poppler")
                     return self._render_placeholder(width, height)
+                    
         except Exception as e:
             logger.error("WeasyPrint rendering failed: %s", e)
 
