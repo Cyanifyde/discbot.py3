@@ -254,7 +254,16 @@ class RenderService:
             # Second pass: render a PDF at the measured size.
             render_height = max(height, 200)
             page_style = f"<style>@page {{ size: {width}px {render_height}px; margin: 0; }}</style>"
-            pad_style = f"<style>body{{margin:0;padding:{pad}px;}}html,body{{overflow:hidden;}}</style>" if measured else "<style>body{margin:0;}</style>"
+            # Override template body backgrounds so we capture the card content without
+            # the big gradient/solid page background.
+            pad_style = (
+                f"<style>"
+                f"html,body{{margin:0;overflow:hidden;background:#ffffff !important;}}"
+                f"body{{padding:{pad}px;}}"
+                f"</style>"
+            ) if measured else (
+                "<style>html,body{margin:0;overflow:hidden;background:#ffffff !important;}</style>"
+            )
             html_with_size = html.replace("</head>", f"{page_style}{pad_style}</head>")
 
             html_doc = HTML(string=html_with_size)
