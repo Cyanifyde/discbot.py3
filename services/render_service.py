@@ -242,13 +242,21 @@ class RenderService:
             return self._render_placeholder(width, height)
 
         try:
-            # WeasyPrint requires explicit page size - render tall, then crop
-            # Use a generous height and trim empty space from bottom
-            render_height = max(height, 1200)
+            # First pass: ask WeasyPrint's layout engine for the actual rendered box
+            # size of the main container (used by our templates). This uses private
+            # WeasyPrint APIs but avoids guessing and yields tight crops.
+            measured = self._measure_weasyprint_box(html, class_name="rate-card")
+            pad = 20
+            if measured:
+                width = int(measured["width"]) + (pad * 2)
+                height = int(measured["height"]) + (pad * 2)
+
+            # Second pass: render a PDF at the measured size.
+            render_height = max(height, 200)
             page_style = f"<style>@page {{ size: {width}px {render_height}px; margin: 0; }}</style>"
-            html_with_size = html.replace("</head>", f"{page_style}</head>")
-            
-            # WeasyPrint v53+ removed write_png(), must use PDF then convert
+            pad_style = f"<style>body{{margin:0;padding:{pad}px;}}html,body{{overflow:hidden;}}</style>" if measured else "<style>body{margin:0;}</style>"
+            html_with_size = html.replace("</head>", f"{page_style}{pad_style}</head>")
+
             html_doc = HTML(string=html_with_size)
             pdf_bytes = html_doc.write_pdf()
 
@@ -314,6 +322,55 @@ class RenderService:
 
         # Fallback to placeholder if rendering fails
         return self._render_placeholder(width, height)
+
+    def _measure_weasyprint_box(self, html: str, class_name: str) -> Optional[Dict[str, float]]:
+        """
+        Measure the rendered size of the first layout box that contains `class_name`.
+
+        This relies on private WeasyPrint APIs (`page._page_box` and box.element/children).
+        If WeasyPrint changes internals, measurement will gracefully fail and we'll fall
+        back to our existing PDF crop logic.
+        """
+        try:
+            # Render on a tall page so the element isn't clipped.
+            probe_style = "<style>@page { size: 1200px 5000px; margin: 0; }</style>"
+            html_probe = html.replace("</head>", f"{probe_style}</head>")
+            doc = HTML(string=html_probe).render()
+            if not doc.pages:
+                return None
+
+            root = getattr(doc.pages[0], "_page_box", None)
+            if root is None:
+                return None
+
+            def _has_class(box: Any) -> bool:
+                el = getattr(box, "element", None)
+                if el is None:
+                    return False
+                cls = el.get("class") or ""
+                return class_name in cls.split()
+
+            def _walk(box: Any) -> Optional[Any]:
+                if _has_class(box):
+                    return box
+                for child in getattr(box, "children", []) or []:
+                    found = _walk(child)
+                    if found is not None:
+                        return found
+                return None
+
+            target = _walk(root)
+            if target is None:
+                return None
+
+            w = float(getattr(target, "width", 0) or 0)
+            h = float(getattr(target, "height", 0) or 0)
+            if w <= 0 or h <= 0:
+                return None
+            return {"width": w, "height": h}
+        except Exception as exc:
+            logger.debug("WeasyPrint measure failed: %s", exc)
+            return None
 
 
 
