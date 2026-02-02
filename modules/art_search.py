@@ -8,6 +8,7 @@ Feature goals:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import time
@@ -287,6 +288,19 @@ def _scaled_image_url(url: str, *, width: int, height: int) -> str:
         return f"{url}{sep}width={int(width)}&height={int(height)}"
 
 
+def _ellipsize(text: str, max_len: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= max_len:
+        return text
+    if max_len <= 1:
+        return "…"
+    return text[: max_len - 1].rstrip() + "…"
+
+
+def _safe_inline_code(text: str) -> str:
+    return (text or "").replace("`", "'")
+
+
 class _ArtSearchView(discord.ui.View):
     def __init__(
         self,
@@ -349,20 +363,46 @@ class _ArtSearchView(discord.ui.View):
 
         start, page_hits = self._page_hits()
 
+        desc_lines: list[str] = []
         if page_hits:
             showing_from = start + 1
             showing_to = start + len(page_hits)
-            desc = f"Showing results **{showing_from}–{showing_to}**."
+            desc_lines.append(f"Results **{showing_from}–{showing_to}** of **{len(self.hits)}**.")
         else:
-            desc = "No results on this page."
+            desc_lines.append("No results on this page.")
 
         if not self._scan_complete() and not self.truncated:
-            desc += "\nMore may exist — use **Forward ▶** to keep scanning."
+            desc_lines.append("More may exist — use **Forward ▶** to keep scanning.")
+
+        if page_hits and not self.loading:
+            desc_lines.append("")
+            for idx, hit in enumerate(page_hits, start=start + 1):
+                link = _message_link(self.guild_id, hit.channel_id, hit.message_id)
+                created_at_ts: Optional[int] = None
+                try:
+                    created_at_ts = int(datetime.fromisoformat(hit.created_at_iso).timestamp())
+                except Exception:
+                    created_at_ts = None
+
+                filename = _ellipsize(_safe_inline_code(hit.filename), 48) or "image"
+                ts_part = f" • <t:{created_at_ts}:R>" if created_at_ts else ""
+                desc_lines.append(f"**{idx}.** <#{hit.channel_id}> • [jump]({link}) • `{filename}`{ts_part}")
+
+        desc = "\n".join(desc_lines)
         embed = discord.Embed(
             title=f"Art Search: {self.target_display_name}",
             description=desc,
             color=discord.Color.dark_grey() if self.loading else discord.Color.blurple(),
         )
+
+        if page_hits and not self.loading:
+            embed.set_thumbnail(
+                url=_scaled_image_url(
+                    page_hits[0].attachment_url,
+                    width=EMBED_THUMB_MAX,
+                    height=EMBED_THUMB_MAX,
+                )
+            )
 
         footer = f"Page {self.page_index + 1}/{total_pages} • {len(self.hits)} results"
         if self.truncated:
@@ -375,37 +415,7 @@ class _ArtSearchView(discord.ui.View):
         return embed
 
     def build_page_embeds(self) -> list[discord.Embed]:
-        header = self.build_embed()
-        if self.loading:
-            return [header]
-
-        start, page_hits = self._page_hits()
-        embeds: list[discord.Embed] = [header]
-        for idx, hit in enumerate(page_hits, start=start + 1):
-            link = _message_link(self.guild_id, hit.channel_id, hit.message_id)
-            created_at = None
-            try:
-                created_at = datetime.fromisoformat(hit.created_at_iso)
-            except Exception:
-                created_at = None
-
-            e = discord.Embed(
-                title=f"Result #{idx}",
-                description=f"<#{hit.channel_id}> — `{hit.filename}`\n{link}",
-                color=discord.Color.blurple(),
-                timestamp=created_at,
-            )
-            # Discord renders `embed.image` large regardless of the image's actual resolution.
-            # Using thumbnails keeps all results visible without taking over the screen.
-            e.set_thumbnail(
-                url=_scaled_image_url(
-                    hit.attachment_url,
-                    width=EMBED_THUMB_MAX,
-                    height=EMBED_THUMB_MAX,
-                )
-            )
-            embeds.append(e)
-        return embeds
+        return [self.build_embed()]
 
     async def bootstrap(self, guild: discord.Guild, *, desired_loaded: int, time_budget_seconds: float) -> None:
         await self._scan_until(
@@ -604,4 +614,3 @@ class _ArtSearchView(discord.ui.View):
                 await interaction.edit_original_response(embeds=self.build_page_embeds(), attachments=[], view=self)
         except Exception:
             pass
-
