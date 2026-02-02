@@ -40,10 +40,11 @@ def setup_art_search() -> None:
         description="Search for images posted by a user in approved channels.",
         help_command="artsearch help",
         commands=[
-            ("artsearch search @user [page]", "Search a user's images (filters GIFs)"),
-            ("artsearch channels", "List configured search channels"),
-            ("artsearch channels add <channel_id>", "Add a channel to the search allowlist (mod only)"),
-            ("artsearch channels remove <channel_id>", "Remove a channel from the search allowlist (mod only)"),
+            ("art search @user [page]", "Search a user's images (filters GIFs)"),
+            ("art channels", "List configured search channels"),
+            ("art channels add <channel_id>", "Add a channel to the search allowlist (mod only)"),
+            ("art channels remove <channel_id>", "Remove a channel from the search allowlist (mod only)"),
+            ("artsearch search @user [page]", "Alias for `art search`"),
             ("artsearch help", "Show this help message"),
         ],
     )
@@ -61,16 +62,22 @@ async def handle_art_search_command(message: discord.Message, bot: discord.Clien
         return False
 
     parts = content.split()
-    if not parts or parts[0].lower() != "artsearch":
+    if not parts:
         return False
 
+    root = parts[0].lower()
+    if root not in {"artsearch", "art"}:
+        return False
     if len(parts) == 1:
         return False
 
     sub = parts[1].lower()
     if sub == "help":
-        await _cmd_help(message)
-        return True
+        if root == "artsearch":
+            await _cmd_help(message)
+            return True
+        # Keep `art help` reserved for Art Tools.
+        return False
 
     if sub == "channels":
         await _cmd_channels(message, parts[2:])

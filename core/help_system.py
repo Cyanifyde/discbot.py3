@@ -191,6 +191,95 @@ class HelpSystem:
         """Get list of registered module names in order."""
         return list(self._registered_order)
 
+    def get_registered_modules(self, *, include_hidden: bool = True) -> list[ModuleHelp]:
+        """Get registered ModuleHelp objects in display order."""
+        out: list[ModuleHelp] = []
+        for module_name in self._registered_order:
+            module_help = self._modules.get(module_name)
+            if module_help is None:
+                continue
+            if not include_hidden and module_help.hidden:
+                continue
+            out.append(module_help)
+        return out
+
+    def get_available_commands_embed(
+        self,
+        *,
+        title: str,
+        allow_mod: bool,
+        allow_admin: bool,
+        allow_owner: bool,
+        include_hidden: bool = True,
+        max_lines: int = 160,
+    ) -> discord.Embed:
+        """
+        Generate an embed that only shows commands a user likely has access to.
+
+        Filtering rule is based on `(mod only)`, `(admin only)`, `(owner only)` markers
+        in the registered help descriptions.
+        """
+        def _allowed(desc: str) -> bool:
+            d = (desc or "").lower()
+            if "owner only" in d:
+                return allow_owner
+            if "admin only" in d:
+                return allow_admin
+            if "mod only" in d:
+                return allow_mod
+            return True
+
+        lines: list[str] = []
+        for module_help in self.get_registered_modules(include_hidden=include_hidden):
+            for cmd, desc in module_help.commands:
+                if not _allowed(desc):
+                    continue
+                lines.append(f"**`{cmd}`** - {desc}")
+
+        if not lines:
+            embed = discord.Embed(
+                title=title,
+                description="No commands available (based on current help markers).",
+                color=0x5865F2,
+            )
+            return embed
+
+        extra = 0
+        if len(lines) > max_lines:
+            extra = len(lines) - max_lines
+            lines = lines[:max_lines]
+
+        embed = discord.Embed(
+            title=title,
+            description="Commands shown are filtered by your Discord permissions where help text marks commands as mod/admin/owner-only.",
+            color=0x5865F2,
+        )
+
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for line in lines:
+            line_len = len(line) + (1 if current else 0)
+            if current and current_len + line_len > 1024:
+                chunks.append("\n".join(current))
+                current = [line]
+                current_len = len(line)
+            else:
+                current.append(line)
+                current_len += line_len
+        if current:
+            chunks.append("\n".join(current))
+
+        for idx, chunk in enumerate(chunks, start=1):
+            name = "Commands" if idx == 1 else f"Commands (cont. {idx})"
+            embed.add_field(name=name, value=chunk, inline=False)
+
+        if extra:
+            embed.set_footer(text=f"…and {extra} more commands not shown. Use @bot help for the full module list.")
+        else:
+            embed.set_footer(text="Use @bot help for the full module list.")
+        return embed
+
 
 # Global singleton instance
 help_system = HelpSystem()

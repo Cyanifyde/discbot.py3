@@ -48,7 +48,9 @@ def setup_utility() -> None:
         commands=[
             ("bookmark [message_link] [note]", "Bookmark a message"),
             ("bookmark list", "List bookmarks"),
+            ("bookmark view <id>", "View a bookmark"),
             ("bookmark remove <id>", "Remove bookmark"),
+            ("bookmark clear", "Remove all your bookmarks"),
             ("bookmark delay <message_link> <time>", "Delayed delivery bookmark"),
             ("bookmark emoji set <emoji> [dm|channel]", "Set reaction emoji for instant bookmark"),
             ("bookmark emoji delay <emoji> <time> [dm|channel]", "Set reaction emoji for delayed bookmark"),
@@ -67,6 +69,7 @@ def setup_utility() -> None:
         commands=[
             ("afk [message]", "Set AFK status"),
             ("afk off", "Clear AFK status"),
+            ("afk status [@user]", "Show AFK status"),
             ("afk help", "Show this help message"),
         ],
         group="Utility",
@@ -80,6 +83,8 @@ def setup_utility() -> None:
         commands=[
             ("note add <content>", "Add personal note"),
             ("notes", "List personal notes"),
+            ("note view <id>", "View a note"),
+            ("note edit <id> <text>", "Edit a note"),
             ("note remove <id>", "Remove note"),
             ("note help", "Show this help message"),
         ],
@@ -203,8 +208,12 @@ async def _handle_bookmark(message: discord.Message, parts: list[str]) -> None:
 
     if subcommand == "list":
         await _handle_bookmark_list(message)
+    elif subcommand == "view":
+        await _handle_bookmark_view(message, parts)
     elif subcommand == "remove":
         await _handle_bookmark_remove(message, parts)
+    elif subcommand == "clear":
+        await _handle_bookmark_clear(message)
     elif subcommand == "delay":
         await _handle_bookmark_delay(message, parts)
     elif subcommand == "emoji":
@@ -306,6 +315,43 @@ async def _handle_bookmark_remove(message: discord.Message, parts: list[str]) ->
         await message.reply(" Bookmark removed")
     else:
         await message.reply(" Failed to remove bookmark")
+
+async def _handle_bookmark_view(message: discord.Message, parts: list[str]) -> None:
+    """View a bookmark."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `bookmark view <id>`")
+        return
+    bookmark_id = parts[2].strip()
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    bookmarks = await store.get_bookmarks()
+    matching = [b for b in bookmarks if b.id.startswith(bookmark_id)]
+    if not matching:
+        await message.reply(f" No bookmark found with ID starting with `{bookmark_id}`")
+        return
+    b = matching[0]
+    link = f"https://discord.com/channels/{b.guild_id}/{b.channel_id}/{b.message_id}" if b.guild_id and b.channel_id and b.message_id else ""
+    embed = discord.Embed(
+        title=f"Bookmark `{b.id[:8]}`",
+        color=discord.Color.blurple(),
+        timestamp=discord.utils.utcnow(),
+    )
+    if b.note:
+        embed.description = b.note[:3500]
+    if link:
+        embed.add_field(name="Message", value=link, inline=False)
+    if b.deliver_at:
+        embed.add_field(name="Deliver At", value=b.deliver_at, inline=True)
+    embed.add_field(name="Delivered", value=str(bool(b.delivered)), inline=True)
+    await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+
+async def _handle_bookmark_clear(message: discord.Message) -> None:
+    """Clear all bookmarks."""
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    count = await store.clear_bookmarks()
+    await message.reply(f" Cleared {count} bookmark(s).")
 
 
 async def _handle_bookmark_delay(message: discord.Message, parts: list[str]) -> None:
@@ -525,24 +571,45 @@ async def handle_bookmark_reaction(
     if deliver_at:
         return
 
-    await _deliver_bookmark_now(bot, bookmark)
-    await store.mark_delivered(bookmark.id)
+    delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
+    if delivered:
+        # If delivered to DMs, remove it from storage to avoid clutter.
+        if bookmark.delivery_method == "dm":
+            await store.remove_bookmark(bookmark.id)
+        else:
+            await store.mark_delivered(bookmark.id)
+    elif permanent_fail:
+        # If it can never be delivered (e.g., user blocks DMs), clean it up.
+        await store.remove_bookmark(bookmark.id)
 
 
-async def _deliver_bookmark_now(bot: discord.Client, bookmark: Bookmark) -> None:
-    """Deliver a bookmark immediately based on delivery method."""
+async def _deliver_bookmark_now(bot: discord.Client, bookmark: Bookmark) -> tuple[bool, bool]:
+    """
+    Deliver a bookmark based on delivery method.
+
+    Returns:
+        (delivered, permanent_fail)
+    """
     message = await _try_fetch_bookmarked_message(bot, bookmark)
     text = _format_bookmark_delivery_text(bookmark, message)
 
-    if bookmark.delivery_method == "channel":
-        channel = bot.get_channel(bookmark.notify_channel_id or bookmark.channel_id)
-        if channel and hasattr(channel, "send"):
-            await channel.send(text)
-        return
+    try:
+        if bookmark.delivery_method == "channel":
+            channel = bot.get_channel(bookmark.notify_channel_id or bookmark.channel_id)
+            if channel and hasattr(channel, "send"):
+                await channel.send(text, allowed_mentions=discord.AllowedMentions.none())
+                return True, False
+            return False, True
 
-    user = await bot.fetch_user(bookmark.user_id)
-    if user:
-        await user.send(text)
+        user = await bot.fetch_user(bookmark.user_id)
+        if user:
+            await user.send(text, allowed_mentions=discord.AllowedMentions.none())
+            return True, False
+        return False, True
+    except discord.Forbidden:
+        return False, True
+    except discord.HTTPException:
+        return False, False
 
 
 async def _try_fetch_bookmarked_message(
@@ -627,9 +694,12 @@ async def deliver_pending_bookmarks(bot: discord.Client) -> int:
             pending = await store.get_pending_deliveries()
             for bookmark in pending:
                 try:
-                    await _deliver_bookmark_now(bot, bookmark)
-                    await store.mark_delivered(bookmark.id)
-                    sent += 1
+                    delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
+                    if delivered or permanent_fail:
+                        # Delayed bookmarks are one-shot: remove after delivery (or permanent failure).
+                        await store.remove_bookmark(bookmark.id)
+                        if delivered:
+                            sent += 1
                 except Exception as e:
                     logger.error("Failed to deliver bookmark %s for user %s: %s", bookmark.id, user_id, e)
                     # Continue with next bookmark
@@ -660,6 +730,21 @@ async def bookmark_delivery_loop(bot: discord.Client) -> None:
 
 async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
     """Handle AFK commands."""
+    # Status lookup (self or mentioned user)
+    if len(parts) > 1 and parts[1].lower() == "status":
+        target = message.mentions[0] if message.mentions else message.author
+        target_store = UtilityStore(target.id)
+        await target_store.initialize()
+        is_afk, afk_message = await target_store.is_afk()
+        if not is_afk:
+            await message.reply(f" {target.mention} is not AFK.")
+            return
+        msg = f"{target.mention} is AFK."
+        if afk_message:
+            msg += f" Message: {afk_message}"
+        await message.reply(msg)
+        return
+
     store = UtilityStore(message.author.id)
     await store.initialize()
 
@@ -720,17 +805,21 @@ async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
 async def _handle_note(message: discord.Message, parts: list[str]) -> None:
     """Handle note commands."""
     if len(parts) < 2:
-        await message.reply(" Usage: `note <add|remove>`")
+        await message.reply(" Usage: `note <add|view|edit|remove>`")
         return
 
     subcommand = parts[1].lower()
 
     if subcommand == "add":
         await _handle_note_add(message, parts)
+    elif subcommand == "view":
+        await _handle_note_view(message, parts)
+    elif subcommand == "edit":
+        await _handle_note_edit(message, parts)
     elif subcommand == "remove":
         await _handle_note_remove(message, parts)
     else:
-        await message.reply(" Usage: `note <add|remove>`")
+        await message.reply(" Usage: `note <add|view|edit|remove>`")
 
 
 async def _handle_note_add(message: discord.Message, parts: list[str]) -> None:
@@ -804,6 +893,60 @@ async def _handle_note_remove(message: discord.Message, parts: list[str]) -> Non
         await message.reply(" Note removed")
     else:
         await message.reply(" Failed to remove note")
+
+
+async def _handle_note_view(message: discord.Message, parts: list[str]) -> None:
+    """View a note."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `note view <id>`")
+        return
+    note_id = parts[2].strip()
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    notes = await store.get_notes()
+    matching = [n for n in notes if isinstance(n, dict) and str(n.get("id", "")).startswith(note_id)]
+    if not matching:
+        await message.reply(f" No note found with ID starting with `{note_id}`")
+        return
+    note = matching[0]
+    content = (note.get("content") or "").strip()
+    embed = discord.Embed(
+        title=f"Note `{str(note.get('id',''))[:8]}`",
+        description=content[:3500] or "—",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow(),
+    )
+    await message.reply(embed=embed)
+
+
+async def _handle_note_edit(message: discord.Message, parts: list[str]) -> None:
+    """Edit a note."""
+    if len(parts) < 3:
+        await message.reply(" Usage: `note edit <id> <text>`")
+        return
+    args = parts[2].split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply(" Usage: `note edit <id> <text>`")
+        return
+    note_id_prefix = args[0]
+    new_text = args[1].strip()
+    if not new_text:
+        await message.reply(" Please provide new text.")
+        return
+
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    notes = await store.get_notes()
+    matching = [n for n in notes if isinstance(n, dict) and str(n.get("id", "")).startswith(note_id_prefix)]
+    if not matching:
+        await message.reply(f" No note found with ID starting with `{note_id_prefix}`")
+        return
+    note = matching[0]
+    ok = await store.update_note(note.get("id", ""), new_text)
+    if not ok:
+        await message.reply(" Failed to update note.")
+        return
+    await message.reply(f" Note updated: `{str(note.get('id',''))[:8]}`")
 
 
 # ─── Alias Handlers ───────────────────────────────────────────────────────────

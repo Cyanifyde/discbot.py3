@@ -185,6 +185,8 @@ def setup_verification() -> None:
         help_command="verification help",
         commands=[
             ("verification help", "Show all verification commands"),
+            ("verification list", "List active verification messages"),
+            ("verification resend <message_id>", "Re-attach the verification button view"),
             ("addverification #channel \"message\" unverified_id verified_id", "Set up verification button"),
             ("removeverification message_id", "Remove a verification button"),
         ]
@@ -214,11 +216,11 @@ async def handle_verification_command(
     content = message.content.strip()
     content_lower = content.lower()
     
-    # Check for verification help command
-    if content_lower == "verification help":
+    # verification help/list/resend
+    if content_lower.startswith("verification"):
         if not message.guild:
             return False
-        
+
         if not await is_module_enabled(message.guild.id, "verification"):
             await message.reply(
                 "Verification module is disabled in this server.\n"
@@ -226,9 +228,34 @@ async def handle_verification_command(
                 mention_author=False,
             )
             return True
-        
-        await _cmd_help(message)
-        return True
+
+        if content_lower == "verification help":
+            await _cmd_help(message)
+            return True
+
+        if not isinstance(message.author, discord.Member) or not message.author.guild_permissions.administrator:
+            await message.reply(
+                "You need Administrator permission to use verification management commands.",
+                mention_author=False,
+            )
+            return True
+
+        if content_lower == "verification list":
+            await _cmd_list(message)
+            return True
+
+        if content_lower.startswith("verification resend"):
+            parts = content.split()
+            if len(parts) < 3 or not parts[2].isdigit():
+                await message.reply(
+                    "Usage: `verification resend <message_id>`",
+                    mention_author=False,
+                )
+                return True
+            await _cmd_resend(message, bot, int(parts[2]))
+            return True
+
+        return False
     
     # Check if it's the addverification command
     if not content_lower.startswith("addverification"):
@@ -384,6 +411,89 @@ async def handle_verification_command(
         )
     
     return True
+
+
+async def _cmd_list(message: discord.Message) -> None:
+    """List saved verification messages for this guild."""
+    if not message.guild:
+        return
+    data = await get_verification_data(message.guild.id)
+    buttons = data.get("buttons", [])
+    if not isinstance(buttons, list) or not buttons:
+        await message.reply("No verification messages saved.", mention_author=False)
+        return
+
+    lines = ["**Verification Messages:**"]
+    for b in buttons[:20]:
+        channel_id = b.get("channel_id")
+        message_id = b.get("message_id")
+        if not channel_id or not message_id:
+            continue
+        link = f"https://discord.com/channels/{message.guild.id}/{channel_id}/{message_id}"
+        lines.append(f"- <#{channel_id}> • `{message_id}`\n  {link}")
+
+    await message.reply(
+        "\n".join(lines),
+        mention_author=False,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+
+
+async def _cmd_resend(message: discord.Message, bot: discord.Client, message_id: int) -> None:
+    """Re-attach the view to a verification message."""
+    if not message.guild:
+        return
+
+    data = await get_verification_data(message.guild.id)
+    buttons = data.get("buttons", [])
+    if not isinstance(buttons, list):
+        buttons = []
+
+    match = None
+    for b in buttons:
+        if isinstance(b, dict) and b.get("message_id") == message_id:
+            match = b
+            break
+
+    if not match:
+        await message.reply("That message ID is not in my saved verification list.", mention_author=False)
+        return
+
+    channel_id = match.get("channel_id")
+    unverified_role_id = match.get("unverified_role_id")
+    verified_role_id = match.get("verified_role_id")
+    if not channel_id or not unverified_role_id or not verified_role_id:
+        await message.reply("Saved data for that message is incomplete.", mention_author=False)
+        return
+
+    guild = message.guild
+    channel = guild.get_channel(int(channel_id))
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(int(channel_id))
+        except Exception:
+            channel = None
+    if channel is None or not isinstance(channel, discord.TextChannel):
+        await message.reply("Could not find that channel.", mention_author=False)
+        return
+
+    try:
+        target = await channel.fetch_message(message_id)
+    except discord.NotFound:
+        await message.reply("That message no longer exists.", mention_author=False)
+        return
+    except discord.HTTPException:
+        await message.reply("Failed to fetch that message.", mention_author=False)
+        return
+
+    view = VerifyView(int(unverified_role_id), int(verified_role_id))
+    try:
+        await target.edit(view=view)
+    except discord.HTTPException:
+        await message.reply("Failed to edit that message.", mention_author=False)
+        return
+
+    await message.reply("Verification view re-attached.", mention_author=False)
 
 
 async def handle_remove_verification_command(

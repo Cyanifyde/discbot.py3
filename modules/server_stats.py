@@ -21,9 +21,10 @@ def setup_server_stats() -> None:
     help_system.register_module(
         name="Server Stats",
         description="Display server statistics and information.",
-        help_command="",
+        help_command="serverstats help",
         commands=[
             ("serverstats", "Show server overview and statistics"),
+            ("serverstats help", "Show this help message"),
         ]
     )
 
@@ -37,9 +38,18 @@ async def handle_serverstats_command(
 
     Returns True if the command was handled.
     """
-    content = message.content.strip().lower()
+    content = (message.content or "").strip()
+    content_lower = content.lower()
 
-    if content != "serverstats":
+    if content_lower == "serverstats help":
+        embed = help_system.get_module_help("Server Stats")
+        if embed:
+            await message.reply(embed=embed, mention_author=False)
+        else:
+            await message.reply("Help not available.", mention_author=False)
+        return True
+
+    if content_lower != "serverstats":
         return False
 
     if not message.guild:

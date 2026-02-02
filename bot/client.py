@@ -17,6 +17,7 @@ from discord import app_commands
 from classes import profile as profile_module
 from core.config import (
     ConfigError,
+    OWNER_ID,
     ensure_guild_config,
     load_default_template,
     load_guild_config,
@@ -93,6 +94,7 @@ from modules.automation import (
 )
 from modules.roles import (
     handle_roles_command,
+    handle_reaction_role_event,
     setup_roles,
 )
 from modules.custom_content import (
@@ -405,7 +407,6 @@ class DiscBot(discord.Client):
         if await handle_server_link_command(message, self):
             return
 
-        # Handle Phase 2-4 module commands
         if await handle_commission_command(message, self):
             return
         if await handle_commission_reviews_command(message, self):
@@ -505,8 +506,13 @@ class DiscBot(discord.Client):
         await handle_interaction(interaction)
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
-        """Handle reaction events used for bookmarks."""
+        """Handle reaction events (bookmarks, reaction roles)."""
         await handle_bookmark_reaction(payload, self)
+        await handle_reaction_role_event(payload, self, added=True)
+
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
+        """Handle reaction remove events (reaction roles)."""
+        await handle_reaction_role_event(payload, self, added=False)
 
     # ─── Enforcement ──────────────────────────────────────────────────────────
 
@@ -869,17 +875,46 @@ class DiscBot(discord.Client):
         
         content = content.strip()
         
-        if content != "help":
+        if not content.startswith("help"):
             return False
-        
-        # Generate and send help embed
-        if help_system.has_modules():
-            embed = help_system.get_help_embed()
+
+        # @bot help
+        if content == "help":
+            if help_system.has_modules():
+                embed = help_system.get_help_embed()
+                await message.reply(embed=embed, mention_author=False)
+                return True
+            return False
+
+        # @bot help me (permission-filtered)
+        if content in {"help me", "help my", "help mine", "help available"}:
+            member = message.author if isinstance(message.author, discord.Member) else None
+            if member is None:
+                return False
+
+            is_owner = member.id == OWNER_ID
+            is_admin = bool(member.guild_permissions.administrator)
+            is_mod = bool(
+                is_admin
+                or member.guild_permissions.manage_guild
+                or member.guild_permissions.manage_roles
+                or member.guild_permissions.manage_messages
+                or member.guild_permissions.ban_members
+                or member.guild_permissions.kick_members
+            )
+
+            embed = help_system.get_available_commands_embed(
+                title="Available Commands",
+                allow_mod=is_mod,
+                allow_admin=is_admin,
+                allow_owner=is_owner,
+                include_hidden=True,
+            )
             await message.reply(embed=embed, mention_author=False)
             return True
-        
-        return False
 
+        return False
+        
     # ─── Commands ─────────────────────────────────────────────────────────────
 
     async def _register_commands(self) -> None:
