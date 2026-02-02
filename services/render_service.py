@@ -148,9 +148,9 @@ class RenderService:
 
         # Count per-rate thumbnails (not the header profile image)
         rate_images = sum(1 for r in rates.values() if isinstance(r, dict) and r.get("image"))
-        height = base + (len(rates) * per_rate) + (rate_images * 40)
+        height = base + (len(rates) * per_rate) + (rate_images * 5)
         if profile.get("image"):
-            height += 240
+            height += 100
 
         # Clamp to reasonable bounds
         height = max(520, min(height, 2200))
