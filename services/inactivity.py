@@ -192,42 +192,12 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
 
 
 async def _cmd_help(message: discord.Message) -> None:
-    """Show help for inactivity commands."""
-    help_text = """**Inactivity Enforcement Commands**
-
-**Basic:**
-**`inactivity enable`** - Enable inactivity enforcement
-**`inactivity disable`** - Disable inactivity enforcement
-**`inactivity status`** - Check enforcement status and config
-**`inactivity step`** - Run one enforcement step manually
-**`inactivity stats`** - Show detailed enforcement statistics
-
-**Setup:**
-**`inactivity setup`** - Show setup instructions
-**`inactivity removerole <role_id|all>`** - Add role to remove on enforcement
-**`inactivity addrole <role_id>`** - Add role to give on enforcement
-**`inactivity clearroles`** - Clear all configured roles
-**`inactivity config`** - Show current role configuration
-
-**Time Configuration:**
-**`inactivity setgrace <days>`** - Set grace period for new members
-**`inactivity setbaseline <YYYY-MM-DD>`** - Set baseline date (first run)
-**`inactivity init`** - Initialize baseline to current date
-
-**`inactivity help`** - Show this help message
-
-**How it works:**
-The inactivity checker scans user records and enforces against users
-who haven't posted within the configured threshold period.
-
-**Users who have posted at least once are NEVER checked for inactivity.**
-Only completely silent users (0 messages) are subject to enforcement.
-
-The checker runs **automatically** on a schedule (default: every 6 hours).
-A moderator must enable it with `inactivity enable`.
-You can also run `inactivity step` to trigger enforcement manually at any time.
-"""
-    await message.reply(help_text, mention_author=False)
+    """Show help for inactivity commands using the help system."""
+    embed = help_system.get_module_embed("Inactivity Enforcement")
+    if embed is None:
+        await message.reply("Help not available.", mention_author=False)
+        return
+    await message.reply(embed=embed, mention_author=False)
 
 
 async def _cmd_enable(

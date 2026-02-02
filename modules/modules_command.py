@@ -459,37 +459,9 @@ async def _cmd_deny(message: discord.Message, args: str) -> None:
 
 
 async def _cmd_help(message: discord.Message) -> None:
-    """Show detailed help for modules command."""
-    help_text = """**Module Management Commands**
-
-**Guild-Specific:** All settings apply only to this server. No data is shared between servers.
-
-**Basic Commands:**
-`modules list` - Show all modules and their status
-`modules enable <module>` - Enable a module
-`modules disable <module>` - Disable a module
-
-**Permission Management:**
-`modules permissions <module|command>` - Show who can use a module/command
-`modules allow <module|command> <role_id>` - Allow a role to use it
-`modules deny <module|command> <role_id>` - Remove role's permission
-
-**Available Modules:**
-• `scanner` - Image hash scanning
-• `inactivity` - Inactivity enforcement
-• `verification` - Role verification buttons
-• `autoresponder` - Auto-responder triggers
-
-**Examples:**
-`modules enable scanner` - Enable scanner module
-`modules allow scanner 123456789` - Let role 123456789 use scanner
-`modules allow addresponse 987654321` - Let role 987654321 use addresponse command
-`modules deny inactivity 123456789` - Remove role 123456789's access to inactivity
-
-**Note:** Administrators always have access to all modules and commands.
-"""
-    
-    await message.reply(
-        help_text,
-        mention_author=False,
-    )
+    """Show detailed help for modules command using the help system."""
+    embed = help_system.get_module_embed("Module Management")
+    if embed is None:
+        await message.reply("Help not available.", mention_author=False)
+        return
+    await message.reply(embed=embed, mention_author=False)
