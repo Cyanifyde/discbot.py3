@@ -245,8 +245,11 @@ class RenderService:
             # Measure the full body content height (includes padding and card)
             measured = self._measure_weasyprint_body(html)
             if measured:
-                width = int(measured["width"])
-                height = int(measured["height"])
+                # Use ceil + a small safety margin to avoid clipping due to rounding.
+                import math
+
+                width = int(math.ceil(measured["width"])) + 2
+                height = int(math.ceil(measured["height"])) + 6
 
             # Render PDF at measured size - keep original styles including backgrounds
             render_height = max(height, 200)
@@ -334,40 +337,56 @@ class RenderService:
             if card is None:
                 return None
 
-            # WeasyPrint boxes sometimes report the element height as the available
-            # page height (especially with percentage/min-height rules). Instead of
-            # trusting `card.height`, compute the maximum descendant extent.
+            # WeasyPrint boxes sometimes report element height/width as the available
+            # page size. Compute a bounding box using descendant extents instead.
             card_left = float(getattr(card, "position_x", 0) or 0)
             card_top = float(getattr(card, "position_y", 0) or 0)
-
-            # Use the card's own width (typically reliable) and compute height from
-            # its rendered descendants.
-            card_w = float(getattr(card, "width", 0) or 0)
-            max_x1 = card_left + (card_w if card_w > 0 else 0)
+            min_x0 = card_left
+            min_y0 = card_top
+            max_x1 = card_left
             max_y1 = card_top
 
-            stack = list(getattr(card, "children", []) or [])
+            def _box_w(b: Any) -> float:
+                return float(
+                    getattr(b, "border_width", 0)
+                    or getattr(b, "width", 0)
+                    or 0
+                )
+
+            def _box_h(b: Any) -> float:
+                return float(
+                    getattr(b, "border_height", 0)
+                    or getattr(b, "height", 0)
+                    or 0
+                )
+
+            # Include the card itself and all descendants.
+            stack = [card]
             while stack:
                 b = stack.pop()
                 stack.extend(getattr(b, "children", []) or [])
 
-                w = float(getattr(b, "width", 0) or 0)
-                h = float(getattr(b, "height", 0) or 0)
+                w = _box_w(b)
+                h = _box_h(b)
                 if w <= 0 and h <= 0:
                     continue
 
                 x = float(getattr(b, "position_x", 0) or 0)
                 y = float(getattr(b, "position_y", 0) or 0)
+                min_x0 = min(min_x0, x)
+                min_y0 = min(min_y0, y)
                 max_x1 = max(max_x1, x + w)
                 max_y1 = max(max_y1, y + h)
 
-            card_h = max(0.0, max_y1 - card_top)
+            card_w = max(0.0, max_x1 - min_x0)
+            card_h = max(0.0, max_y1 - min_y0)
             if card_w <= 0 or card_h <= 0:
                 return None
 
             # Include the template's body padding on all sides.
             w = card_w + (padding * 2)
-            h = card_h + (padding * 2)
+            # Slight extra bottom space to account for shadows/border-radius bleed.
+            h = card_h + (padding * 2) + 10
                 
             return {"width": w, "height": h}
         except Exception as exc:
