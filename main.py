@@ -34,17 +34,10 @@ logging.getLogger().setLevel(_log_level)
 logging.getLogger("discord").setLevel(_log_level)
 logging.getLogger("asyncio").setLevel(_log_level)
 
-# Respect LOG_LEVEL for noisy dependencies too (especially fontTools).
-logging.getLogger("fontTools").setLevel(_log_level)
-
 # Keep these quieter unless explicitly debugging.
 if _log_level > logging.DEBUG:
-    logging.getLogger("weasyprint").setLevel(logging.WARNING)
-    logging.getLogger("pdf2image").setLevel(logging.WARNING)
     logging.getLogger("PIL").setLevel(logging.WARNING)
 else:
-    logging.getLogger("weasyprint").setLevel(_log_level)
-    logging.getLogger("pdf2image").setLevel(_log_level)
     logging.getLogger("PIL").setLevel(_log_level)
 
 # Debug: show if .env was found

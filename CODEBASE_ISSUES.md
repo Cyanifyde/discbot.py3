@@ -32,3 +32,4 @@ Each item keeps a stable `ID` so you can reference it in PRs/issues without renu
 
 - **Web UI (admin/owner panel)**
   - Status (as of 2026-02-02): Removed — `web/` package, routes, and static assets deleted.
+

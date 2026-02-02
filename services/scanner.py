@@ -59,6 +59,43 @@ DEFAULT_STATE: Dict[str, Any] = {
 }
 
 
+_HELP_REGISTERED = False
+
+
+def register_help() -> None:
+    """Register help information for the scanner service."""
+    global _HELP_REGISTERED
+    if _HELP_REGISTERED:
+        return
+    help_system.register_module(
+        name="Scanner",
+        description="Image hash scanning for suspicious content.",
+        help_command="scanner help",
+        commands=[
+            ("scanner help", "Show all scanner commands"),
+            ("scanner enable", "Enable image hash scanning"),
+            ("scanner disable", "Disable image scanning"),
+            ("scanner status", "Check current scanner status"),
+            ("scanner stats", "View scanning statistics"),
+            ("scanner reload", "Reload global hash list"),
+            ("scanner setup", "Quick setup wizard"),
+            ("scanner config", "Show current configuration"),
+            ("scanner addhash <hash>", "Add hash to guild's hash list"),
+            ("scanner removehash <hash>", "Remove hash from guild's hash list"),
+            ("scanner listhashes", "List all guild hashes"),
+            ("scanner clearhashes", "Clear all guild hashes"),
+            ("scanner addrole <role_id>", "Add role to assign on match"),
+            ("scanner removerole <role_id>", "Remove role from assignment list"),
+            ("scanner clearroles", "Clear all role assignments"),
+        ],
+    )
+    _HELP_REGISTERED = True
+
+
+# Register help on import so `@bot help` can list it even before restore_state runs.
+register_help()
+
+
 def _is_mod(member: discord.Member) -> bool:
     """Check if member has mod permissions."""
     perms = member.guild_permissions
@@ -190,38 +227,19 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
 
 async def _cmd_help(message: discord.Message) -> None:
     """Show help for scanner commands."""
-    help_text = """**Image Scanner Commands**
-
-**Basic:**
-**`scanner enable`** - Enable the suspicious image scanner
-**`scanner disable`** - Disable the scanner (queue is preserved)
-**`scanner status`** - Check scanner status and basic info
-**`scanner stats`** - Show detailed scanning statistics
-**`scanner reload`** - Reload the global hash list from file
-
-**Hash Management (per-guild):**
-**`scanner setup`** - Show setup instructions
-**`scanner addhash`** (with image attachment(s)) - Add image hash(es) to this guild's list
-**`scanner removehash <hash>`** - Remove a hash from this guild's list
-**`scanner listhashes`** - List all guild-specific hashes
-**`scanner clearhashes`** - Clear all guild-specific hashes
-
-**Role Configuration:**
-**`scanner removerole <role_id|all>`** - Add role to remove on match
-**`scanner addrole <role_id>`** - Add role to give on match
-**`scanner clearroles`** - Clear all configured roles
-**`scanner config`** - Show current configuration
-
-**`scanner help`** - Show this help message
-
-**How it works:**
-The scanner checks images against a database of known suspicious image hashes.
-When a match is found, the configured action is taken (role removal, etc).
-
-The scanner does **not** run automatically.
-A moderator must enable it with `scanner enable`.
-"""
-    await message.reply(help_text, mention_author=False)
+    embed = help_system.get_module_embed("Scanner")
+    if embed is not None:
+        embed.add_field(
+            name="How it works",
+            value=(
+                "The scanner checks images against a database of suspicious image hashes. "
+                "It does **not** run automatically — a moderator must enable it with `scanner enable`."
+            ),
+            inline=False,
+        )
+        await message.reply(embed=embed, mention_author=False)
+        return
+    await message.reply("Scanner help is not available.", mention_author=False)
 
 
 async def _cmd_enable(
@@ -877,30 +895,8 @@ async def restore_state(bot: "DiscBot") -> None:
     Only starts the scanner for guilds where it was previously enabled.
     Also loads guild-specific hashes into runtime state.
     """
-    # Register help information
-    help_system.register_module(
-        name="Scanner",
-        description="Image hash scanning for suspicious content.",
-        help_command="scanner help",
-        commands=[
-            ("scanner help", "Show all scanner commands"),
-            ("scanner enable", "Enable image hash scanning"),
-            ("scanner disable", "Disable image scanning"),
-            ("scanner status", "Check current scanner status"),
-            ("scanner stats", "View scanning statistics"),
-            ("scanner reload", "Reload global hash list"),
-            ("scanner setup", "Quick setup wizard"),
-            ("scanner config", "Show current configuration"),
-            ("scanner addhash <hash>", "Add hash to guild's hash list"),
-            ("scanner removehash <hash>", "Remove hash from guild's hash list"),
-            ("scanner listhashes", "List all guild hashes"),
-            ("scanner clearhashes", "Clear all guild hashes"),
-            ("scanner addrole <role_id>", "Add role to assign on match"),
-            ("scanner removerole <role_id>", "Remove role from assignment list"),
-            ("scanner clearroles", "Clear all role assignments"),
-        ]
-    )
-    
+    register_help()
+     
     for guild_id, state in bot.guild_states.items():
         try:
             data = await get_state(guild_id)

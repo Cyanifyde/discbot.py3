@@ -32,6 +32,20 @@ def setup_utility() -> None:
         description="Utility commands for bookmarks, AFK, notes, and more.",
         help_command="utility help",
         commands=[
+            ("bookmark help", "Bookmark commands"),
+            ("afk help", "AFK status commands"),
+            ("note help", "Personal notes commands"),
+            ("alias help", "Command alias commands (mod only)"),
+            ("export help", "User data export command"),
+            ("utility help", "Show this help message"),
+        ],
+    )
+
+    help_system.register_module(
+        name="Bookmarks",
+        description="Bookmark messages, optionally with notes and delayed delivery.",
+        help_command="bookmark help",
+        commands=[
             ("bookmark [message_link] [note]", "Bookmark a message"),
             ("bookmark list", "List bookmarks"),
             ("bookmark remove <id>", "Remove bookmark"),
@@ -40,16 +54,63 @@ def setup_utility() -> None:
             ("bookmark emoji delay <emoji> <time> [dm|channel]", "Set reaction emoji for delayed bookmark"),
             ("bookmark emoji remove <emoji>", "Remove reaction emoji bookmark"),
             ("bookmark emoji list", "List reaction emoji bookmarks"),
+            ("bookmark help", "Show this help message"),
+        ],
+        group="Utility",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="AFK",
+        description="Set an AFK message and automatically clear it when you speak.",
+        help_command="afk help",
+        commands=[
             ("afk [message]", "Set AFK status"),
             ("afk off", "Clear AFK status"),
+            ("afk help", "Show this help message"),
+        ],
+        group="Utility",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Notes",
+        description="Personal notes stored by the bot (private to you).",
+        help_command="note help",
+        commands=[
             ("note add <content>", "Add personal note"),
             ("notes", "List personal notes"),
             ("note remove <id>", "Remove note"),
+            ("note help", "Show this help message"),
+        ],
+        group="Utility",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Aliases",
+        description="Create server-specific command aliases (mods).",
+        help_command="alias help",
+        commands=[
             ("alias add <shortcut> <full_command>", "Add command alias (mod)"),
             ("alias remove <shortcut>", "Remove alias (mod)"),
             ("alias list", "List aliases"),
-            ("export", "Export all user data as JSON"),
+            ("alias help", "Show this help message"),
         ],
+        group="Utility",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Export",
+        description="Export all your stored user data as JSON.",
+        help_command="export help",
+        commands=[
+            ("export", "Export all user data as JSON"),
+            ("export help", "Show this help message"),
+        ],
+        group="Utility",
+        hidden=True,
     )
 
 
@@ -73,6 +134,23 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
         return False
 
     command = parts[0].lower()
+
+    # Per-subcommand help
+    if len(parts) >= 2 and parts[1].lower() == "help":
+        target_map = {
+            "bookmark": "Bookmarks",
+            "afk": "AFK",
+            "note": "Notes",
+            "alias": "Aliases",
+            "export": "Export",
+        }
+        if command in target_map:
+            embed = help_system.get_module_help(target_map[command])
+            if embed:
+                await message.reply(embed=embed)
+            else:
+                await message.reply(" Help information not available.")
+            return True
 
     # Route to handlers
     if command == "utility":

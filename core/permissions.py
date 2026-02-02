@@ -30,6 +30,7 @@ AVAILABLE_MODULES = {
     "inviteprotection": "Detect and gate Discord invite links with allowlist/approval workflow",
     "artsearch": "Search images posted in approved channels",
     "commissionreviews": "Commission reviews and dispute workflow",
+    "analytics": "View statistics and trends",
 }
 
 # Default enable/disable state for modules when first added to a guild.

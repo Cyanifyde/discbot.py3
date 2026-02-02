@@ -20,6 +20,8 @@ class ModuleHelp:
     description: str
     help_command: str = ""  # Command to run for detailed help (e.g., "scanner help")
     commands: list[tuple[str, str]] = field(default_factory=list)
+    group: str = ""  # Optional grouping label (not currently rendered)
+    hidden: bool = False  # If True, omit from @bot help overview
     # (command, description) tuples
     
     def to_embed_field(self) -> dict[str, Any]:
@@ -103,6 +105,9 @@ class HelpSystem:
         description: str,
         help_command: str = "",
         commands: Optional[list[tuple[str, str]]] = None,
+        *,
+        group: str = "",
+        hidden: bool = False,
     ) -> None:
         """
         Register a module's help information.
@@ -120,7 +125,9 @@ class HelpSystem:
             name=name,
             description=description,
             help_command=help_command,
-            commands=commands or []
+            commands=commands or [],
+            group=group,
+            hidden=hidden,
         )
     
     def unregister_module(self, name: str) -> None:
@@ -149,6 +156,8 @@ class HelpSystem:
         for module_name in self._registered_order:
             if module_name in self._modules:
                 module_help = self._modules[module_name]
+                if module_help.hidden:
+                    continue
                 field = module_help.to_embed_field()
                 embed.add_field(**field)
         

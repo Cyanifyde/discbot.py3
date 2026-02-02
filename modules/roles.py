@@ -28,15 +28,77 @@ def setup_roles() -> None:
         description="Role management with temporary assignments, requests, and bundles.",
         help_command="roles help",
         commands=[
+            ("temprole help", "Temporary role commands (mod only)"),
+            ("requestrole help", "Role request commands"),
+            ("approverole help", "Approve/deny role requests (mod only)"),
+            ("rolebundle help", "Role bundle commands (mod only)"),
+            ("reactionrole help", "Reaction role setup commands (mod only)"),
+            ("roles help", "Show this help message"),
+        ],
+    )
+
+    help_system.register_module(
+        name="Temp Roles",
+        description="Temporary role assignment tools (mod only).",
+        help_command="temprole help",
+        commands=[
             ("temprole @user @role <duration>", "Give temporary role (mod only)"),
             ("temprole list", "List temporary roles (mod only)"),
+            ("temprole help", "Show this help message"),
+        ],
+        group="Roles",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Role Requests",
+        description="Request roles and let moderators approve/deny them.",
+        help_command="requestrole help",
+        commands=[
             ("requestrole @role [reason]", "Request a role"),
-            ("appoverole <id> approve/deny", "Approve/deny role request (mod only)"),
+            ("requestrole help", "Show this help message"),
+        ],
+        group="Roles",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Approve Role Requests",
+        description="Moderator tools for approving/denying role requests.",
+        help_command="approverole help",
+        commands=[
+            ("approverole <id> approve", "Approve a role request (mod only)"),
+            ("approverole <id> deny", "Deny a role request (mod only)"),
+            ("approverole help", "Show this help message"),
+        ],
+        group="Roles",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Role Bundles",
+        description="Create bundles of roles and apply them to users (mod only).",
+        help_command="rolebundle help",
+        commands=[
             ("rolebundle create <name> @role1 @role2...", "Create role bundle (mod only)"),
             ("rolebundle give @user <bundle_name>", "Give role bundle (mod only)"),
             ("rolebundle list", "List role bundles"),
-            ("reactionrole setup <message_link>", "Setup reaction roles (mod only)"),
+            ("rolebundle help", "Show this help message"),
         ],
+        group="Roles",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Reaction Roles",
+        description="Reaction role setup (note: full interaction handler may be required).",
+        help_command="reactionrole help",
+        commands=[
+            ("reactionrole setup <message_link>", "Setup reaction roles (mod only)"),
+            ("reactionrole help", "Show this help message"),
+        ],
+        group="Roles",
+        hidden=True,
     )
 
 
@@ -60,6 +122,31 @@ async def handle_roles_command(message: discord.Message, bot: discord.Client) ->
         return False
 
     command = parts[0].lower()
+
+    # Umbrella + per-subcommand help
+    if command == "roles" and len(parts) >= 2 and parts[1].lower() == "help":
+        embed = help_system.get_module_help("Roles")
+        if embed:
+            await message.reply(embed=embed)
+        else:
+            await message.reply(" Help information not available.")
+        return True
+
+    if len(parts) >= 2 and parts[1].lower() == "help":
+        target_map = {
+            "temprole": "Temp Roles",
+            "requestrole": "Role Requests",
+            "approverole": "Approve Role Requests",
+            "rolebundle": "Role Bundles",
+            "reactionrole": "Reaction Roles",
+        }
+        if command in target_map:
+            embed = help_system.get_module_help(target_map[command])
+            if embed:
+                await message.reply(embed=embed)
+            else:
+                await message.reply(" Help information not available.")
+            return True
 
     # Route to handlers
     if command == "temprole":

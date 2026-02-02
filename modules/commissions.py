@@ -5,7 +5,6 @@ Provides commands for artists to manage their commission queues, waitlists, and 
 """
 from __future__ import annotations
 
-import io
 import logging
 from typing import Optional
 
@@ -15,7 +14,6 @@ from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
 from core.utils import parse_deadline, format_commission_status, dt_to_iso, utcnow, iso_to_dt
 from services.commission_service import commission_service
-from services.render_service import render_service
 from classes.profile import get_profile
 
 logger = logging.getLogger("discbot.commissions")
@@ -46,8 +44,8 @@ def setup_commissions() -> None:
             ("commission blacklist add @user <reason>", "Blacklist a client"),
             ("commission blacklist remove @user", "Remove from blacklist"),
             ("commission blacklist list", "View blacklisted clients"),
-            ("commission invoice <id>", "Generate invoice (JPG)"),
-            ("commission contract <id>", "Generate contract (JPG)"),
+            ("commission invoice <id>", "Show invoice (embed)"),
+            ("commission contract <id>", "Show contract terms (embed)"),
             ("commission payment confirm <id>", "Confirm payment received"),
             ("commission summary", "View commission statistics"),
             ("commission quickadd @client <price> <type> [deadline]", "Quick-add commission"),
@@ -713,14 +711,44 @@ async def _handle_invoice(message: discord.Message, parts: list[str], bot: disco
     # Get profile for artist info
     profile = await get_profile(artist_id, guild_id)
 
-    # Render invoice
     try:
-        invoice_bytes = await render_service.render_invoice(commission.to_dict(), profile)
-        file = discord.File(fp=io.BytesIO(invoice_bytes), filename=f"invoice_{commission.id[:8]}.jpg")
-        await message.reply(" Invoice generated:", file=file)
+        embed = discord.Embed(
+            title=f"Invoice • {commission.id[:8]}",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="Artist", value=f"<@{commission.artist_id}>", inline=True)
+        embed.add_field(name="Client", value=f"<@{commission.client_id}>", inline=True)
+        embed.add_field(name="Stage", value=commission.stage or "Unknown", inline=True)
+
+        price_str = f"{commission.price:.2f} {commission.currency}" if commission.currency else f"{commission.price:.2f}"
+        embed.add_field(name="Price", value=price_str, inline=True)
+        embed.add_field(name="Payment", value=commission.payment_status or "pending", inline=True)
+        embed.add_field(
+            name="Revisions",
+            value=f"{commission.revisions_used}/{commission.revisions_limit}",
+            inline=True,
+        )
+
+        if commission.deadline:
+            embed.add_field(name="Deadline", value=commission.deadline, inline=True)
+
+        if commission.tags:
+            tags = ", ".join(f"`{t}`" for t in commission.tags[:20])
+            embed.add_field(name="Tags", value=tags, inline=False)
+
+        notes = (commission.notes or "").strip()
+        if notes:
+            embed.description = notes[:3500] + ("…" if len(notes) > 3500 else "")
+
+        contact = (profile or {}).get("contact_preference")
+        if contact:
+            embed.set_footer(text=f"Contact preference: {contact}")
+
+        await message.reply(embed=embed)
     except Exception as e:
-        logger.error(f"Failed to render invoice: {e}")
-        await message.reply(" Failed to generate invoice.")
+        logger.error("Failed to build invoice embed: %s", e)
+        await message.reply(" Failed to show invoice.")
 
 
 async def _handle_contract(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
@@ -754,14 +782,30 @@ async def _handle_contract(message: discord.Message, parts: list[str], bot: disc
         "payment_terms": "50% upfront, 50% on completion",
     }
 
-    # Render contract
     try:
-        contract_bytes = await render_service.render_contract(commission.to_dict(), terms)
-        file = discord.File(fp=io.BytesIO(contract_bytes), filename=f"contract_{commission.id[:8]}.jpg")
-        await message.reply(" Contract generated:", file=file)
+        embed = discord.Embed(
+            title=f"Contract Terms • {commission.id[:8]}",
+            color=discord.Color.blurple(),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(name="Artist", value=f"<@{commission.artist_id}>", inline=True)
+        embed.add_field(name="Client", value=f"<@{commission.client_id}>", inline=True)
+        embed.add_field(name="Revisions", value=str(terms.get("revisions_limit", commission.revisions_limit)), inline=True)
+        embed.add_field(name="Payment Terms", value=str(terms.get("payment_terms", "N/A")), inline=False)
+
+        if tos_url:
+            embed.add_field(name="TOS", value=tos_url, inline=False)
+        else:
+            embed.add_field(name="TOS", value="Not set. (Artist can set a TOS URL.)", inline=False)
+
+        embed.description = (
+            "This is a lightweight, in-chat contract summary. "
+            "Use your server’s normal commissioning process for any additional terms."
+        )
+        await message.reply(embed=embed)
     except Exception as e:
-        logger.error(f"Failed to render contract: {e}")
-        await message.reply(" Failed to generate contract.")
+        logger.error("Failed to build contract embed: %s", e)
+        await message.reply(" Failed to show contract terms.")
 
 
 async def _handle_payment(message: discord.Message, parts: list[str]) -> None:

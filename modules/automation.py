@@ -27,17 +27,54 @@ def setup_automation() -> None:
         description="Automated actions, triggers, schedules, and vacation mode.",
         help_command="automation help",
         commands=[
+            ("trigger help", "Automation trigger commands"),
+            ("schedule help", "Scheduled action commands"),
+            ("vacation help", "Vacation mode commands"),
+            ("automation help", "Show this help message"),
+        ],
+    )
+
+    help_system.register_module(
+        name="Triggers",
+        description="Automation triggers (mod only).",
+        help_command="trigger help",
+        commands=[
             ("trigger create <event> <action>", "Create automation trigger (mod only)"),
             ("trigger list", "List triggers (mod only)"),
             ("trigger toggle <id>", "Enable/disable trigger (mod only)"),
             ("trigger remove <id>", "Remove trigger (mod only)"),
+            ("trigger help", "Show this help message"),
+        ],
+        group="Automation",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Schedules",
+        description="Scheduled actions (mod only).",
+        help_command="schedule help",
+        commands=[
             ("schedule <action> <time>", "Schedule an action (mod only)"),
             ("schedule list", "List scheduled actions (mod only)"),
             ("schedule cancel <id>", "Cancel scheduled action (mod only)"),
+            ("schedule help", "Show this help message"),
+        ],
+        group="Automation",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Vacation Mode",
+        description="Vacation mode auto-responses and status.",
+        help_command="vacation help",
+        commands=[
             ("vacation on [return_date] [message]", "Enable vacation mode"),
             ("vacation off", "Disable vacation mode"),
             ("vacation status [@user]", "Check vacation status"),
+            ("vacation help", "Show this help message"),
         ],
+        group="Automation",
+        hidden=True,
     )
 
 
@@ -61,6 +98,25 @@ async def handle_automation_command(message: discord.Message, bot: discord.Clien
         return False
 
     command = parts[0].lower()
+
+    # Umbrella + per-subcommand help
+    if command == "automation" and len(parts) >= 2 and parts[1].lower() == "help":
+        embed = help_system.get_module_help("Automation")
+        if embed:
+            await message.reply(embed=embed)
+        else:
+            await message.reply(" Help information not available.")
+        return True
+
+    if len(parts) >= 2 and parts[1].lower() == "help":
+        target_map = {"trigger": "Triggers", "schedule": "Schedules", "vacation": "Vacation Mode"}
+        if command in target_map:
+            embed = help_system.get_module_help(target_map[command])
+            if embed:
+                await message.reply(embed=embed)
+            else:
+                await message.reply(" Help information not available.")
+            return True
 
     # Route to handlers
     if command == "trigger":

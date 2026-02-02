@@ -99,6 +99,10 @@ from modules.custom_content import (
     handle_custom_content_command,
     setup_custom_content,
 )
+from modules.analytics import (
+    handle_analytics_command,
+    setup_analytics,
+)
 from modules.trust import (
     handle_trust_command,
     setup_trust,
@@ -110,6 +114,7 @@ from modules.invite_protection import (
 from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
+from services.scanner import restore_state as restore_scanner_state
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
@@ -169,8 +174,40 @@ class DiscBot(discord.Client):
         setup_automation()
         setup_roles()
         setup_custom_content()
+        setup_analytics()
         setup_trust()
         setup_invite_protection()
+
+        # Register help for the modules management command early so it appears in @bot help.
+        register_modules_help()
+
+        expected_help = {
+            "Analytics",
+            "Art Search",
+            "Art Tools",
+            "Auto-Responder",
+            "Automation",
+            "Commission Reviews",
+            "Commissions",
+            "Communication",
+            "Custom Content",
+            "Inactivity Enforcement",
+            "Invite Protection",
+            "Moderation",
+            "Module Management",
+            "Portfolio",
+            "Reports",
+            "Roles",
+            "Scanner",
+            "Server Link",
+            "Server Stats",
+            "Trust",
+            "Utility",
+            "Verification",
+        }
+        missing = sorted(expected_help - set(help_system.get_module_names()))
+        if missing:
+            logger.warning("Missing help registrations for: %s", ", ".join(missing))
 
         await self._register_commands()
         await self.tree.sync()
@@ -195,6 +232,9 @@ class DiscBot(discord.Client):
 
             # Restore service states (inactivity)
             await restore_inactivity_state(self)
+
+            # Restore scanner state (also registers scanner help)
+            await restore_scanner_state(self)
 
             self._status_task = asyncio.create_task(self._status_loop())
             self._bookmark_task = asyncio.create_task(bookmark_delivery_loop(self))
@@ -387,6 +427,8 @@ class DiscBot(discord.Client):
         if await handle_roles_command(message, self):
             return
         if await handle_custom_content_command(message, self):
+            return
+        if await handle_analytics_command(message, self):
             return
         if await handle_trust_command(message, self):
             return

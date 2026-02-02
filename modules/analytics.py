@@ -1,13 +1,19 @@
 """
 Analytics module for viewing statistics.
 """
-import discord
+from __future__ import annotations
+
 from datetime import datetime
-from services.analytics_service import AnalyticsService
+from typing import Optional
+
+import discord
+
 from core.help_system import help_system
+from core.permissions import can_use_module, is_module_enabled
+from services.analytics_service import AnalyticsService
 
 
-def register_help():
+def setup_analytics() -> None:
     """Register analytics commands with the help system."""
     help_system.register_module(
         name="Analytics",
@@ -22,50 +28,56 @@ def register_help():
     )
 
 
-async def handle_stats_command(message: discord.Message, args: list) -> bool:
+async def handle_analytics_command(message: discord.Message, bot: discord.Client) -> bool:
     """
     Handle stats commands.
 
     Args:
         message: Discord message object
-        args: Command arguments (e.g., ["commissions", "month"])
+        bot: Discord bot instance (unused)
 
     Returns:
         bool: True if command was handled
     """
+    content = (message.content or "").strip()
+    if not content.lower().startswith("stats"):
+        return False
+
+    args = content.lower().split()
     if not args or args[0] != "stats":
         return False
 
     if not message.guild:
-        await message.channel.send("This command can only be used in servers.")
+        await message.reply("This command can only be used in servers.", mention_author=False)
         return True
 
     if not await is_module_enabled(message.guild.id, "analytics"):
-        return False
+        await message.reply(
+            "Analytics module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable analytics`",
+            mention_author=False,
+        )
+        return True
 
-    if not await can_use_command(message.author, "stats", message.guild.id):
-        await message.channel.send("You don't have permission to use this command.")
+    if not isinstance(message.author, discord.Member):
+        return True
+
+    if not await can_use_module(message.author, "analytics"):
+        await message.reply(
+            "You don't have permission to use analytics commands in this server.\n"
+            "An administrator can grant access with `modules allow analytics @YourRole`",
+            mention_author=False,
+        )
         return True
 
     analytics = AnalyticsService()
 
     if len(args) == 1 or args[1] == "help":
-        embed = discord.Embed(
-            title="📊 Statistics Help",
-            description="View various bot statistics",
-            color=0x3498db
-        )
-        embed.add_field(
-            name="Commands",
-            value=(
-                "`stats commissions [period]` - Commission stats (month/year/all)\n"
-                "`stats profile` - Your profile statistics\n"
-                "`stats bot` - Bot statistics\n"
-                "`stats trends <metric>` - Trends for a metric"
-            ),
-            inline=False
-        )
-        await message.channel.send(embed=embed)
+        embed = help_system.get_module_embed("Analytics")
+        if embed is not None:
+            await message.reply(embed=embed, mention_author=False)
+        else:
+            await message.reply("No help registered for Analytics.", mention_author=False)
         return True
 
     subcommand = args[1]
@@ -76,13 +88,13 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
         guild_id = message.guild.id if message.guild else None
 
         if not guild_id:
-            await message.channel.send("❌ This command must be used in a server.")
+            await message.reply("This command must be used in a server.", mention_author=False)
             return True
 
         stats = analytics.get_commission_stats(guild_id, period)
 
         embed = discord.Embed(
-            title=f"📊 Commission Statistics - {period.capitalize()}",
+            title=f"Commission Statistics — {period.capitalize()}",
             color=0x3498db,
             timestamp=datetime.now()
         )
@@ -116,7 +128,7 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
                 ])
                 embed.add_field(name="Recent Months", value=month_text or "No data", inline=False)
 
-        await message.channel.send(embed=embed)
+        await message.reply(embed=embed, mention_author=False)
         return True
 
     elif subcommand == "profile":
@@ -125,7 +137,7 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
         stats = analytics.get_profile_stats(user_id)
 
         embed = discord.Embed(
-            title=f"📊 Profile Statistics - {message.author.name}",
+            title=f"Profile Statistics — {message.author.name}",
             color=0x3498db,
             timestamp=datetime.now()
         )
@@ -145,7 +157,7 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
             portfolio_text = "\n".join([f"**Entry {entry_id[:8]}...**: {count} views" for entry_id, count in portfolio_items])
             embed.add_field(name="Top Portfolio Pieces", value=portfolio_text or "No data", inline=False)
 
-        await message.channel.send(embed=embed)
+        await message.reply(embed=embed, mention_author=False)
         return True
 
     elif subcommand == "bot":
@@ -153,7 +165,7 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
         stats = analytics.get_bot_stats()
 
         embed = discord.Embed(
-            title="📊 Bot Statistics",
+            title="Bot Statistics",
             color=0x3498db,
             timestamp=datetime.now()
         )
@@ -170,30 +182,33 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
         uptime_str = f"{days}d {hours}h {minutes}m"
         embed.add_field(name="Uptime", value=uptime_str, inline=True)
 
-        await message.channel.send(embed=embed)
+        await message.reply(embed=embed, mention_author=False)
         return True
 
     elif subcommand == "trends":
         # Trends for a metric
         if len(args) < 3:
-            await message.channel.send("❌ Usage: `stats trends <metric>` (e.g., `stats trends commissions`)")
+            await message.reply(
+                "Usage: `stats trends <metric>` (e.g., `stats trends commissions`)",
+                mention_author=False,
+            )
             return True
 
         metric = args[2]
         guild_id = message.guild.id if message.guild else None
 
         if not guild_id:
-            await message.channel.send("❌ This command must be used in a server.")
+            await message.reply("This command must be used in a server.", mention_author=False)
             return True
 
         trends = analytics.calculate_trends(guild_id, metric)
 
         if not trends:
-            await message.channel.send(f"❌ No trend data available for metric: {metric}")
+            await message.reply(f"No trend data available for metric: {metric}", mention_author=False)
             return True
 
         embed = discord.Embed(
-            title=f"📈 Trends - {metric.capitalize()}",
+            title=f"Trends — {metric.capitalize()}",
             color=0x3498db,
             timestamp=datetime.now()
         )
@@ -219,8 +234,13 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
                     inline=True
                 )
 
-        await message.channel.send(embed=embed)
+        await message.reply(embed=embed, mention_author=False)
         return True
 
-    await message.channel.send(f"❌ Unknown stats subcommand: `{subcommand}`")
+    await message.reply(f"Unknown stats subcommand: `{subcommand}`", mention_author=False)
     return True
+
+
+def register_help() -> None:
+    """Backward-compatible alias for older imports."""
+    setup_analytics()

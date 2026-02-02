@@ -26,20 +26,57 @@ def setup_communication() -> None:
         description="Feedback, announcements, and acknowledgment tracking.",
         help_command="communication help",
         commands=[
+            ("feedback help", "Feedback box commands"),
+            ("notify help", "Announcement subscription commands"),
+            ("ack help", "Acknowledgment commands"),
+            ("communication help", "Show this help message"),
+        ],
+    )
+
+    help_system.register_module(
+        name="Feedback",
+        description="Anonymous feedback submission and moderation workflow.",
+        help_command="feedback help",
+        commands=[
             ("feedback submit <content>", "Submit anonymous feedback"),
             ("feedback list [status]", "List feedback (mod only)"),
             ("feedback view <id>", "View feedback details (mod only)"),
             ("feedback status <id> <status> [note]", "Update feedback status (mod only)"),
             ("feedback upvote <id>", "Upvote feedback"),
             ("feedback config <channel>", "Configure feedback channel (mod only)"),
-            ("notify subscribe @artist", "Subscribe to artist's announcements"),
-            ("notify unsubscribe @artist", "Unsubscribe from artist"),
+            ("feedback help", "Show this help message"),
+        ],
+        group="Communication",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Notify",
+        description="Subscribe to artists and receive announcement notifications.",
+        help_command="notify help",
+        commands=[
+            ("notify subscribe @artist", "Subscribe to an artist's announcements"),
+            ("notify unsubscribe @artist", "Unsubscribe from an artist"),
             ("notify list", "List your subscriptions"),
             ("notify channel <channel>", "Set announcement channel (mod only)"),
-            ("ack <message_link> <title> <description>", "Create acknowledgment (mod only)"),
-            ("ack check", "Check pending acknowledgments"),
-            ("ack stats <message_link>", "View acknowledgment stats (mod only)"),
+            ("notify help", "Show this help message"),
         ],
+        group="Communication",
+        hidden=True,
+    )
+
+    help_system.register_module(
+        name="Acknowledgments",
+        description="Create acknowledgments users must click to confirm they've read something.",
+        help_command="ack help",
+        commands=[
+            ("ack <message_link> <title> <description>", "Create acknowledgment (mod only)"),
+            ("ack check", "Check your pending acknowledgments"),
+            ("ack stats <message_link>", "View acknowledgment stats (mod only)"),
+            ("ack help", "Show this help message"),
+        ],
+        group="Communication",
+        hidden=True,
     )
 
 
@@ -63,6 +100,25 @@ async def handle_communication_command(message: discord.Message, bot: discord.Cl
         return False
 
     command = parts[0].lower()
+
+    # Per-subcommand help
+    if command == "communication" and len(parts) >= 2 and parts[1].lower() == "help":
+        embed = help_system.get_module_help("Communication")
+        if embed:
+            await message.reply(embed=embed)
+        else:
+            await message.reply(" Help information not available.")
+        return True
+
+    if len(parts) >= 2 and parts[1].lower() == "help":
+        target_map = {"feedback": "Feedback", "notify": "Notify", "ack": "Acknowledgments"}
+        if command in target_map:
+            embed = help_system.get_module_help(target_map[command])
+            if embed:
+                await message.reply(embed=embed)
+            else:
+                await message.reply(" Help information not available.")
+            return True
 
     # Route to handlers
     if command == "feedback":

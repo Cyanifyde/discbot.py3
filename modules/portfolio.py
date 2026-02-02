@@ -19,7 +19,6 @@ from PIL import Image
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
 from services.portfolio_service import portfolio_service
-from services.render_service import render_service
 
 logger = logging.getLogger("discbot.portfolio")
 
@@ -51,7 +50,17 @@ def setup_portfolio() -> None:
             ("portfolio beforeafter <before_url> <after_url> [title]", "Add before/after entry"),
             ("portfolio batch <url1> <url2> ...", "Add multiple entries at once"),
             ("portfolio stats", "View portfolio statistics"),
-            ("ratecard", "Generate your rate card image"),
+            ("ratecard help", "Show rate card commands"),
+            ("portfolio help", "Show this help message"),
+        ],
+    )
+
+    help_system.register_module(
+        name="Rate Card",
+        description="Rate card generator and settings (part of Portfolio).",
+        help_command="ratecard help",
+        commands=[
+            ("ratecard", "Show your rate card (embed)"),
             ("ratecard set <name> <price> [desc]", "Set a rate (e.g. 'Sketch' 25)"),
             ("ratecard remove <name>", "Remove a rate"),
             ("ratecard list", "List all your rates"),
@@ -61,9 +70,11 @@ def setup_portfolio() -> None:
             ("ratecard currency <symbol>", "Set currency symbol (default: $)"),
             ("ratecard image <rate> + attach", "Add image to rate (webp converted)"),
             ("ratecard image <rate> remove", "Remove image from rate"),
-            ("ratecard template <style>", "Styles: minimal, colorful, detailed, professional"),
-            ("portfolio help", "Show this help message"),
+            ("ratecard template <style>", "Embed themes: minimal, colorful, detailed, professional"),
+            ("ratecard help", "Show this help message"),
         ],
+        group="Portfolio",
+        hidden=True,
     )
 
 
@@ -568,7 +579,7 @@ async def _handle_help(message: discord.Message) -> None:
 async def _handle_ratecard_command(message: discord.Message, parts: list[str]) -> None:
     """Route ratecard subcommands."""
     if len(parts) < 2:
-        # No subcommand, generate rate card image
+        # No subcommand, show rate card
         await _generate_ratecard(message, None)
         return
 
@@ -593,16 +604,18 @@ async def _handle_ratecard_command(message: discord.Message, parts: list[str]) -
     elif subcommand == "image":
         await _handle_ratecard_image(message, parts)
     elif subcommand == "help":
-        help_text = help_system.get_module_help("Portfolio")
+        help_text = help_system.get_module_help("Rate Card")
         if help_text:
             await message.reply(embed=help_text)
+        else:
+            await message.reply(" Help information not available.")
     else:
         # Unknown subcommand, generate rate card
         await _generate_ratecard(message, subcommand)
 
 
 async def _generate_ratecard(message: discord.Message, template: Optional[str] = None) -> None:
-    """Generate and send rate card image."""
+    """Generate and send rate card embed."""
     user_id = message.author.id
 
     # Get rates and settings
@@ -624,48 +637,91 @@ async def _generate_ratecard(message: discord.Message, template: Optional[str] =
     if template not in valid_templates:
         template = settings.get("template", "minimal")
 
-    # Build profile dict for template
-    profile = {
-        "bio": settings.get("subtitle", ""),
-        "title": settings.get("title", "Commission Rates"),
-        "status": settings.get("status", "open"),
-        "currency": settings.get("currency", "$"),
-        "image": settings.get("image"),
+    theme_colors = {
+        "minimal": discord.Color.dark_grey(),
+        "colorful": discord.Color.magenta(),
+        "detailed": discord.Color.blue(),
+        "professional": discord.Color.dark_blue(),
     }
 
-    # Format rates for template (name -> {price, description, image})
-    formatted_rates = {}
-    currency = settings.get("currency", "$")
-    for name, data in rates.items():
+    title = (settings.get("title") or "Commission Rates").strip()
+    subtitle = (settings.get("subtitle") or "").strip()
+    status = (settings.get("status") or "open").strip()
+    currency = (settings.get("currency") or "$").strip()
+
+    embed = discord.Embed(
+        title=title,
+        description=subtitle if subtitle else None,
+        color=theme_colors.get(template, discord.Color.dark_grey()),
+        timestamp=discord.utils.utcnow(),
+    )
+
+    embed.add_field(name="Status", value=status, inline=True)
+    embed.add_field(name="Currency", value=currency, inline=True)
+    embed.add_field(name="Theme", value=template, inline=True)
+
+    # Add rates (Discord limit: 25 fields)
+    added = 0
+    for rate_name in sorted(rates.keys(), key=lambda s: s.lower()):
+        if added >= 22:
+            break
+
+        data = rates.get(rate_name)
+        price = 0.0
+        desc = ""
         if isinstance(data, dict):
-            formatted_rates[name] = {
-                "price": f"{currency}{data.get('price', 0)}",
-                "description": data.get("description", ""),
-                "image": data.get("image"),
-            }
+            try:
+                price = float(data.get("price", 0) or 0)
+            except Exception:
+                price = 0.0
+            desc = (data.get("description") or "").strip()
         else:
-            formatted_rates[name] = {
-                "price": f"{currency}{data}",
-                "description": "",
-                "image": None,
-            }
+            try:
+                price = float(data or 0)
+            except Exception:
+                price = 0.0
 
-    # Count rates with images for dynamic height
-    images_count = sum(1 for r in formatted_rates.values() if r.get("image"))
-
-    try:
-        image_bytes = await render_service.render_rate_card(
-            profile=profile,
-            rates=formatted_rates,
-            template=template,
+        value = desc if desc else "—"
+        embed.add_field(
+            name=f"{rate_name} — {currency}{price:.2f}",
+            value=value[:1024],
+            inline=False,
         )
+        added += 1
 
-        file = discord.File(fp=io.BytesIO(image_bytes), filename=f"ratecard_{template}.jpg")
-        await message.reply(file=file)
-    except Exception as e:
-        logger.error("Failed to render rate card: %s", e)
-        # Fallback to embed
-        await _handle_ratecard_list(message)
+    remaining = max(0, len(rates) - added)
+    if remaining:
+        embed.add_field(name="More", value=f"+{remaining} more rate(s) not shown.", inline=False)
+
+    # If any rate has an attached image (stored as data URI), attach the first one as a thumbnail.
+    def _data_uri_to_bytes(data_uri: str) -> Optional[bytes]:
+        if not isinstance(data_uri, str):
+            return None
+        if "base64," not in data_uri:
+            return None
+        try:
+            b64 = data_uri.split("base64,", 1)[1]
+            return base64.b64decode(b64)
+        except Exception:
+            return None
+
+    image_bytes = None
+    image_filename = None
+    for rate_name in sorted(rates.keys(), key=lambda s: s.lower()):
+        data = rates.get(rate_name)
+        if isinstance(data, dict) and data.get("image"):
+            image_bytes = _data_uri_to_bytes(data["image"])
+            if image_bytes:
+                safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", rate_name)[:30] or "rate"
+                image_filename = f"rate_{safe_name}.webp"
+                embed.set_thumbnail(url=f"attachment://{image_filename}")
+            break
+
+    if image_bytes and image_filename:
+        file = discord.File(fp=io.BytesIO(image_bytes), filename=image_filename)
+        await message.reply(embed=embed, file=file)
+    else:
+        await message.reply(embed=embed)
 
 
 async def _handle_ratecard_set(message: discord.Message, parts: list[str]) -> None:

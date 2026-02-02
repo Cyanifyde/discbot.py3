@@ -63,6 +63,42 @@ DEFAULT_STATE: Dict[str, Any] = {
 }
 
 
+_HELP_REGISTERED = False
+
+
+def register_help() -> None:
+    """Register help information for the inactivity service."""
+    global _HELP_REGISTERED
+    if _HELP_REGISTERED:
+        return
+    help_system.register_module(
+        name="Inactivity Enforcement",
+        description="Enforce actions against users who haven't posted within the threshold period.",
+        help_command="inactivity help",
+        commands=[
+            ("inactivity help", "Show all inactivity commands"),
+            ("inactivity enable", "Enable inactivity checking"),
+            ("inactivity disable", "Disable inactivity checking"),
+            ("inactivity status", "Check current enforcement status"),
+            ("inactivity stats", "View enforcement statistics"),
+            ("inactivity step", "Manually run enforcement step"),
+            ("inactivity setup", "Quick setup wizard"),
+            ("inactivity config", "Show current configuration"),
+            ("inactivity init", "Initialize baseline date for enforcement"),
+            ("inactivity setgrace <days>", "Set grace period for new members"),
+            ("inactivity setbaseline <YYYY-MM-DD>", "Set baseline date manually"),
+            ("inactivity addrole <role_id>", "Add role to assign on enforcement"),
+            ("inactivity removerole <role_id>", "Remove role from assignment list"),
+            ("inactivity clearroles", "Clear all role assignments"),
+        ],
+    )
+    _HELP_REGISTERED = True
+
+
+# Register help on import so `@bot help` can list it without waiting for restore_state.
+register_help()
+
+
 def _is_mod(member: discord.Member) -> bool:
     """Check if member has mod permissions."""
     perms = member.guild_permissions
@@ -891,29 +927,8 @@ async def restore_state(bot: "DiscBot") -> None:
     This just logs which guilds have inactivity enabled.
     The actual enforcement loop is controlled separately.
     """
-    # Register help information
-    help_system.register_module(
-        name="Inactivity Enforcement",
-        description="Enforce actions against users who haven't posted within the threshold period.",
-        help_command="inactivity help",
-        commands=[
-            ("inactivity help", "Show all inactivity commands"),
-            ("inactivity enable", "Enable inactivity checking"),
-            ("inactivity disable", "Disable inactivity checking"),
-            ("inactivity status", "Check current enforcement status"),
-            ("inactivity stats", "View enforcement statistics"),
-            ("inactivity step", "Manually run enforcement step"),
-            ("inactivity setup", "Quick setup wizard"),
-            ("inactivity config", "Show current configuration"),
-            ("inactivity init", "Initialize baseline date for enforcement"),
-            ("inactivity setgrace <days>", "Set grace period for new members"),
-            ("inactivity setbaseline <YYYY-MM-DD>", "Set baseline date manually"),
-            ("inactivity addrole <role_id>", "Add role to assign on enforcement"),
-            ("inactivity removerole <role_id>", "Remove role from assignment list"),
-            ("inactivity clearroles", "Clear all role assignments"),
-        ]
-    )
-    
+    register_help()
+     
     for guild_id, state in bot.guild_states.items():
         try:
             data = await get_state(guild_id)
