@@ -265,6 +265,47 @@ class DiscBot(discord.Client):
         if message.author.bot:
             return
 
+        # Auto-clear AFK when the user speaks (except when setting AFK).
+        try:
+            content_l = (message.content or "").strip().lower()
+            if not content_l.startswith("afk"):
+                from core.utility_storage import UtilityStore
+
+                store = UtilityStore(message.author.id)
+                await store.initialize()
+                is_afk, _afk_msg = await store.is_afk()
+                if is_afk:
+                    result = await store.clear_afk()
+                    mentions = result.get("mentions") or []
+                    if mentions:
+                        lines: list[str] = []
+                        for m in mentions[:10]:
+                            author = m.get("author", "Someone")
+                            msg_content = m.get("content", "")
+                            guild_id = m.get("guild_id")
+                            channel_id = m.get("channel_id")
+                            message_id = m.get("message_id")
+                            link = ""
+                            if guild_id and channel_id and message_id:
+                                link = f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+                            snippet = msg_content if len(msg_content) <= 200 else f"{msg_content[:197]}..."
+                            if link:
+                                lines.append(f"- {author}: {snippet}\n  {link}")
+                            else:
+                                lines.append(f"- {author}: {snippet}")
+
+                        dm_text = (
+                            f"AFK cleared automatically. You were mentioned {len(mentions)} times:\n"
+                            + "\n".join(lines)
+                        )
+                        try:
+                            await message.author.send(dm_text)
+                        except discord.Forbidden:
+                            pass
+        except Exception:
+            # AFK is a convenience feature; never block message handling.
+            pass
+
         # Handle DMs
         if message.guild is None:
             await handle_dm_send(self, message)

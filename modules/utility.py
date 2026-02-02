@@ -453,15 +453,67 @@ async def handle_bookmark_reaction(
 
 async def _deliver_bookmark_now(bot: discord.Client, bookmark: Bookmark) -> None:
     """Deliver a bookmark immediately based on delivery method."""
+    message = await _try_fetch_bookmarked_message(bot, bookmark)
+    text = _format_bookmark_delivery_text(bookmark, message)
+
     if bookmark.delivery_method == "channel":
         channel = bot.get_channel(bookmark.notify_channel_id or bookmark.channel_id)
-        if channel and isinstance(channel, discord.TextChannel):
-            await channel.send(f"<@{bookmark.user_id}> bookmarked: {bookmark.message_link}")
+        if channel and hasattr(channel, "send"):
+            await channel.send(text)
         return
 
     user = await bot.fetch_user(bookmark.user_id)
     if user:
-        await user.send(f"Bookmarked: {bookmark.message_link}")
+        await user.send(text)
+
+
+async def _try_fetch_bookmarked_message(
+    bot: discord.Client,
+    bookmark: Bookmark,
+) -> Optional[discord.Message]:
+    """Best-effort fetch of the bookmarked message for richer delivery text."""
+    channel = bot.get_channel(bookmark.channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(bookmark.channel_id)
+        except Exception:
+            return None
+
+    fetch_message = getattr(channel, "fetch_message", None)
+    if not callable(fetch_message):
+        return None
+
+    try:
+        return await fetch_message(bookmark.message_id)
+    except Exception:
+        return None
+
+
+def _format_bookmark_delivery_text(bookmark: Bookmark, message: Optional[discord.Message]) -> str:
+    """Format bookmark delivery text similar to AFK recap style."""
+    header = f"<@{bookmark.user_id}> bookmarked:"
+
+    if message is None:
+        # Fallback if we can't fetch the message.
+        base = f"{header} {bookmark.message_link}"
+        if bookmark.note:
+            base += f"\nNote: {bookmark.note}"
+        return base
+
+    author = getattr(message.author, "display_name", "Unknown")
+    content = (message.content or "").strip()
+    if not content and getattr(message, "attachments", None):
+        content = "(Attachment only)"
+
+    # Keep within Discord 2000-char limit with room for link/note.
+    if len(content) > 900:
+        content = content[:897] + "..."
+
+    lines = [header, f"From {author}:", content, bookmark.message_link]
+    if bookmark.note:
+        note = bookmark.note if len(bookmark.note) <= 400 else bookmark.note[:397] + "..."
+        lines.append(f"Note: {note}")
+    return "\n".join([l for l in lines if l])
 
 
 async def deliver_pending_bookmarks(bot: discord.Client) -> int:

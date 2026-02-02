@@ -287,7 +287,7 @@ class RenderService:
 
     def _measure_weasyprint_body(self, html: str) -> Optional[Dict[str, float]]:
         """
-        Measure the .rate-card element plus body padding to get card + background border.
+        Measure the .rate-card element and add fixed padding for background border.
         """
         try:
             # Render on a tall page so content isn't clipped
@@ -301,45 +301,34 @@ class RenderService:
             if root is None:
                 return None
 
-            # Find body for padding values
-            def _find_element(box: Any, tag: str = None, class_name: str = None) -> Optional[Any]:
+            def _find_by_class(box: Any, class_name: str) -> Optional[Any]:
                 el = getattr(box, "element", None)
                 if el is not None:
-                    if tag and el.tag == tag:
+                    cls = el.get("class") or ""
+                    if class_name in cls.split():
                         return box
-                    if class_name:
-                        cls = el.get("class") or ""
-                        if class_name in cls.split():
-                            return box
                 for child in getattr(box, "children", []) or []:
-                    found = _find_element(child, tag, class_name)
+                    found = _find_by_class(child, class_name)
                     if found:
                         return found
                 return None
 
-            # Get body padding
-            body = _find_element(root, tag="body")
-            body_pad_x = 0
-            body_pad_y = 0
-            if body:
-                body_pad_x = float(getattr(body, "padding_left", 0) or 0) + float(getattr(body, "padding_right", 0) or 0)
-                body_pad_y = float(getattr(body, "padding_top", 0) or 0) + float(getattr(body, "padding_bottom", 0) or 0)
-
             # Find .rate-card element
-            card = _find_element(root, class_name="rate-card")
+            card = _find_by_class(root, "rate-card")
             if card is None:
                 return None
 
-            # Get card dimensions (border_width/height includes padding+border+content)
-            card_w = float(getattr(card, "border_width", 0) or getattr(card, "width", 0) or 0)
-            card_h = float(getattr(card, "border_height", 0) or getattr(card, "height", 0) or 0)
+            # Get card dimensions - try margin_height/width first (full outer box)
+            card_w = float(getattr(card, "margin_width", 0) or getattr(card, "border_width", 0) or getattr(card, "width", 0) or 0)
+            card_h = float(getattr(card, "margin_height", 0) or getattr(card, "border_height", 0) or getattr(card, "height", 0) or 0)
             
             if card_w <= 0 or card_h <= 0:
                 return None
 
-            # Total = card + body padding (for background around card)
-            w = card_w + body_pad_x
-            h = card_h + body_pad_y
+            # Add fixed padding for background border around card (matches template body padding)
+            padding = 24
+            w = card_w + (padding * 2)
+            h = card_h + (padding * 2)
                 
             return {"width": w, "height": h}
         except Exception as exc:
