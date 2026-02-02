@@ -527,7 +527,7 @@ class _ArtSearchView(discord.ui.View):
                         break
             except discord.RateLimited as e:
                 retry_after = float(getattr(e, "retry_after", 1.0) or 1.0)
-                retry_after = max(0.5, min(retry_after, 60.0))
+                retry_after = max(0.5, min(retry_after, 300.0))
                 self.rate_limited_until = time.monotonic() + retry_after
                 try:
                     await asyncio.sleep(retry_after)
@@ -539,7 +539,7 @@ class _ArtSearchView(discord.ui.View):
             except discord.HTTPException as e:
                 if getattr(e, "status", None) == 429:
                     retry_after = float(getattr(e, "retry_after", 1.0) or 1.0)
-                    retry_after = max(0.5, min(retry_after, 60.0))
+                    retry_after = max(0.5, min(retry_after, 300.0))
                     self.rate_limited_until = time.monotonic() + retry_after
                     try:
                         await asyncio.sleep(retry_after)
