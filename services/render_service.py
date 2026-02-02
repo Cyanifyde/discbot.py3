@@ -2,7 +2,7 @@
 Render service - converts HTML templates to JPG images.
 
 Uses Jinja2 for templating and Pillow for image rendering.
-For more complex rendering, can be extended to use Playwright.
+For more complex rendering, uses Pillow-based drawing for key outputs.
 """
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ except ImportError:
     HAS_PILLOW = False
 
 try:
-    from playwright.async_api import async_playwright
-    HAS_PLAYWRIGHT = True
+    from weasyprint import HTML
+    HAS_WEASYPRINT = True
 except ImportError:
-    HAS_PLAYWRIGHT = False
+    HAS_WEASYPRINT = False
 
 from core.paths import BASE_DIR
 
@@ -146,8 +146,8 @@ class RenderService:
             JPG image as bytes
         """
         template_obj = self.env.get_template("palette.html")
-        html = template_obj.render(colors=colors, method=method, count=count)
-        return await self._html_to_jpg(html, width=800, height=400)
+        _ = template_obj.render(colors=colors, method=method, count=count)
+        return self._render_palette_image(colors, method, count)
 
     async def _html_to_jpg(
         self,
@@ -158,30 +158,15 @@ class RenderService:
         """
         Convert HTML to JPG image.
 
-        Uses Playwright for proper HTML rendering if available.
-        Falls back to a simple Pillow placeholder if Playwright is not installed.
+        Render HTML with WeasyPrint when available; otherwise use a Pillow placeholder.
         """
-        if HAS_PLAYWRIGHT:
+        if HAS_WEASYPRINT:
             try:
-                return await self._render_with_playwright(html, width, height)
+                return self._render_with_weasyprint(html)
             except Exception as exc:
-                logger.warning("Playwright render failed, using fallback: %s", exc)
+                logger.warning("WeasyPrint render failed, using fallback: %s", exc)
 
         return self._render_placeholder(width, height)
-
-    async def _render_with_playwright(
-        self,
-        html: str,
-        width: int,
-        height: int,
-    ) -> bytes:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            page = await browser.new_page(viewport={"width": width, "height": height})
-            await page.set_content(html, wait_until="networkidle")
-            image_bytes = await page.screenshot(type="jpeg", quality=95, full_page=True)
-            await browser.close()
-            return image_bytes
 
     def _render_placeholder(self, width: int, height: int) -> bytes:
         img = Image.new("RGB", (width, height), color="white")
@@ -194,7 +179,92 @@ class RenderService:
 
         draw.text((10, 10), "Rendered Image", fill="black", font=font)
         draw.text((10, 40), f"Width: {width}, Height: {height}", fill="black", font=font)
-        draw.text((10, 70), "Install Playwright for full HTML rendering", fill="gray", font=font)
+        draw.text((10, 70), "HTML rendering not available in this environment", fill="gray", font=font)
+
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=95)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def _render_with_weasyprint(self, html: str) -> bytes:
+        if not HAS_WEASYPRINT:
+            raise RuntimeError("WeasyPrint not available")
+
+        # WeasyPrint supports PNG rendering via write_png in some versions.
+        # Fall back to PDF if PNG isn't available.
+        doc = HTML(string=html)
+        if hasattr(doc, "write_png"):
+            png_bytes = doc.write_png()
+            img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+            out = io.BytesIO()
+            img.save(out, format="JPEG", quality=95)
+            out.seek(0)
+            return out.getvalue()
+
+        pdf_bytes = doc.write_pdf()
+        if not HAS_PILLOW:
+            return pdf_bytes
+        try:
+            img = Image.open(io.BytesIO(pdf_bytes)).convert("RGB")
+        except Exception:
+            return self._render_placeholder(800, 600)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=95)
+        out.seek(0)
+        return out.getvalue()
+
+    def _render_palette_image(
+        self,
+        colors: list[str],
+        method: str,
+        count: int,
+    ) -> bytes:
+        width = 800
+        height = 400
+        margin = 40
+        header_h = 70
+        gutter = 10
+        swatch_h = height - margin * 2 - header_h
+        swatch_w = max(1, (width - margin * 2 - gutter * (len(colors) - 1)) // max(1, len(colors)))
+
+        img = Image.new("RGB", (width, height), color="#f5f5f5")
+        draw = ImageDraw.Draw(img)
+
+        try:
+            title_font = ImageFont.truetype("arial.ttf", 24)
+            meta_font = ImageFont.truetype("arial.ttf", 14)
+        except Exception:
+            title_font = ImageFont.load_default()
+            meta_font = ImageFont.load_default()
+
+        draw.text((margin, margin), "Color Palette", fill="#111111", font=title_font)
+        draw.text(
+            (margin, margin + 30),
+            f"{method} · {count} colors",
+            fill="#666666",
+            font=meta_font,
+        )
+
+        x = margin
+        y = margin + header_h
+        for color in colors:
+            draw.rounded_rectangle(
+                [x, y, x + swatch_w, y + swatch_h],
+                radius=8,
+                fill=color,
+                outline="#dddddd",
+                width=1,
+            )
+            text = color.upper()
+            text_w, text_h = draw.textsize(text, font=meta_font)
+            text_x = x + (swatch_w - text_w) / 2
+            text_y = y + swatch_h - text_h - 10
+            draw.rectangle(
+                [text_x - 6, text_y - 4, text_x + text_w + 6, text_y + text_h + 4],
+                fill="#ffffff",
+            )
+            draw.text((text_x, text_y), text, fill="#111111", font=meta_font)
+            x += swatch_w + gutter
 
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=95)

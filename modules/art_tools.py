@@ -60,7 +60,8 @@ def setup_art_tools() -> None:
         commands=[
             ("palette [count]", "Generate random color palette (1-8 colors)"),
             ("palette hex <#color1> <#color2>...", "Create palette from hex codes"),
-            ("palette harmony <#color>", "Generate harmonious palette"),
+            ("palette harmony <#color>", "Generate complementary + analogous palette"),
+            ("palette <method> <#color> [count]", "Methods: complementary, analogous, triadic, monochromatic"),
             ("prompt", "Generate random art prompt"),
             ("prompt custom <subject> <action> <setting>", "Create custom prompt"),
             ("artdice <sides>", "Roll art-themed dice"),
@@ -93,6 +94,9 @@ async def handle_art_tools_command(message: discord.Message, bot: discord.Client
 
     # Route to handlers
     if command == "palette":
+        if len(parts) >= 2 and parts[1].lower() == "help":
+            await _handle_palette_help(message)
+            return True
         await _handle_palette(message, parts)
         return True
     elif command == "prompt":
@@ -167,8 +171,49 @@ def generate_triadic(hex_color: str) -> List[str]:
     return colors
 
 
+def generate_monochromatic(hex_color: str, count: int = 5) -> List[str]:
+    """Generate monochromatic colors by adjusting value."""
+    import colorsys
+
+    r, g, b = hex_to_rgb(hex_color)
+    h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+
+    colors = []
+    if count <= 1:
+        return [hex_color]
+
+    step = 0.6 / max(1, count - 1)
+    for i in range(count):
+        new_v = max(0.2, min(1.0, v - (step * i)))
+        new_r, new_g, new_b = colorsys.hsv_to_rgb(h, s, new_v)
+        colors.append(rgb_to_hex(int(new_r * 255), int(new_g * 255), int(new_b * 255)))
+
+    return colors
+
+
+def _build_palette_by_method(method: str, base_color: str, count: int) -> List[str]:
+    method = method.lower()
+    if method == "complementary":
+        colors = [base_color, generate_complementary(base_color)]
+        if count > 2:
+            colors.extend(generate_analogous(base_color, count - 2))
+        return colors[:count]
+    if method == "analogous":
+        colors = [base_color]
+        colors.extend(generate_analogous(base_color, max(1, count - 1)))
+        return colors[:count]
+    if method == "triadic":
+        colors = [base_color]
+        colors.extend(generate_triadic(base_color))
+        return colors[:count]
+    if method == "monochromatic":
+        return generate_monochromatic(base_color, count)
+    return []
+
+
 async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
     """Handle palette generation."""
+    method_label = "random"
     if len(parts) < 2:
         # Generate random palette
         count = 5
@@ -185,6 +230,7 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         if not colors:
             await message.reply(" No valid hex colors provided")
             return
+        method_label = "hex"
     elif parts[1].lower() == "harmony":
         # Generate harmonious palette
         if len(parts) < 3:
@@ -200,6 +246,29 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         colors = [base_color]
         colors.append(generate_complementary(base_color))
         colors.extend(generate_analogous(base_color, 2))
+        method_label = "harmony"
+    elif parts[1].lower() in {"complementary", "analogous", "triadic", "monochromatic"}:
+        if len(parts) < 3:
+            await message.reply(" Usage: `palette <method> <#color> [count]`")
+            return
+        method = parts[1].lower()
+        args = parts[2].split()
+        base_color = args[0]
+        if not base_color.startswith("#") or len(base_color) != 7:
+            await message.reply(" Invalid hex color")
+            return
+        count = 5
+        if len(args) > 1:
+            try:
+                count = int(args[1])
+                count = max(2, min(8, count))
+            except ValueError:
+                count = 5
+        colors = _build_palette_by_method(method, base_color, count)
+        if not colors:
+            await message.reply(" Unknown palette method")
+            return
+        method_label = method
     else:
         # Random palette with specified count
         try:
@@ -209,36 +278,31 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
             count = 5
 
         colors = [generate_random_color() for _ in range(count)]
+        method_label = "random"
 
-    # Create embed with color swatches
-    embed = discord.Embed(
-        title=" Color Palette",
-        description=f"{len(colors)} colors",
-        color=discord.Color.from_str(colors[0]),
-        timestamp=discord.utils.utcnow(),
+    try:
+        image_bytes = await render_service.render_palette(colors, method_label, len(colors))
+    except Exception as exc:
+        logger.error("Palette render failed: %s", exc)
+        await message.reply(" Failed to render palette.")
+        return
+
+    file = discord.File(fp=image_bytes, filename="palette.jpg")
+    await message.reply(file=file)
+
+
+async def _handle_palette_help(message: discord.Message) -> None:
+    """Show help for palette commands."""
+    await message.reply(
+        "Palette commands:\n"
+        "- `palette [count]` (random, 1-8)\n"
+        "- `palette hex <#color1> <#color2>...`\n"
+        "- `palette harmony <#color>`\n"
+        "- `palette complementary <#color> [count]`\n"
+        "- `palette analogous <#color> [count]`\n"
+        "- `palette triadic <#color> [count]`\n"
+        "- `palette monochromatic <#color> [count]`"
     )
-
-    for i, color in enumerate(colors, 1):
-        # Create a color swatch using Unicode block characters
-        swatch = "█" * 5
-        embed.add_field(
-            name=f"Color {i}",
-            value=f"`{color.upper()}`\n{swatch}",
-            inline=True,
-        )
-
-    # Add RGB values
-    rgb_values = "\n".join(
-        f"`{color}` → RGB({', '.join(str(x) for x in hex_to_rgb(color))})"
-        for color in colors
-    )
-    embed.add_field(
-        name="RGB Values",
-        value=rgb_values,
-        inline=False,
-    )
-
-    await message.reply(embed=embed)
 
 
 # ─── Art Prompt Generator ─────────────────────────────────────────────────────
