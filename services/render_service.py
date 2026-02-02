@@ -117,8 +117,15 @@ class RenderService:
             template_obj = self.env.get_template("rate_card_minimal.html")
 
         html = template_obj.render(profile=profile, rates=rates)
-        # Width only - height auto-calculated by WeasyPrint based on content
-        return await self._html_to_jpg(html, width=540)
+
+        # WeasyPrint doesn't reliably "auto-fit" page height; if we don't give a
+        # target height, the PDF->image conversion can include a lot of empty
+        # background. Use a conservative dynamic height instead.
+        height = 260 + (len(rates) * 70)
+        if profile.get("image"):
+            height += 240
+        height = max(520, min(height, 1800))
+        return await self._html_to_jpg(html, width=540, height=height)
 
     async def render_contract(
         self,
@@ -206,9 +213,10 @@ class RenderService:
             return self._render_placeholder(width, height)
 
         try:
-            # Inject page size into HTML - use fixed width but auto height
-            # This makes the page fit the content vertically
-            page_style = f"<style>@page {{ size: {width}px auto; margin: 0; }}</style>"
+            # Inject a deterministic page size. WeasyPrint doesn't reliably support
+            # auto-height for @page, and the PDF->image conversion will otherwise
+            # include a tall page with lots of empty background.
+            page_style = f"<style>@page {{ size: {width}px {height}px; margin: 0; }}</style>"
             html_with_size = html.replace("</head>", f"{page_style}</head>")
             
             # WeasyPrint v53+ removed write_png(), must use PDF then convert
