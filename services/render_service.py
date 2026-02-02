@@ -126,7 +126,7 @@ class RenderService:
         has_rate_images = any(
             isinstance(r, dict) and r.get("image") for r in rates.values()
         )
-        height = 200 + (rate_count * (75 if has_rate_images else 55))
+        height = 10 + (rate_count * (75 if has_rate_images else 55))
         if profile.get("image"):
             height += 220
         # Clamp to reasonable bounds
