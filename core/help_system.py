@@ -25,8 +25,15 @@ class ModuleHelp:
     def to_embed_field(self) -> dict[str, Any]:
         """Convert to Discord embed field format for overview."""
         value_parts = [self.description]
+        
+        # If module has help_command, show that
         if self.help_command:
             value_parts.append(f"\n**Detailed Help:** `{self.help_command}`")
+        # If no help_command but has commands, show them inline
+        elif self.commands:
+            value_parts.append("\n")
+            for cmd, desc in self.commands:
+                value_parts.append(f"\n**`{cmd}`** - {desc}")
         
         return {
             "name": self.name,
@@ -136,6 +143,21 @@ class HelpSystem:
     def has_modules(self) -> bool:
         """Check if any modules are registered."""
         return len(self._modules) > 0
+    
+    def get_module_embed(self, name: str) -> Optional[discord.Embed]:
+        """
+        Get detailed help embed for a specific module.
+        
+        Args:
+            name: Module name (must match registered name exactly)
+            
+        Returns:
+            Discord embed with module details, or None if not found
+        """
+        module_help = self._modules.get(name)
+        if module_help is None:
+            return None
+        return module_help.to_detailed_embed()
     
     def get_module_names(self) -> list[str]:
         """Get list of registered module names in order."""

@@ -31,6 +31,7 @@ from core.help_system import help_system
 from modules.auto_responder import (
     handle_auto_responder,
     handle_add_response_command,
+    handle_list_responses_command,
     handle_remove_response_command,
 )
 from modules.dm_sender import handle_dm_send
@@ -196,6 +197,8 @@ class DiscBot(discord.Client):
             return
 
         # Handle auto-responder commands
+        if await handle_list_responses_command(message):
+            return
         if await handle_add_response_command(message):
             return
         if await handle_remove_response_command(message):

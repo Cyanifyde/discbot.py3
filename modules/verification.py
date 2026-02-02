@@ -173,8 +173,10 @@ def setup_verification() -> None:
     # Register help information
     help_system.register_module(
         name="Verification",
-        description="Role-based verification via button clicks.",
+        description="Role-based verification via button clicks. Allows setting up verification buttons that users click to receive a verified role.",
+        help_command="verification help",
         commands=[
+            ("verification help", "Show all verification commands"),
             ("addverification #channel \"message\" unverified_id verified_id", "Set up verification button"),
             ("removeverification message_id", "Remove verification button (auto-finds channel)"),
         ]
@@ -183,21 +185,45 @@ def setup_verification() -> None:
     register_component_handler(VERIFY_BUTTON_PREFIX, handle_verify_button)
 
 
+async def _cmd_help(message: discord.Message) -> None:
+    """Show help for verification commands using the help system."""
+    embed = help_system.get_module_embed("Verification")
+    if embed is None:
+        await message.reply("Help not available.", mention_author=False)
+        return
+    await message.reply(embed=embed, mention_author=False)
+
+
 async def handle_verification_command(
     message: discord.Message,
     bot: discord.Client,
 ) -> bool:
     """
-    Handle the addverification text command.
-    
-    Format: addverification #channel "text" unverified_role_id verified_role_id
+    Handle verification commands: verification help, addverification, removeverification.
     
     Returns True if the command was handled (even if it failed).
     """
     content = message.content.strip()
+    content_lower = content.lower()
+    
+    # Check for verification help command
+    if content_lower == "verification help":
+        if not message.guild:
+            return False
+        
+        if not await is_module_enabled(message.guild.id, "verification"):
+            await message.reply(
+                "Verification module is disabled in this server.\n"
+                "An administrator can enable it with `modules enable verification`",
+                mention_author=False,
+            )
+            return True
+        
+        await _cmd_help(message)
+        return True
     
     # Check if it's the addverification command
-    if not content.lower().startswith("addverification"):
+    if not content_lower.startswith("addverification"):
         return False
     
     # Must be in a guild

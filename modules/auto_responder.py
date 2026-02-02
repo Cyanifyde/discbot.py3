@@ -29,6 +29,22 @@ from classes.response_handlers import ResponderInput
 MODULE_NAME = "autoresponder"
 CONFIG_SUFFIX = ".autoresponder.json"
 
+# Register help immediately on module import
+help_system.register_module(
+    name="Auto-Responder",
+    description="Automatic responses to configured triggers with custom handlers, filters, and delivery modes.",
+    help_command="autoresponder help",
+    commands=[
+        ("autoresponder help", "Show this help message"),
+        ("listresponses", "List all server-added responses"),
+        ("addresponse \"trigger\" \"response\"", "Add a simple text response"),
+        ("addresponse \"trigger\" \"\" --embed title=\"T\" desc=\"D\"", "Add an embed response"),
+        ("addresponse ... --allow-roles id1,id2", "Restrict to specific roles"),
+        ("addresponse ... --block-roles id1,id2", "Block specific roles"),
+        ("removeresponse \"trigger\"", "Remove a server-added response"),
+    ]
+)
+
 # Command patterns
 ADD_RESPONSE_PATTERN = re.compile(
     r'^addresponse\s+"([^"]+)"\s+"([^"]+)"(?:\s+(.*))?$',
@@ -637,25 +653,24 @@ async def _send_response(
 
 
 async def handle_auto_responder(message: discord.Message) -> bool:
-    global _HELP_REGISTERED
-    
-    # Register help on first call (lazy registration)
-    if not _HELP_REGISTERED:
-        help_system.register_module(
-            name="Auto-Responder",
-            description="Automatic responses to configured triggers with custom handlers, filters, and delivery modes.",
-            commands=[
-                ("addresponse \"trigger\" \"response\"", "Add a simple text response"),
-                ("addresponse \"trigger\" \"\" --embed title=\"Title\" description=\"Desc\" color=#hex", "Add an embed response"),
-                ("removeresponse \"trigger\"", "Remove a user-added response (protects built-in triggers)"),
-            ]
-        )
-        _HELP_REGISTERED = True
-    
     if message.guild is None:
         return False
     if message.author.bot:
         return False
+    
+    # Handle autoresponder help command
+    content_lower = (message.content or "").strip().lower()
+    if content_lower == "autoresponder help":
+        if not await is_module_enabled(message.guild.id, MODULE_NAME):
+            await message.reply(
+                "Auto Responder module is disabled in this server.\n"
+                "An administrator can enable it with `modules enable autoresponder`",
+                mention_author=False,
+            )
+            return True
+        await _cmd_help(message)
+        return True
+    
     enabled = await module_is_enabled(message.guild.id, MODULE_NAME)
     if not enabled:
         return False
@@ -752,6 +767,112 @@ def _is_mod(member: discord.Member) -> bool:
     )
 
 
+async def _cmd_help(message: discord.Message) -> None:
+    """Show help for auto-responder commands using the help system."""
+    embed = help_system.get_module_embed("Auto-Responder")
+    if embed is None:
+        await message.reply("Help not available.", mention_author=False)
+        return
+    await message.reply(embed=embed, mention_author=False)
+
+
+async def handle_list_responses_command(message: discord.Message) -> bool:
+    """
+    Handle the listresponses command.
+    
+    Lists all user-added auto-responses for this server.
+    
+    Returns True if the command was handled.
+    """
+    content = message.content.strip().lower()
+    
+    if content != "listresponses":
+        return False
+    
+    if not message.guild:
+        return False
+    
+    # Check if module is enabled
+    if not await is_module_enabled(message.guild.id, "autoresponder"):
+        await message.reply(
+            "Auto Responder module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable autoresponder`",
+            mention_author=False,
+        )
+        return True
+    
+    if not await can_use_command(message.author, "listresponses"):
+        await message.reply(
+            "You don't have permission to use this command in this server.\n"
+            "An administrator can grant access with `modules allow listresponses @YourRole`",
+            mention_author=False,
+        )
+        return True
+    
+    # Load config
+    data = await _load_guild_config(message.guild.id)
+    if not isinstance(data, dict):
+        data = {}
+    
+    user_added = data.get("user_added", [])
+    if not isinstance(user_added, list):
+        user_added = []
+    
+    triggers = data.get("triggers", {})
+    if not isinstance(triggers, dict):
+        triggers = {}
+    
+    if not user_added:
+        await message.reply(
+            "No server-added responses found.\n"
+            'Use `addresponse "trigger" "response"` to add one.',
+            mention_author=False,
+        )
+        return True
+    
+    # Build response list
+    lines = []
+    for trigger in user_added:
+        if trigger in triggers:
+            trig_data = triggers[trigger]
+            line_parts = []
+            role_info = ""
+            
+            if isinstance(trig_data, dict):
+                # Check for role restrictions
+                settings = trig_data.get("settings", {})
+                allowed = settings.get("allowed_role_ids", [])
+                blocked = settings.get("blocked_role_ids", [])
+                if allowed:
+                    role_info = f" [Allowed: {len(allowed)} role(s)]"
+                elif blocked:
+                    role_info = f" [Blocked: {len(blocked)} role(s)]"
+                
+                if "embeds" in trig_data:
+                    line_parts.append(f"**{trigger}** - [Embed]{role_info}")
+                elif "response" in trig_data:
+                    resp = trig_data["response"]
+                    preview = resp[:35] + "..." if len(resp) > 35 else resp
+                    line_parts.append(f"**{trigger}** - {preview}{role_info}")
+                else:
+                    line_parts.append(f"**{trigger}** - [Custom]{role_info}")
+            else:
+                preview = str(trig_data)[:35]
+                line_parts.append(f"**{trigger}** - {preview}")
+            
+            lines.extend(line_parts)
+    
+    embed = discord.Embed(
+        title="Server-Added Auto-Responses",
+        description="\n".join(lines) if lines else "No responses found.",
+        color=discord.Color.blue(),
+    )
+    embed.set_footer(text=f"{len(lines)} response(s)")
+    
+    await message.reply(embed=embed, mention_author=False)
+    return True
+
+
 async def handle_add_response_command(message: discord.Message) -> bool:
     """
     Handle the addresponse text command.
@@ -826,6 +947,18 @@ async def handle_add_response_command(message: discord.Message) -> bool:
         )
         return True
     
+    # Parse role permissions (--allow-roles role_id1,role_id2 or --block-roles role_id1,role_id2)
+    allowed_role_ids = []
+    blocked_role_ids = []
+    
+    allow_match = re.search(r'--allow-roles?\s+(\d+(?:,\s*\d+)*)', extra, re.IGNORECASE)
+    if allow_match:
+        allowed_role_ids = [int(r.strip()) for r in allow_match.group(1).split(',')]
+    
+    block_match = re.search(r'--block-roles?\s+(\d+(?:,\s*\d+)*)', extra, re.IGNORECASE)
+    if block_match:
+        blocked_role_ids = [int(r.strip()) for r in block_match.group(1).split(',')]
+    
     # Check if embed format
     embed_data = None
     if "--embed" in extra.lower():
@@ -859,16 +992,28 @@ async def handle_add_response_command(message: discord.Message) -> bool:
     if not isinstance(user_added, list):
         user_added = []
     
+    # Build trigger settings
+    trigger_settings = {
+        "match_mode": "equals",  # Default to exact match for user-added
+        "case_sensitive": False,
+    }
+    if allowed_role_ids:
+        trigger_settings["allowed_role_ids"] = allowed_role_ids
+    if blocked_role_ids:
+        trigger_settings["blocked_role_ids"] = blocked_role_ids
+    
     # Add the trigger
     if embed_data:
+        # Add role restrictions to embed data
+        if "settings" not in embed_data:
+            embed_data["settings"] = trigger_settings
+        else:
+            embed_data["settings"].update(trigger_settings)
         triggers[trigger] = embed_data
     else:
         triggers[trigger] = {
             "response": response,
-            "settings": {
-                "match_mode": "equals",  # Default to exact match for user-added
-                "case_sensitive": False
-            }
+            "settings": trigger_settings,
         }
     
     # Mark as user-added
@@ -876,19 +1021,26 @@ async def handle_add_response_command(message: discord.Message) -> bool:
         user_added.append(trigger)
     
     data["triggers"] = triggers
-    data["user_added"] = user_added
+    data["user_added"] = user_added  # type: ignore[assignment]
     
     # Save config
     await _save_guild_config(message.guild.id, data)
     
+    # Build confirmation message
+    role_info = ""
+    if allowed_role_ids:
+        role_info += f"\nAllowed roles: {', '.join(str(r) for r in allowed_role_ids)}"
+    if blocked_role_ids:
+        role_info += f"\nBlocked roles: {', '.join(str(r) for r in blocked_role_ids)}"
+    
     if embed_data:
         await message.reply(
-            f'Added embed response for trigger: `{trigger}`',
+            f'Added embed response for trigger: `{trigger}`{role_info}',
             mention_author=False,
         )
     else:
         await message.reply(
-            f'Added response for trigger: `{trigger}` → `{response[:50]}{"..." if len(response) > 50 else ""}`',
+            f'Added response for trigger: `{trigger}` → `{response[:50]}{"..." if len(response) > 50 else ""}`{role_info}',
             mention_author=False,
         )
     
