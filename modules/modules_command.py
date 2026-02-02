@@ -52,8 +52,8 @@ def register_help() -> None:
             ("modules enable <module>", "Enable a module for this guild"),
             ("modules disable <module>", "Disable a module for this guild"),
             ("modules permissions <module|command>", "Show which roles can use a module/command"),
-            ("modules allow <module|command> <@role>", "Grant a role access to module/command"),
-            ("modules deny <module|command> <@role>", "Revoke role access to module/command"),
+            ("modules allow <module|command> <role_id>", "Grant a role access to module/command"),
+            ("modules deny <module|command> <role_id>", "Revoke role access to module/command"),
             ("modules help", "Show detailed module management help"),
         ]
     )
@@ -140,12 +140,7 @@ async def _cmd_list(message: discord.Message) -> None:
         
         role_ids = await get_module_roles(guild_id, module)
         if role_ids:
-            role_mentions = []
-            for role_id in role_ids:
-                role = message.guild.get_role(role_id)
-                if role:
-                    role_mentions.append(f"<@&{role_id}>")
-            roles_text = f" - Roles: {', '.join(role_mentions)}"
+            roles_text = f" - Roles: {', '.join(str(rid) for rid in role_ids)}"
         else:
             roles_text = " - Admin only"
         
@@ -322,8 +317,8 @@ async def _cmd_allow(message: discord.Message, args: str) -> None:
     if len(parts) < 2:
         await message.reply(
             "**Invalid format.**\\n"
-            "```\\nmodules allow <module|command> <@role>\\n```\\n"
-            "Example: `modules allow scanner @Moderator`",
+            "```\\nmodules allow <module|command> <role_id>\\n```\\n"
+            "Example: `modules allow scanner 123456789`",
             mention_author=False,
         )
         return
@@ -352,9 +347,8 @@ async def _cmd_allow(message: discord.Message, args: str) -> None:
         success = await add_role_to_module(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"Role {role.mention} can now use module `{target}`",
+                f"Role `{role.name}` ({role.id}) can now use module `{target}`",
                 mention_author=False,
-                allowed_mentions=discord.AllowedMentions.none(),
             )
             logger.info(
                 "Role %s added to module %s in guild %s by user %s",
@@ -373,9 +367,8 @@ async def _cmd_allow(message: discord.Message, args: str) -> None:
         success = await add_role_to_command(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"Role {role.mention} can now use command `{target}`",
+                f"Role `{role.name}` ({role.id}) can now use command `{target}`",
                 mention_author=False,
-                allowed_mentions=discord.AllowedMentions.none(),
             )
             logger.info(
                 "Role %s added to command %s in guild %s by user %s",
@@ -393,13 +386,13 @@ async def _cmd_allow(message: discord.Message, args: str) -> None:
 
 async def _cmd_deny(message: discord.Message, args: str) -> None:
     """Remove a role's permission to use a module or command."""
-    # Parse: <module/command> <@role>
+    # Parse: <module/command> <role_id>
     parts = args.split()
     if len(parts) < 2:
         await message.reply(
             "**Invalid format.**\\n"
-            "```\\nmodules deny <module|command> <@role>\\n```\\n"
-            "Example: `modules deny scanner @Moderator`",
+            "```\\nmodules deny <module|command> <role_id>\\n```\\n"
+            "Example: `modules deny scanner 123456789`",
             mention_author=False,
         )
         return
@@ -428,9 +421,8 @@ async def _cmd_deny(message: discord.Message, args: str) -> None:
         success = await remove_role_from_module(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"Role {role.mention} can no longer use module `{target}`",
+                f"Role `{role.name}` ({role.id}) can no longer use module `{target}`",
                 mention_author=False,
-                allowed_mentions=discord.AllowedMentions.none(),
             )
             logger.info(
                 "Role %s removed from module %s in guild %s by user %s",
@@ -449,9 +441,8 @@ async def _cmd_deny(message: discord.Message, args: str) -> None:
         success = await remove_role_from_command(message.guild.id, target, role.id)
         if success:
             await message.reply(
-                f"Role {role.mention} can no longer use command `{target}`",
+                f"Role `{role.name}` ({role.id}) can no longer use command `{target}`",
                 mention_author=False,
-                allowed_mentions=discord.AllowedMentions.none(),
             )
             logger.info(
                 "Role %s removed from command %s in guild %s by user %s",
@@ -480,8 +471,8 @@ async def _cmd_help(message: discord.Message) -> None:
 
 **Permission Management:**
 `modules permissions <module|command>` - Show who can use a module/command
-`modules allow <module|command> @role` - Allow a role to use it
-`modules deny <module|command> @role` - Remove role's permission
+`modules allow <module|command> <role_id>` - Allow a role to use it
+`modules deny <module|command> <role_id>` - Remove role's permission
 
 **Available Modules:**
 • `scanner` - Image hash scanning
@@ -491,9 +482,9 @@ async def _cmd_help(message: discord.Message) -> None:
 
 **Examples:**
 `modules enable scanner` - Enable scanner module
-`modules allow scanner @Moderator` - Let Moderators use scanner
-`modules allow addresponse @Staff` - Let Staff use addresponse command
-`modules deny inactivity @Helper` - Remove Helper's access to inactivity
+`modules allow scanner 123456789` - Let role 123456789 use scanner
+`modules allow addresponse 987654321` - Let role 987654321 use addresponse command
+`modules deny inactivity 123456789` - Remove role 123456789's access to inactivity
 
 **Note:** Administrators always have access to all modules and commands.
 """
