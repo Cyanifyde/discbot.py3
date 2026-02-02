@@ -3,9 +3,11 @@ Server Stats module - displays server statistics and information.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import platform
+import time
 from datetime import datetime
 
 import discord
@@ -222,20 +224,46 @@ async def _handle_botstatus(message: discord.Message, bot: discord.Client) -> No
     try:
         import psutil  # type: ignore
 
-        proc = psutil.Process(os.getpid())
-        proc_cpu = proc.cpu_percent(interval=0.2)
-        sys_cpu = psutil.cpu_percent(interval=0.2)
-        vm = psutil.virtual_memory()
-        proc_mem_mb = proc.memory_info().rss / (1024 * 1024)
+        cache_ttl_seconds = 15.0
+        now_mono = time.monotonic()
+        cache = getattr(bot, "_botstatus_cache", None)
+        if isinstance(cache, dict) and (now_mono - float(cache.get("ts", 0.0))) <= cache_ttl_seconds:
+            stats = cache.get("stats")
+        else:
+            def _collect() -> dict[str, float]:
+                proc = psutil.Process(os.getpid())
+                proc_cpu = proc.cpu_percent(interval=0.2)
+                sys_cpu = psutil.cpu_percent(interval=0.2)
+                vm = psutil.virtual_memory()
+                proc_mem_mb = proc.memory_info().rss / (1024 * 1024)
+                return {
+                    "proc_cpu": float(proc_cpu),
+                    "sys_cpu": float(sys_cpu),
+                    "vm_percent": float(vm.percent),
+                    "vm_used_gb": float(vm.used / (1024 ** 3)),
+                    "vm_total_gb": float(vm.total / (1024 ** 3)),
+                    "proc_mem_mb": float(proc_mem_mb),
+                }
 
-        embed.add_field(name="CPU (System)", value=f"```{_bar(sys_cpu)}```", inline=False)
-        embed.add_field(name="CPU (Bot)", value=f"```{_bar(proc_cpu)}```", inline=False)
-        embed.add_field(
-            name="RAM (System)",
-            value=f"```{_bar(vm.percent)}\n{vm.used/(1024**3):0.2f} / {vm.total/(1024**3):0.2f} GB```",
-            inline=False,
-        )
-        embed.add_field(name="RAM (Bot)", value=f"{proc_mem_mb:0.1f} MB RSS", inline=True)
+            stats = await asyncio.to_thread(_collect)
+            setattr(bot, "_botstatus_cache", {"ts": now_mono, "stats": stats})
+
+        if isinstance(stats, dict):
+            proc_cpu = float(stats.get("proc_cpu", 0.0))
+            sys_cpu = float(stats.get("sys_cpu", 0.0))
+            vm_percent = float(stats.get("vm_percent", 0.0))
+            vm_used_gb = float(stats.get("vm_used_gb", 0.0))
+            vm_total_gb = float(stats.get("vm_total_gb", 0.0))
+            proc_mem_mb = float(stats.get("proc_mem_mb", 0.0))
+
+            embed.add_field(name="CPU (System)", value=f"```{_bar(sys_cpu)}```", inline=False)
+            embed.add_field(name="CPU (Bot)", value=f"```{_bar(proc_cpu)}```", inline=False)
+            embed.add_field(
+                name="RAM (System)",
+                value=f"```{_bar(vm_percent)}\n{vm_used_gb:0.2f} / {vm_total_gb:0.2f} GB```",
+                inline=False,
+            )
+            embed.add_field(name="RAM (Bot)", value=f"{proc_mem_mb:0.1f} MB RSS", inline=True)
     except Exception:
         embed.add_field(name="CPU/RAM", value="Install `psutil` for CPU/RAM charts.", inline=False)
 
