@@ -186,6 +186,9 @@ async def _cmd_search(message: discord.Message, args: list[str]) -> None:
         RESULT_BATCH_SIZE,
         int(math.ceil(needed / RESULT_BATCH_SIZE) * RESULT_BATCH_SIZE),
     )
+    # Prefetch one extra batch so users don't feel "stuck" at 20 until paging past the last known page.
+    # Still bounded by the bootstrap scan time budget.
+    desired_loaded += RESULT_BATCH_SIZE
 
     view = _ArtSearchView(
         guild_id=message.guild.id,
@@ -581,6 +584,11 @@ class _ArtSearchView(discord.ui.View):
             RESULT_BATCH_SIZE,
             int(math.ceil(needed_for_page / RESULT_BATCH_SIZE) * RESULT_BATCH_SIZE),
         )
+        # If we're exactly at a batch boundary and scans aren't complete, proactively load the next batch.
+        # This avoids the UX of "stuck at 20" unless you try to go past the last page.
+        if not self.truncated and not self._scan_complete() and len(self.hits) >= desired_loaded:
+            if RESULT_BATCH_SIZE > 0 and (len(self.hits) % RESULT_BATCH_SIZE) == 0:
+                desired_loaded = max(desired_loaded, len(self.hits) + RESULT_BATCH_SIZE)
         if len(self.hits) >= desired_loaded or self.truncated or self._scan_complete():
             return
         await self._scan_until(
