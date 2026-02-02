@@ -124,23 +124,25 @@ def magic_bytes_valid(data: bytes) -> bool:
     # Allow optional UTF-8 BOM before PNG signature.
     if data.startswith(b"\xEF\xBB\xBF"):
         data = data[3:]
-    haystack = data[:512]
-    signatures = [
-        b"\x89PNG\r\n\x1a\n",
-        b"\xFF\xD8\xFF",
-        b"GIF87a",
-        b"GIF89a",
-        b"BM",  # BMP
-        b"II*\x00",  # TIFF (LE)
-        b"MM\x00*",  # TIFF (BE)
-        b"\x00\x00\x01\x00",  # ICO
-    ]
-    for sig in signatures:
-        if sig in haystack:
-            return True
-    # Looser WEBP check: both markers appear somewhere in the header window.
-    if b"RIFF" in haystack and b"WEBP" in haystack:
+    
+    # Check signatures at correct offsets (use startswith to avoid false positives)
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):  # PNG
         return True
+    if data.startswith(b"\xFF\xD8\xFF"):  # JPEG
+        return True
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):  # GIF
+        return True
+    if data.startswith(b"BM"):  # BMP
+        return True
+    if data.startswith(b"II*\x00") or data.startswith(b"MM\x00*"):  # TIFF
+        return True
+    if data.startswith(b"\x00\x00\x01\x00"):  # ICO
+        return True
+    
+    # WEBP: RIFF header at start, WEBP signature at offset 8
+    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return True
+    
     return False
 
 

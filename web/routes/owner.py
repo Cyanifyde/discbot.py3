@@ -109,11 +109,11 @@ async def handle_servers(request):
 
     servers_html = '\n'.join([f'''
         <tr>
-            <td>{guild.name}</td>
+            <td>{html.escape(guild.name)}</td>
             <td>{guild.id}</td>
             <td>{guild.member_count}</td>
             <td>
-                <form method="POST" style="display:inline;" onsubmit="return confirm('Leave server {guild.name}?');">
+                <form method="POST" style="display:inline;" onsubmit="return confirm('Leave server?');">
                     <input type="hidden" name="action" value="leave">
                     <input type="hidden" name="guild_id" value="{guild.id}">
                     <button type="submit" class="button danger">Leave</button>

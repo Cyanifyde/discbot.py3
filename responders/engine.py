@@ -88,7 +88,12 @@ def _check_cooldown(
     settings: dict[str, Any],
 ) -> bool:
     """Check if trigger is on cooldown. Returns True if allowed."""
-    seconds = float(settings.get("cooldown_seconds", 0) or 0)
+    # Safe parse cooldown with fallback
+    try:
+        seconds = float(settings.get("cooldown_seconds", 0) or 0)
+    except (ValueError, TypeError):
+        seconds = 0.0
+    
     if seconds <= 0:
         return True
     
@@ -101,7 +106,7 @@ def _check_cooldown(
     
     _COOLDOWNS[key] = now
     
-    # Clean up old entries periodically (every 100 checks)
+    # Clean up old entries periodically (every check when over 1000 entries)
     if len(_COOLDOWNS) > 1000:
         _cleanup_old_cooldowns(now)
     

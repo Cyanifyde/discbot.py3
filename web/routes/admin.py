@@ -72,7 +72,7 @@ async def handle_admin_index(request):
                 <div class="guild-grid">
                     {''.join([f'''
                     <div class="guild-card">
-                        <h3>{g["name"]}</h3>
+                        <h3>{html.escape(g["name"])}</h3>
                         <p>{g["member_count"]} members</p>
                         <a href="/admin/{g["id"]}/" class="button">Manage</a>
                     </div>

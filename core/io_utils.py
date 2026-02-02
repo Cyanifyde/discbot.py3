@@ -25,11 +25,22 @@ async def read_json(path: Path, default: Any = None) -> Any:
 
 async def write_json_atomic(path: Path, data: Any) -> None:
     def _write() -> None:
+        import secrets
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(path.suffix + ".tmp")
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=True, indent=2)
-        os.replace(tmp_path, path)
+        # Use unique temp filename to prevent concurrent write collisions
+        tmp_suffix = f".tmp.{os.getpid()}.{secrets.token_hex(8)}"
+        tmp_path = path.with_suffix(path.suffix + tmp_suffix)
+        try:
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=True, indent=2)
+            os.replace(tmp_path, path)
+        finally:
+            # Clean up temp file if replace failed
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
 
     await asyncio.to_thread(_write)
 

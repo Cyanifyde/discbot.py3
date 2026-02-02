@@ -17,7 +17,16 @@ from .paths import BASE_DIR
 logger = logging.getLogger("discbot.config_migration")
 
 GUILD_CONFIG_DIR = BASE_DIR / "config.guild"
+# Per-guild locks to prevent concurrent config updates
+_guild_config_locks: Dict[int, asyncio.Lock] = {}
+_guild_config_locks_lock = asyncio.Lock()
 
+async def _get_guild_lock(guild_id: int) -> asyncio.Lock:
+    """Get or create a lock for the given guild."""
+    async with _guild_config_locks_lock:
+        if guild_id not in _guild_config_locks:
+            _guild_config_locks[guild_id] = asyncio.Lock()
+        return _guild_config_locks[guild_id]
 
 def deep_merge(base: Dict[str, Any], overlay: Dict[str, Any], _path: str = "") -> Dict[str, Any]:
     """
@@ -211,18 +220,21 @@ async def update_guild_module_data(
     """
     config_path = GUILD_CONFIG_DIR / f"{guild_id}.json"
     
-    config = await read_json(config_path, default=None)
-    if config is None or not isinstance(config, dict):
-        config = {"guild_id": guild_id}
-    
-    module_data = config.get("module_data", {})
-    if not isinstance(module_data, dict):
-        module_data = {}
-    
-    module_data[module_name] = data
-    config["module_data"] = module_data
-    
-    await write_json_atomic(config_path, config)
+    # Use per-guild lock to prevent concurrent update race conditions
+    lock = await _get_guild_lock(guild_id)
+    async with lock:
+        config = await read_json(config_path, default=None)
+        if config is None or not isinstance(config, dict):
+            config = {"guild_id": guild_id}
+        
+        module_data = config.get("module_data", {})
+        if not isinstance(module_data, dict):
+            module_data = {}
+        
+        module_data[module_name] = data
+        config["module_data"] = module_data
+        
+        await write_json_atomic(config_path, config)
 
 
 async def get_guild_module_data(

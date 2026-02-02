@@ -47,7 +47,7 @@ def setup_auth(app, bot):
     # Set up routes
     app.router.add_get('/auth/login', handle_login)
     app.router.add_get('/auth/callback', handle_callback)
-    app.router.add_get('/auth/logout', handle_logout)
+    app.router.add_post('/auth/logout', handle_logout)  # POST for CSRF protection
 
     # Middleware for session handling
     app.middlewares.append(session_middleware)
@@ -56,10 +56,19 @@ def setup_auth(app, bot):
 @web.middleware
 async def session_middleware(request, handler):
     """Middleware to handle session management."""
+    import time
     session_token = request.cookies.get('session_token')
 
     if session_token and session_token in request.app['sessions']:
-        request['user'] = request.app['sessions'][session_token]
+        session = request.app['sessions'][session_token]
+        # Check expiry
+        expires_at = session.get('expires_at', 0)
+        if expires_at and time.time() > expires_at:
+            # Session expired, remove it
+            del request.app['sessions'][session_token]
+            request['user'] = None
+        else:
+            request['user'] = session
     else:
         request['user'] = None
 
@@ -88,6 +97,7 @@ def require_auth(permission_level='user'):
                 guild_id = request.match_info.get('guild_id')
                 if not guild_id:
                     return web.Response(text='Forbidden: Guild ID required', status=403)
+                # Always validate admin permission when admin level required
                 if not await is_guild_admin(request, user, guild_id):
                     return web.Response(text='Forbidden: Admin access required', status=403)
 
@@ -172,13 +182,16 @@ async def handle_callback(request):
 
     # Create session
     session_token = secrets.token_urlsafe(32)
+    import time
+    expires_at = time.time() + 86400  # 24 hours
     request.app['sessions'][session_token] = {
         'user_id': user_data['id'],
         'username': user_data['username'],
         'discriminator': user_data.get('discriminator', '0'),
         'avatar': user_data.get('avatar'),
         'guilds': guilds,
-        'access_token': access_token
+        'access_token': access_token,
+        'expires_at': expires_at
     }
 
     # Clean up pending state
@@ -186,7 +199,16 @@ async def handle_callback(request):
 
     # Set cookie and redirect
     response = web.HTTPFound('/')
-    response.set_cookie('session_token', session_token, max_age=86400, httponly=True, secure=True, samesite='Lax')
+    # Use secure=True only for HTTPS (check redirect_uri)
+    is_https = oauth_config['redirect_uri'].startswith('https://')
+    response.set_cookie(
+        'session_token',
+        session_token,
+        max_age=86400,
+        httponly=True,
+        secure=is_https,
+        samesite='Strict'
+    )
 
     return response
 
@@ -224,6 +246,13 @@ async def is_guild_admin(request, user, guild_id):
             return False
 
         member = guild.get_member(int(user['user_id']))
+        # Fallback to fetch_member if not in cache
+        if not member:
+            try:
+                member = await guild.fetch_member(int(user['user_id']))
+            except Exception:
+                return False
+        
         if not member:
             return False
 

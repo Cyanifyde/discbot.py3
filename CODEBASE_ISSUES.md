@@ -19,6 +19,7 @@ A comprehensive review of the entire codebase, identifying incomplete implementa
 10. [Missing Features](#missing-features-by-module)
 11. [Code Quality Issues](#code-quality-issues)
 12. [Priority Order](#priority-order-for-fixes)
+13. [Additional Audit Findings (2026-02-02)](#additional-audit-findings-2026-02-02)
 
 ---
 
@@ -784,3 +785,406 @@ Federation feature was removed but check for orphaned references:
 - `modules/federation.py` - Deleted
 - `services/federation_service.py` - Deleted
 - `web/routes/federation.py` - Deleted
+
+---
+
+## Additional Audit Findings (2026-02-02)
+
+These are additional security/correctness/concurrency findings identified during static analysis. Some may overlap with earlier items; keep the most accurate entry as the source of truth.
+
+## Web UI / Auth
+
+### CRITICAL
+
+#### 1. Stored XSS in Admin Panel (Guild Name Injection)
+**File:** `web/routes/admin.py:75`
+
+Guild names are interpolated into HTML via f-strings without HTML escaping (`<h3>{g["name"]}</h3>`).
+
+**Why it matters:** Persistent XSS against authenticated admins (session hijack, CSRF, arbitrary UI actions).
+
+**Fix Required:** Render via an auto-escaping template engine or `html.escape()` for all interpolated values; add a strict CSP.
+
+---
+
+#### 2. Stored XSS in Owner Panel (Guild Name Injection + JS String Context)
+**File:** `web/routes/owner.py:112`, `web/routes/owner.py:116`
+
+`guild.name` is inserted into HTML and also into an inline JS `confirm('...')` string without proper escaping for either context.
+
+**Why it matters:** Persistent XSS against the bot owner session.
+
+**Fix Required:** Template engine with escaping; remove inline JS; escape separately for HTML and JS string contexts.
+
+---
+
+### HIGH PRIORITY
+
+#### 3. Unbounded In-Memory Session Store (Memory DoS)
+**File:** `web/auth.py:19`
+
+OAuth “state” and user sessions are stored in a global dict with no TTL eviction, size cap, or cleanup for abandoned logins.
+
+**Why it matters:** Repeated `/auth/login` calls can grow memory unbounded and crash the process.
+
+**Fix Required:** Add TTL + periodic cleanup + max session count; use Redis/DB-backed sessions with expiry.
+
+---
+
+#### 4. `secure=True` Cookie Always Enabled (Breaks HTTP Local Deployments)
+**File:** `web/auth.py:189`
+
+Session cookie is always set with `secure=True`, which prevents cookies from being set/sent over HTTP (default redirect URI is `http://localhost:8080/...`).
+
+**Why it matters:** Auth “randomly” fails in common local setups; encourages insecure operator workarounds.
+
+**Fix Required:** Make `secure` conditional on HTTPS (config/env); document production requirements.
+
+---
+
+#### 5. OAuth Access Token Stored in Session Data
+**File:** `web/auth.py:181`
+
+Discord OAuth `access_token` is stored in-process without encryption or rotation.
+
+**Why it matters:** Memory disclosure/log dumps become account compromise; long-lived replay window.
+
+**Fix Required:** Don’t store tokens unless required; if required, encrypt + store with short TTL.
+
+---
+
+#### 6. Admin Authorization Depends on Guild Member Cache
+**File:** `web/auth.py:226`
+
+Uses `guild.get_member(...)` only; cache misses deny legitimate admins.
+
+**Why it matters:** Fragile authorization; leads to pressure to weaken checks.
+
+**Fix Required:** Fall back to `await guild.fetch_member(...)` on cache miss; handle rate limits.
+
+---
+
+### MEDIUM PRIORITY
+
+#### 7. OAuth “State” and Sessions Share the Same Keyspace
+**File:** `web/auth.py:111`, `web/auth.py:136`
+
+The same dict stores both pending OAuth states and active sessions; callback checks only “key exists” rather than “entry is a pending state with TTL”.
+
+**Why it matters:** Increases likelihood of state/session confusion bugs and weakens CSRF guarantees.
+
+**Fix Required:** Separate pending-state storage from session storage; enforce TTL and validate entry shape.
+
+---
+
+#### 8. No Server-Side Session Expiry Enforcement
+**File:** `web/auth.py:57`
+
+Cookie has `max_age`, but server-side sessions have no enforced expiration unless logout happens.
+
+**Why it matters:** Stolen tokens can remain valid indefinitely.
+
+**Fix Required:** Store `expires_at` per session and reject/evict expired sessions in middleware.
+
+---
+
+#### 9. Logout Is a GET Endpoint (CSRF-able Nuisance Logout)
+**File:** `web/auth.py:50`
+
+Logout is routed as GET.
+
+**Why it matters:** Cross-site requests can trigger logout, causing nuisance and potentially interfering with workflows.
+
+**Fix Required:** Make logout POST with CSRF token (or double-submit cookie pattern).
+
+---
+
+## Rendering
+
+### CRITICAL
+
+#### 10. SSRF / Possible Local File Read via WeasyPrint Resource Fetching
+**File:** `services/render_service.py:259`, `templates/renders/rate_card_minimal.html:133`
+
+WeasyPrint will fetch resources referenced in HTML/CSS. Templates include `<img src="{{ profile.image }}">` and per-rate `<img src="{{ rate_data.image }}">` and those values can be user-controlled (stored data URIs or URLs).
+
+**Why it matters:** SSRF to internal networks/metadata endpoints; potential `file://` reads depending on fetcher behavior; bandwidth/CPU exhaustion by large remote resources.
+
+**Fix Required:** Use a hardened WeasyPrint `url_fetcher` (block `file://`, block private IPs, allowlist schemes/hosts, enforce size/time). Prefer supporting only `data:` URIs for embedded images.
+
+---
+
+### HIGH PRIORITY
+
+#### 11. Rendering Runs Synchronously in the Async Event Loop
+**File:** `services/render_service.py:260`
+
+`write_pdf()` and PDF rasterization are CPU-heavy and run in the event loop thread.
+
+**Why it matters:** Under load, rendering blocks moderation/event handling and causes Discord timeouts.
+
+**Fix Required:** Offload rendering to `asyncio.to_thread()` or a worker process with concurrency limits.
+
+---
+
+#### 12. Import-Time Hard Failure When Optional Deps Are Missing
+**File:** `services/render_service.py:411`
+
+`render_service = get_render_service()` instantiates at import time and raises if Jinja2/Pillow are missing.
+
+**Why it matters:** A missing optional dependency bricks the whole bot even if rendering features aren’t used.
+
+**Fix Required:** Lazy-initialize inside command handlers; avoid import-time instantiation; provide a graceful fallback.
+
+---
+
+## Core / Storage / Queueing
+
+### CRITICAL
+
+#### 13. Lost Updates from Concurrent Guild Config Writes (No Locking)
+**File:** `core/config_migration.py:199`
+
+`update_guild_module_data()` performs read-modify-write without per-guild locking; concurrent updates overwrite each other.
+
+**Why it matters:** Security-critical state (permissions, scanner state, verification state) can silently revert.
+
+**Fix Required:** Add a per-guild `asyncio.Lock` around read/modify/write; merge updates rather than overwrite.
+
+---
+
+#### 14. Deterministic Temp Filename in Atomic Writes (Cross-Write Clobber)
+**File:** `core/io_utils.py:29`
+
+`write_json_atomic()` uses a fixed `.tmp` name, so concurrent writes clobber the temp file.
+
+**Why it matters:** Non-deterministic final content and corrupted JSON.
+
+**Fix Required:** Use a unique temp filename (PID + random suffix) and then `os.replace`.
+
+---
+
+#### 15. Queue Acknowledgement Is Not Concurrency-Safe
+**File:** `core/queueing.py:205`
+
+Multiple worker tasks call `_ack_processed()` concurrently and mutate shared `pending_order/pending_done/read_offset_bytes/queued_jobs` with no lock.
+
+**Why it matters:** Queue state corruption, stuck offsets, dropped jobs, incorrect compaction/state.
+
+**Fix Required:** Serialize ACK processing with an `asyncio.Lock` or a single ACK consumer task.
+
+---
+
+### HIGH PRIORITY
+
+#### 16. QueueStore Updates State Before Writing Queue Line
+**File:** `core/queueing.py:67`
+
+`QueueStore.enqueue()` increments `queued_jobs` then appends to `queue.jsonl`. If append fails, state overcounts.
+
+**Why it matters:** Scanner can misreport and stall due to inconsistent state.
+
+**Fix Required:** Write the queue line first, then update state; add recovery on partial failure.
+
+---
+
+#### 17. Jobs Are ACKed Even When Processing Fails (Silent Job Loss)
+**File:** `core/queueing.py:202`
+
+Worker loop ACKs jobs regardless of exceptions/timeouts.
+
+**Why it matters:** Transient Discord/network failures cause permanent scan loss (enforcement reliability gap).
+
+**Fix Required:** Add retry with backoff; only ACK on success or after explicit terminal failure; add dead-letter queue.
+
+---
+
+#### 18. `magic_bytes_valid` Is Over-Permissive
+**File:** `core/utils.py:121`
+
+Uses `sig in haystack` which allows false positives (e.g., `BM` anywhere in first 512 bytes).
+
+**Why it matters:** Type gating can be bypassed; downstream assumes “safe image”.
+
+**Fix Required:** Require correct offsets (`startswith` for most formats); implement a real RIFF/WEBP structure check.
+
+---
+
+#### 19. Scanner Allows Voice/Stage Channels in Message Fetch Path
+**File:** `core/queueing.py:247`, `core/queueing.py:338`
+
+Channel type check includes `VoiceChannel`/`StageChannel` in a code path that calls `fetch_message()`.
+
+**Why it matters:** Unexpected exceptions, wasted work, dropped jobs.
+
+**Fix Required:** Restrict to message-capable channel types only.
+
+---
+
+## Responders
+
+### CRITICAL
+
+#### 20. Regex ReDoS via Auto-Responder `regex` Match Mode
+**File:** `responders/matching.py:69`
+
+Potentially attacker-controlled regex patterns can run against attacker-controlled message text with Python’s backtracking regex engine and no timeout.
+
+**Why it matters:** CPU DoS from a single message (catastrophic backtracking).
+
+**Fix Required:** Disallow arbitrary regex triggers or move to a safe regex engine (RE2); enforce pattern complexity/length limits.
+
+---
+
+### HIGH PRIORITY
+
+#### 21. Delivery Success Flag Overwritten per Target
+**File:** `responders/delivery.py:213-217`
+
+`handled = await _send_*()` overwrites prior success. A later failure makes the function report False even if it sent earlier.
+
+**Why it matters:** Upstream logic can mis-handle “sent” vs “not sent”.
+
+**Fix Required:** Use `handled = handled or await _send_*()` per target.
+
+---
+
+#### 22. `delay_seconds` / Cooldown / Limits Parsing Can Crash on Bad Config
+**File:** `responders/delivery.py:205`, `responders/engine.py:91`, `responders/matching.py:194-202`
+
+Direct `float(...)` / `int(...)` casts can raise `ValueError` on malformed JSON types.
+
+**Why it matters:** A single bad config entry breaks responders and can spam logs.
+
+**Fix Required:** Validate/normalize config schema on load; safe-parse with fallbacks.
+
+---
+
+### MEDIUM PRIORITY
+
+#### 23. Dynamic Handler Import Is a Risky Plugin Boundary
+**File:** `responders/engine.py:151`
+
+Config selects handler paths that are dynamically imported from `classes.*`.
+
+**Why it matters:** A compromised config becomes “choose what code runs” within the codebase surface.
+
+**Fix Required:** Restrict to an allowlist of handlers; validate handler types; consider signed configs.
+
+---
+
+#### 24. Delivery Exceptions Are Swallowed Without Logging
+**File:** `responders/delivery.py` (exception `continue` in send loop)
+
+Broad exception handling drops failures silently.
+
+**Why it matters:** Operationally impossible to diagnose responder failures.
+
+**Fix Required:** Add rate-limited structured logging and metrics on send failures.
+
+---
+
+#### 25. Auto-Responder Engine Uses Globals Instead of the `AutoResponderEngine` Class
+**File:** `responders/engine.py:41`
+
+There is an `AutoResponderEngine` class with per-instance caches, but runtime paths use module-level `_HANDLER_CACHE`/`_COOLDOWNS`.
+
+**Why it matters:** Confusing state model; high refactor risk.
+
+**Fix Required:** Pick one approach (instance-based or module-global) and delete the other.
+
+---
+
+## Bot / Modules / Misc
+
+### HIGH PRIORITY
+
+#### 26. Unbounded Background Task Spawning Per Message
+**File:** `bot/client.py:426`, `bot/client.py:435`
+
+Per-message `asyncio.create_task()` without backpressure or concurrency caps.
+
+**Why it matters:** Task explosion under load → memory pressure and latency spikes.
+
+**Fix Required:** Use bounded queues/workers; coalesce activity updates; rate-limit responder calls.
+
+---
+
+#### 27. Portfolio Rate Image Processing: No Size/Pixel Limits
+**File:** `modules/portfolio.py:864`, `modules/portfolio.py:872`
+
+Downloads full attachment bytes and feeds into PIL without strict size/pixel caps.
+
+**Why it matters:** Decompression bombs and memory exhaustion.
+
+**Fix Required:** Enforce max download size, timeouts, and `Image.MAX_IMAGE_PIXELS`; catch `DecompressionBombError`.
+
+---
+
+#### 28. Module Enable/Disable Registry Is Incomplete
+**File:** `core/permissions.py:21`
+
+Many runtime modules are not listed in `AVAILABLE_MODULES`, but still call `is_module_enabled`; unknown modules default to enabled and are not controllable via `modules` command.
+
+**Why it matters:** Operators cannot reliably disable risky/broken modules.
+
+**Fix Required:** Ensure every `MODULE_NAME` is registered in `AVAILABLE_MODULES` and seeded into per-guild permissions.
+
+---
+
+#### 29. Date/Duration Helpers Can Crash or Behave Incorrectly
+**File:** `core/utils.py:191`, `core/utils.py:209`, `core/utils.py:355`
+
+- `apply_decay()` math appears inconsistent with its comment (likely off by 100x).
+- `parse_deadline()` can return naive datetimes from ISO strings.
+- `parse_duration_extended()` accepts unbounded integers and can overflow `timedelta`.
+
+**Why it matters:** User inputs can crash scheduling/expiry features; trust decay becomes incorrect.
+
+**Fix Required:** Normalize to timezone-aware UTC datetimes; clamp duration components; catch overflow; fix decay math or comment.
+
+---
+
+### MEDIUM PRIORITY
+
+#### 30. `resolve_repo_path` Returns Absolute Paths Unchanged
+**File:** `core/paths.py:14`
+
+Absolute paths are accepted and returned.
+
+**Why it matters:** Increases risk of future path traversal / arbitrary file read bugs if user input ever flows here.
+
+**Fix Required:** Provide a strict “repo-relative only” resolver and reject absolute paths by default.
+
+---
+
+#### 31. `is_safe_relative_path` Does Not Prevent Symlink Escapes
+**File:** `core/utils.py:72`
+
+Rejects `..` but doesn’t resolve symlinks; a “safe” relative path can still escape via a symlinked directory.
+
+**Why it matters:** File IO helpers can be tricked into reading/writing outside the repo boundary.
+
+**Fix Required:** Resolve and enforce that the final path stays within `BASE_DIR`.
+
+---
+
+#### 32. Duplicate Implementations of `magic_bytes_valid`
+**File:** `services/hash_checker.py:58`, `core/utils.py:121`
+
+Two implementations will drift.
+
+**Why it matters:** Fixes in one path won’t harden the other.
+
+**Fix Required:** Centralize and reuse one vetted implementation.
+
+---
+
+#### 33. No Automated Test Suite
+**File:** (no `tests/` directory present)
+
+No tests covering auth, queue correctness, parsing, or storage concurrency.
+
+**Why it matters:** Security-critical regressions will ship unnoticed.
+
+**Fix Required:** Add unit tests for config updates, queue ack ordering, URL fetch restrictions, parsing normalization, and XSS escaping.

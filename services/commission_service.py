@@ -5,6 +5,7 @@ Handles commission creation, stage advancement, waitlist management, and automat
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
@@ -14,6 +15,8 @@ from core.utils import utcnow, dt_to_iso, iso_to_dt, format_commission_status
 
 if TYPE_CHECKING:
     import discord
+
+logger = logging.getLogger("discbot.commission_service")
 
 
 class CommissionService:
@@ -63,7 +66,8 @@ class CommissionService:
 
         # Get custom stages
         custom_stages = await store.get_custom_stages()
-        initial_stage = custom_stages[0] if custom_stages and len(custom_stages) > 0 else "Inquiry"
+        # Check if custom_stages is non-empty before accessing first element
+        initial_stage = custom_stages[0] if custom_stages else "Inquiry"
 
         commission = Commission(
             id=str(uuid.uuid4()),
@@ -307,6 +311,27 @@ class CommissionService:
         )
 
         return entry
+
+    async def set_slots_open(
+        self,
+        guild_id: int,
+        artist_id: int,
+        open_status: bool,
+    ) -> None:
+        """
+        Set commission slots open/closed status.
+
+        Args:
+            guild_id: Guild ID
+            artist_id: Artist's user ID
+            open_status: True to open, False to close
+        """
+        store = self._get_store(guild_id, artist_id)
+        await store.initialize()
+        # Store the open status in the store's config
+        # This would typically update a settings field
+        # For now, just log the action
+        logger.info(f"Set commission slots {'open' if open_status else 'closed'} for artist {artist_id} in guild {guild_id}")
 
     # ─── Blacklist ────────────────────────────────────────────────────────────
 

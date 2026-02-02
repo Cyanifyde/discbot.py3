@@ -69,9 +69,13 @@ class QueueStore:
             queued = int(self.state.get("queued_jobs", 0))
             if queued >= max_jobs:
                 return False
+            
+            # Write to queue file first
+            await append_text(self.queue_path, json.dumps(job, ensure_ascii=True) + "\n")
+            
+            # Then update state (this way if append fails, state isn't incremented)
             self.state["queued_jobs"] = queued + 1
             await write_json_atomic(self.state_path, self.state)
-        await append_text(self.queue_path, json.dumps(job, ensure_ascii=True) + "\n")
         return True
 
     async def update_state(self, read_offset: int, queued_jobs: int) -> None:
@@ -118,6 +122,7 @@ class QueueProcessor:
         self.session: Optional[aiohttp.ClientSession] = None
         self.cdn_regex = build_cdn_regex(config.get("allowed_discord_cdn_domains", []))
         self.allowed_cdn_domains = {d.lower() for d in config.get("allowed_discord_cdn_domains", [])}
+        # Lock for ACK processing to prevent concurrent state modification\n        self.ack_lock = asyncio.Lock()
 
     def update_config(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -203,19 +208,21 @@ class QueueProcessor:
             self.queue.task_done()
 
     async def _ack_processed(self, end_offset: int) -> None:
-        if end_offset not in self.pending_done:
-            return
-        self.pending_done[end_offset] = True
-        progressed = False
-        while self.pending_order and self.pending_done.get(self.pending_order[0]):
-            done_offset = self.pending_order.popleft()
-            self.pending_done.pop(done_offset, None)
-            self.read_offset_bytes = done_offset
-            self.queued_jobs = max(0, self.queued_jobs - 1)
-            progressed = True
-        if progressed:
-            await self.store.update_state(self.read_offset_bytes, self.queued_jobs)
-            await self._maybe_compact()
+        # Serialize ACK processing to prevent concurrent state corruption
+        async with self.ack_lock:
+            if end_offset not in self.pending_done:
+                return
+            self.pending_done[end_offset] = True
+            progressed = False
+            while self.pending_order and self.pending_done.get(self.pending_order[0]):
+                done_offset = self.pending_order.popleft()
+                self.pending_done.pop(done_offset, None)
+                self.read_offset_bytes = done_offset
+                self.queued_jobs = max(0, self.queued_jobs - 1)
+                progressed = True
+            if progressed:
+                await self.store.update_state(self.read_offset_bytes, self.queued_jobs)
+                await self._maybe_compact()
 
     async def _maybe_compact(self) -> None:
         if self.compact_threshold <= 0:
@@ -244,7 +251,8 @@ class QueueProcessor:
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
         except Exception:
             return
-        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel, discord.StageChannel)):
+        # Only process text-based channels that support message fetching
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             return
         try:
             message = await channel.fetch_message(message_id)
@@ -335,7 +343,8 @@ class QueueProcessor:
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
         except Exception:
             return None
-        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.VoiceChannel, discord.StageChannel)):
+        # Only process text-based channels that support message fetching
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             return None
         try:
             message = await channel.fetch_message(message_id)

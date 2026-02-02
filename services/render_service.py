@@ -11,6 +11,8 @@ import io
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
+import ipaddress
 
 try:
     from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -46,6 +48,43 @@ logger = logging.getLogger("discbot.render")
 
 # Template directory
 TEMPLATES_DIR = BASE_DIR / "templates" / "renders"
+
+
+def _safe_url_fetcher(url: str) -> dict:
+    """
+    Secure URL fetcher for WeasyPrint to prevent SSRF attacks.
+    
+    Only allows data: URIs, blocks file:// and private IPs.
+    """
+    parsed = urlparse(url)
+    
+    # Allow data: URIs for embedded images
+    if parsed.scheme == "data":
+        # Let WeasyPrint handle data URIs normally
+        return None  # None means use default fetcher
+    
+    # Block file:// and other dangerous schemes
+    if parsed.scheme in ("file", "ftp", ""):
+        raise ValueError(f"Blocked scheme: {parsed.scheme}")
+    
+    # Only allow http/https
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported scheme: {parsed.scheme}")
+    
+    # Block private IP addresses
+    if parsed.hostname:
+        try:
+            ip = ipaddress.ip_address(parsed.hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                raise ValueError(f"Blocked private/loopback IP: {parsed.hostname}")
+        except ValueError:
+            # Not an IP address, check for localhost
+            if parsed.hostname.lower() in ("localhost", "127.0.0.1", "::1"):
+                raise ValueError(f"Blocked localhost: {parsed.hostname}")
+    
+    # If we get here, block all external URLs for security
+    # Templates should only use data: URIs for embedded images
+    raise ValueError(f"External URL blocked: {url}")
 
 
 class RenderService:
@@ -209,7 +248,10 @@ class RenderService:
         """
         if HAS_WEASYPRINT:
             try:
-                return self._render_with_weasyprint(html, width, height)
+                # Run rendering in thread pool to avoid blocking event loop
+                return await asyncio.to_thread(
+                    self._render_with_weasyprint, html, width, height
+                )
             except Exception as exc:
                 logger.warning("WeasyPrint render failed, using fallback: %s", exc)
 
@@ -256,7 +298,8 @@ class RenderService:
             page_style = f"<style>@page {{ size: {width}px {render_height}px; margin: 0; }}</style>"
             html_with_size = html.replace("</head>", f"{page_style}</head>")
 
-            html_doc = HTML(string=html_with_size)
+            # Use secure URL fetcher to prevent SSRF attacks
+            html_doc = HTML(string=html_with_size, url_fetcher=_safe_url_fetcher)
             pdf_bytes = html_doc.write_pdf()
 
             if pdf_bytes:

@@ -152,10 +152,25 @@ def extract_input_text(
     """Extract the input text after the trigger."""
     if not match_span or not settings.get("strip_trigger", True):
         return content.strip()
+    
     start, end = match_span
-    if start == 0:
+    mode = str(settings.get("match_mode", "startswith")).lower()
+    
+    # For startswith, return text after the match
+    if mode in ("startswith", "prefix"):
         return content[end:].strip()
-    return content[start:end].strip()
+    
+    # For contains, return the entire content
+    # (the trigger was somewhere in the middle)
+    if mode == "contains":
+        return content.strip()
+    
+    # For exact, return empty (full match, no input)
+    if mode == "exact":
+        return ""
+    
+    # Default: return text after match
+    return content[end:].strip()
 
 
 def strip_bot_mention_prefix(
