@@ -152,6 +152,7 @@ class DiscBot(discord.Client):
         self._status_task: Optional[asyncio.Task] = None
         self._bookmark_task: Optional[asyncio.Task] = None
         self._last_status: Optional[str] = None
+        self.started_at = utcnow()
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 

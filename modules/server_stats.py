@@ -4,6 +4,8 @@ Server Stats module - displays server statistics and information.
 from __future__ import annotations
 
 import logging
+import os
+import platform
 from datetime import datetime
 
 import discord
@@ -25,6 +27,8 @@ def setup_server_stats() -> None:
         commands=[
             ("serverstats", "Show server overview and statistics"),
             ("serverstats help", "Show this help message"),
+            ("botstatus", "Show bot status (CPU/RAM/uptime)"),
+            ("botstatus help", "Show bot status help"),
         ]
     )
 
@@ -44,9 +48,21 @@ async def handle_serverstats_command(
     if content_lower == "serverstats help":
         embed = help_system.get_module_help("Server Stats")
         if embed:
-            await message.reply(embed=embed, mention_author=False)
+            await message.reply(embed=embed, mention_author=False, allowed_mentions=discord.AllowedMentions.none())
         else:
-            await message.reply("Help not available.", mention_author=False)
+            await message.reply("Help not available.", mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+        return True
+
+    if content_lower == "botstatus help":
+        await message.reply(
+            "Usage: `botstatus`\nShows bot uptime and (if available) CPU/RAM usage charts.",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return True
+
+    if content_lower == "botstatus":
+        await _handle_botstatus(message, bot)
         return True
 
     if content_lower != "serverstats":
@@ -126,7 +142,10 @@ async def handle_serverstats_command(
 
     # Owner
     if guild.owner:
-        embed.add_field(name="Owner", value=guild.owner.mention, inline=True)
+        owner = guild.owner
+        # Don't ping the owner.
+        value = f"{owner.name}#{owner.discriminator} (`{owner.id}`)"
+        embed.add_field(name="Owner", value=value, inline=False)
 
     # Emojis and Stickers
     emoji_count = len(guild.emojis)
@@ -151,5 +170,77 @@ async def handle_serverstats_command(
 
     embed.set_footer(text=f"Server ID: {guild.id}")
 
-    await message.reply(embed=embed, mention_author=False)
+    await message.reply(embed=embed, mention_author=False, allowed_mentions=discord.AllowedMentions.none())
     return True
+
+
+def _bar(percent: float, *, width: int = 16) -> str:
+    p = max(0.0, min(100.0, float(percent)))
+    filled = int(round((p / 100.0) * width))
+    return "[" + ("#" * filled) + ("-" * (width - filled)) + f"] {p:0.1f}%"
+
+
+async def _handle_botstatus(message: discord.Message, bot: discord.Client) -> None:
+    """Show bot process/system status."""
+    if not message.guild:
+        return
+
+    if not await is_module_enabled(message.guild.id, MODULE_NAME):
+        await message.reply(
+            "Server Stats module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable serverstats`",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return
+
+    started_at = getattr(bot, "started_at", None)
+    now = discord.utils.utcnow()
+    uptime_str = "Unknown"
+    if started_at:
+        try:
+            delta = now - started_at
+            secs = int(delta.total_seconds())
+            days, rem = divmod(secs, 86400)
+            hours, rem = divmod(rem, 3600)
+            mins, _ = divmod(rem, 60)
+            uptime_str = f"{days}d {hours}h {mins}m"
+        except Exception:
+            pass
+
+    latency_ms = float(getattr(bot, "latency", 0.0) or 0.0) * 1000.0
+
+    embed = discord.Embed(
+        title="Bot Status",
+        color=0x5865F2,
+        timestamp=now,
+    )
+    embed.add_field(name="Uptime", value=uptime_str, inline=True)
+    embed.add_field(name="Latency", value=f"{latency_ms:0.0f} ms", inline=True)
+    embed.add_field(name="Guilds", value=str(len(getattr(bot, "guilds", []) or [])), inline=True)
+
+    try:
+        import psutil  # type: ignore
+
+        proc = psutil.Process(os.getpid())
+        proc_cpu = proc.cpu_percent(interval=0.2)
+        sys_cpu = psutil.cpu_percent(interval=0.2)
+        vm = psutil.virtual_memory()
+        proc_mem_mb = proc.memory_info().rss / (1024 * 1024)
+
+        embed.add_field(name="CPU (System)", value=f"```{_bar(sys_cpu)}```", inline=False)
+        embed.add_field(name="CPU (Bot)", value=f"```{_bar(proc_cpu)}```", inline=False)
+        embed.add_field(
+            name="RAM (System)",
+            value=f"```{_bar(vm.percent)}\n{vm.used/(1024**3):0.2f} / {vm.total/(1024**3):0.2f} GB```",
+            inline=False,
+        )
+        embed.add_field(name="RAM (Bot)", value=f"{proc_mem_mb:0.1f} MB RSS", inline=True)
+    except Exception:
+        embed.add_field(name="CPU/RAM", value="Install `psutil` for CPU/RAM charts.", inline=False)
+
+    embed.add_field(name="Python", value=platform.python_version(), inline=True)
+    embed.add_field(name="discord.py", value=getattr(discord, "__version__", "unknown"), inline=True)
+    embed.add_field(name="Platform", value=f"{platform.system()} {platform.release()}", inline=True)
+
+    await message.reply(embed=embed, mention_author=False, allowed_mentions=discord.AllowedMentions.none())

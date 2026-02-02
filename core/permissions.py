@@ -52,7 +52,7 @@ AVAILABLE_COMMANDS = {
         "mute", "unmute", "ban", "unban", "kick",
         "note", "notes", "clearnote",
     ],
-    "serverstats": ["serverstats"],
+    "serverstats": ["serverstats", "serverstats help", "botstatus", "botstatus help"],
     "serverlink": ["linkserver", "addlink", "links", "unlink", "linksettings", "linkprotection"],
     "trust": ["trust history", "vouch verify", "vouch remove"],
     "inviteprotection": [
