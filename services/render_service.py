@@ -213,10 +213,8 @@ class RenderService:
             return self._render_placeholder(width, height)
 
         try:
-            # Inject a deterministic page size. WeasyPrint doesn't reliably support
-            # auto-height for @page, and the PDF->image conversion will otherwise
-            # include a tall page with lots of empty background.
-            page_style = f"<style>@page {{ size: {width}px {height}px; margin: 0; }}</style>"
+            # Inject page width only, let height be auto-calculated
+            page_style = f"<style>@page {{ size: {width}px auto; margin: 0; }}</style>"
             html_with_size = html.replace("</head>", f"{page_style}</head>")
             
             # WeasyPrint v53+ removed write_png(), must use PDF then convert
@@ -237,11 +235,22 @@ class RenderService:
                     mat = fitz.Matrix(zoom, zoom)
                     pix = page.get_pixmap(matrix=mat)
                     
-                    # Convert pixmap to JPEG bytes
-                    img_bytes = pix.pil_tobytes(format="JPEG", optimize=True, dpi=(150, 150))
+                    # Convert to PIL Image for cropping
+                    pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                    
+                    # Crop whitespace from bottom (and other edges)
+                    # getbbox() returns bounding box of non-white content
+                    bbox = pil_img.getbbox()
+                    if bbox:
+                        pil_img = pil_img.crop(bbox)
+                    
+                    # Convert back to JPEG bytes
+                    buffer = io.BytesIO()
+                    pil_img.save(buffer, format="JPEG", quality=95, optimize=True)
+                    buffer.seek(0)
                     
                     pdf_document.close()
-                    return img_bytes
+                    return buffer.getvalue()
                     
                 except Exception as pdf_error:
                     logger.error("PDF to image conversion failed: %s", pdf_error)
