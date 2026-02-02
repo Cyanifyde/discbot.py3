@@ -38,10 +38,14 @@ class UtilityStore:
 
     async def _read_bookmarks(self) -> Dict[str, Any]:
         """Read bookmarks file."""
-        default = {"bookmarks": []}
+        default = {"bookmarks": [], "emoji_settings": {}}
         data = await read_json(self.bookmarks_path, default=default)
         if not isinstance(data, dict):
             return default
+        if "bookmarks" not in data or not isinstance(data.get("bookmarks"), list):
+            data["bookmarks"] = []
+        if "emoji_settings" not in data or not isinstance(data.get("emoji_settings"), dict):
+            data["emoji_settings"] = {}
         return data
 
     async def _write_bookmarks(self, data: Dict[str, Any]) -> None:
@@ -60,6 +64,29 @@ class UtilityStore:
         async with self._lock:
             data = await self._read_bookmarks()
             return [Bookmark.from_dict(b) for b in data["bookmarks"]]
+
+    async def get_emoji_settings(self) -> Dict[str, Any]:
+        """Get bookmark emoji settings."""
+        async with self._lock:
+            data = await self._read_bookmarks()
+            return dict(data.get("emoji_settings", {}))
+
+    async def set_emoji_setting(self, emoji_key: str, setting: Dict[str, Any]) -> None:
+        """Set a bookmark emoji setting."""
+        async with self._lock:
+            data = await self._read_bookmarks()
+            data["emoji_settings"][emoji_key] = setting
+            await self._write_bookmarks(data)
+
+    async def remove_emoji_setting(self, emoji_key: str) -> bool:
+        """Remove a bookmark emoji setting."""
+        async with self._lock:
+            data = await self._read_bookmarks()
+            if emoji_key in data["emoji_settings"]:
+                del data["emoji_settings"][emoji_key]
+                await self._write_bookmarks(data)
+                return True
+            return False
 
     async def remove_bookmark(self, bookmark_id: str) -> bool:
         """Remove a bookmark."""

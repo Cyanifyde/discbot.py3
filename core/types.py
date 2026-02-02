@@ -496,6 +496,8 @@ class Bookmark:
     created_at: str = ""
     deliver_at: Optional[str] = None  # For delayed delivery
     delivered: bool = False
+    delivery_method: str = "dm"  # dm/channel
+    notify_channel_id: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -509,6 +511,8 @@ class Bookmark:
             "created_at": self.created_at,
             "deliver_at": self.deliver_at,
             "delivered": self.delivered,
+            "delivery_method": self.delivery_method,
+            "notify_channel_id": self.notify_channel_id,
         }
 
     @classmethod
@@ -524,4 +528,6 @@ class Bookmark:
             created_at=data.get("created_at", ""),
             deliver_at=data.get("deliver_at"),
             delivered=data.get("delivered", False),
+            delivery_method=data.get("delivery_method", "dm"),
+            notify_channel_id=data.get("notify_channel_id"),
         )

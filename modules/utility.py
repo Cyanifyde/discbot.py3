@@ -5,9 +5,11 @@ Provides utility commands for user convenience and productivity.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
+from datetime import timedelta
 from typing import Optional
 
 import discord
@@ -34,6 +36,10 @@ def setup_utility() -> None:
             ("bookmark list", "List bookmarks"),
             ("bookmark remove <id>", "Remove bookmark"),
             ("bookmark delay <message_link> <time>", "Delayed delivery bookmark"),
+            ("bookmark emoji set <emoji> [dm|channel]", "Set reaction emoji for instant bookmark"),
+            ("bookmark emoji delay <emoji> <time> [dm|channel]", "Set reaction emoji for delayed bookmark"),
+            ("bookmark emoji remove <emoji>", "Remove reaction emoji bookmark"),
+            ("bookmark emoji list", "List reaction emoji bookmarks"),
             ("afk [message]", "Set AFK status"),
             ("afk off", "Clear AFK status"),
             ("note add <content>", "Add personal note"),
@@ -109,6 +115,8 @@ async def _handle_bookmark(message: discord.Message, parts: list[str]) -> None:
         await _handle_bookmark_remove(message, parts)
     elif subcommand == "delay":
         await _handle_bookmark_delay(message, parts)
+    elif subcommand == "emoji":
+        await _handle_bookmark_emoji(message, parts)
     else:
         # Assume it's a message link
         note = parts[2] if len(parts) > 2 else None
@@ -249,6 +257,234 @@ async def _handle_bookmark_delay(message: discord.Message, parts: list[str]) -> 
     await message.reply(
         f" Bookmark scheduled for delivery on **{deliver_at.strftime('%Y-%m-%d %H:%M')}**"
     )
+
+
+async def _handle_bookmark_emoji(message: discord.Message, parts: list[str]) -> None:
+    """Handle bookmark emoji commands."""
+    if len(parts) < 3:
+        await message.reply(
+            " Usage: `bookmark emoji <set|delay|remove|list> ...`"
+        )
+        return
+
+    subparts = parts[2].split(maxsplit=1)
+    action = subparts[0].lower()
+    rest = subparts[1] if len(subparts) > 1 else ""
+
+    if action == "list":
+        await _handle_bookmark_emoji_list(message)
+        return
+
+    if action == "remove":
+        if not rest:
+            await message.reply(" Usage: `bookmark emoji remove <emoji>`")
+            return
+        await _handle_bookmark_emoji_remove(message, rest.strip())
+        return
+
+    if action == "set":
+        if not rest:
+            await message.reply(" Usage: `bookmark emoji set <emoji> [dm|channel]`")
+            return
+        await _handle_bookmark_emoji_set(message, rest.strip())
+        return
+
+    if action == "delay":
+        if not rest:
+            await message.reply(" Usage: `bookmark emoji delay <emoji> <time> [dm|channel]`")
+            return
+        await _handle_bookmark_emoji_delay(message, rest.strip())
+        return
+
+    await message.reply(" Usage: `bookmark emoji <set|delay|remove|list> ...`")
+
+
+async def _handle_bookmark_emoji_set(message: discord.Message, args: str) -> None:
+    """Set reaction emoji for instant bookmark."""
+    parts = args.split()
+    if not parts:
+        await message.reply(" Usage: `bookmark emoji set <emoji> [dm|channel]`")
+        return
+
+    emoji_key = parts[0]
+    method = parts[1].lower() if len(parts) > 1 else "dm"
+    if method not in ("dm", "channel"):
+        await message.reply(" Delivery method must be `dm` or `channel`.")
+        return
+
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    await store.set_emoji_setting(
+        emoji_key,
+        {"type": "instant", "method": method, "delay_seconds": None},
+    )
+
+    await message.reply(f" Emoji bookmark set for {emoji_key} ({method}).")
+
+
+async def _handle_bookmark_emoji_delay(message: discord.Message, args: str) -> None:
+    """Set reaction emoji for delayed bookmark."""
+    parts = args.split(maxsplit=2)
+    if len(parts) < 2:
+        await message.reply(" Usage: `bookmark emoji delay <emoji> <time> [dm|channel]`")
+        return
+
+    emoji_key = parts[0]
+    time_str = parts[1]
+    method = parts[2].lower() if len(parts) > 2 else "dm"
+    if method not in ("dm", "channel"):
+        await message.reply(" Delivery method must be `dm` or `channel`.")
+        return
+
+    duration = parse_duration_extended(time_str)
+    if not duration:
+        await message.reply(" Invalid time format. Try: `3d`, `2w`, `1mo`")
+        return
+
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    await store.set_emoji_setting(
+        emoji_key,
+        {"type": "delay", "method": method, "delay_seconds": int(duration.total_seconds())},
+    )
+
+    await message.reply(
+        f" Emoji bookmark delay set for {emoji_key} ({time_str}, {method})."
+    )
+
+
+async def _handle_bookmark_emoji_remove(message: discord.Message, emoji_key: str) -> None:
+    """Remove reaction emoji bookmark."""
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    removed = await store.remove_emoji_setting(emoji_key)
+    if removed:
+        await message.reply(f" Emoji bookmark removed for {emoji_key}.")
+    else:
+        await message.reply(f" No emoji bookmark found for {emoji_key}.")
+
+
+async def _handle_bookmark_emoji_list(message: discord.Message) -> None:
+    """List reaction emoji bookmark settings."""
+    store = UtilityStore(message.author.id)
+    await store.initialize()
+    settings = await store.get_emoji_settings()
+    if not settings:
+        await message.reply(" No emoji bookmarks configured.")
+        return
+
+    lines = []
+    for emoji_key, cfg in settings.items():
+        cfg_type = cfg.get("type", "instant")
+        method = cfg.get("method", "dm")
+        delay = cfg.get("delay_seconds")
+        if cfg_type == "delay" and delay:
+            lines.append(f"{emoji_key} → delay {int(delay)}s ({method})")
+        else:
+            lines.append(f"{emoji_key} → instant ({method})")
+
+    await message.reply(" Emoji bookmarks:\n" + "\n".join(lines))
+
+
+async def handle_bookmark_reaction(
+    payload: discord.RawReactionActionEvent,
+    bot: discord.Client,
+) -> None:
+    """Handle reaction-based bookmarks."""
+    if payload.guild_id is None or payload.user_id is None:
+        return
+    if bot.user and payload.user_id == bot.user.id:
+        return
+    if not await is_module_enabled(payload.guild_id, MODULE_NAME):
+        return
+
+    store = UtilityStore(payload.user_id)
+    await store.initialize()
+    settings = await store.get_emoji_settings()
+    emoji_key = str(payload.emoji)
+    config = settings.get(emoji_key)
+    if not config:
+        return
+
+    method = config.get("method", "dm")
+    delay_seconds = config.get("delay_seconds")
+    now = utcnow()
+
+    message_link = f"https://discord.com/channels/{payload.guild_id}/{payload.channel_id}/{payload.message_id}"
+    deliver_at = None
+    if delay_seconds:
+        deliver_at = dt_to_iso(now + timedelta(seconds=delay_seconds))
+
+    bookmark = Bookmark(
+        id=str(uuid.uuid4()),
+        user_id=payload.user_id,
+        guild_id=payload.guild_id,
+        channel_id=payload.channel_id,
+        message_id=payload.message_id,
+        message_link=message_link,
+        created_at=dt_to_iso(now),
+        deliver_at=deliver_at,
+        delivery_method=method,
+        notify_channel_id=payload.channel_id if method == "channel" else None,
+    )
+
+    await store.add_bookmark(bookmark)
+
+    if deliver_at:
+        return
+
+    await _deliver_bookmark_now(bot, bookmark)
+    await store.mark_delivered(bookmark.id)
+
+
+async def _deliver_bookmark_now(bot: discord.Client, bookmark: Bookmark) -> None:
+    """Deliver a bookmark immediately based on delivery method."""
+    if bookmark.delivery_method == "channel":
+        channel = bot.get_channel(bookmark.notify_channel_id or bookmark.channel_id)
+        if channel and isinstance(channel, discord.TextChannel):
+            await channel.send(f"<@{bookmark.user_id}> bookmarked: {bookmark.message_link}")
+        return
+
+    user = await bot.fetch_user(bookmark.user_id)
+    if user:
+        await user.send(f"Bookmarked: {bookmark.message_link}")
+
+
+async def deliver_pending_bookmarks(bot: discord.Client) -> int:
+    """Send any delayed bookmarks that are due."""
+    sent = 0
+    from core.paths import BASE_DIR
+    base = BASE_DIR / "data" / "utility"
+    if not base.exists():
+        return 0
+
+    for user_dir in base.iterdir():
+        if not user_dir.is_dir():
+            continue
+        try:
+            user_id = int(user_dir.name)
+        except ValueError:
+            continue
+
+        store = UtilityStore(user_id)
+        await store.initialize()
+        pending = await store.get_pending_deliveries()
+        for bookmark in pending:
+            await _deliver_bookmark_now(bot, bookmark)
+            await store.mark_delivered(bookmark.id)
+            sent += 1
+
+    return sent
+
+
+async def bookmark_delivery_loop(bot: discord.Client) -> None:
+    """Background loop to deliver delayed bookmarks."""
+    while True:
+        try:
+            await deliver_pending_bookmarks(bot)
+        except Exception as exc:
+            logger.error("Bookmark delivery loop error: %s", exc)
+        await asyncio.sleep(60)
 
 
 # ─── AFK Handlers ─────────────────────────────────────────────────────────────

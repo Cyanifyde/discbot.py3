@@ -60,6 +60,7 @@ from services.scanner import restore_state as restore_scanner_state
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
+from modules.utility import handle_bookmark_reaction, bookmark_delivery_loop
 
 from .guild_state import GuildState
 
@@ -90,6 +91,7 @@ class DiscBot(discord.Client):
         self.default_template: Optional[dict[str, Any]] = None
         self.ready_once = False
         self._status_task: Optional[asyncio.Task] = None
+        self._bookmark_task: Optional[asyncio.Task] = None
         self._last_status: Optional[str] = None
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -129,6 +131,7 @@ class DiscBot(discord.Client):
             await restore_inactivity_state(self)
 
             self._status_task = asyncio.create_task(self._status_loop())
+            self._bookmark_task = asyncio.create_task(bookmark_delivery_loop(self))
 
     async def close(self) -> None:
         """Cleanup when shutting down."""
@@ -136,6 +139,8 @@ class DiscBot(discord.Client):
             await state.stop()
         if self._status_task:
             self._status_task.cancel()
+        if self._bookmark_task:
+            self._bookmark_task.cancel()
         await super().close()
 
     # ─── Guild State Management ───────────────────────────────────────────────
@@ -274,6 +279,10 @@ class DiscBot(discord.Client):
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         """Handle interactions (button clicks, etc.)."""
         await handle_interaction(interaction)
+
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        """Handle reaction events used for bookmarks."""
+        await handle_bookmark_reaction(payload, self)
 
     # ─── Enforcement ──────────────────────────────────────────────────────────
 

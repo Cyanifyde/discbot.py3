@@ -61,6 +61,21 @@
     "is lai good looking?": "yes",
     "profile": {
       "handler": "profile:ProfileResponder"
+    },
+    "remindme": {
+      "handler": "reminder:RemindMeResponder"
+    },
+    "echo": {
+      "handler": "response_handlers:EchoResponder"
+    },
+    "upper": {
+      "handler": "response_handlers:UpperResponder"
+    },
+    "static": {
+      "handler": "response_handlers:StaticResponder",
+      "settings": {
+        "text": "This is a static handler response."
+      }
     }
   }
 }
