@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Commission Invoice</title>
     <style>
+        :root {
+            --bg0: #0b1220;
+            --bg1: #14213d;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --soft: #f1f5f9;
+            --accent: #2563eb;
+            --accent-soft: #dbeafe;
+            --success-bg: #dcfce7;
+            --success-text: #166534;
+            --warn-bg: #fef3c7;
+            --warn-text: #92400e;
+        }
         @page {
             size: 800px 1000px;
             margin: 0;
@@ -16,16 +31,16 @@
         }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, var(--bg0) 0%, var(--bg1) 100%);
             padding: 30px;
             min-height: 100%;
         }
         .invoice {
-            background: #ffffff;
+            background: var(--card);
             padding: 40px;
             max-width: 740px;
             margin: 0 auto;
-            border-top: 6px solid #6366f1;
+            border-top: 6px solid var(--accent);
         }
         .header {
             display: flex;
@@ -33,16 +48,16 @@
             align-items: flex-start;
             padding-bottom: 30px;
             margin-bottom: 30px;
-            border-bottom: 2px solid #e5e7eb;
+            border-bottom: 2px solid var(--border);
         }
         .header-left h1 {
             font-size: 36px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--text);
             letter-spacing: -1px;
         }
         .header-left p {
-            color: #6b7280;
+            color: var(--muted);
             font-size: 14px;
             margin-top: 5px;
         }
@@ -51,15 +66,15 @@
         }
         .invoice-number {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--muted);
             text-transform: uppercase;
             letter-spacing: 1px;
         }
         .invoice-id {
             font-family: 'Courier New', monospace;
             font-size: 14px;
-            color: #374151;
-            background: #f3f4f6;
+            color: #334155;
+            background: var(--soft);
             padding: 6px 12px;
             margin-top: 5px;
             display: inline-block;
@@ -72,20 +87,20 @@
         .party {
             flex: 1;
             padding: 20px;
-            background: #f9fafb;
-            border-left: 3px solid #6366f1;
+            background: var(--soft);
+            border-left: 3px solid var(--accent);
         }
         .party-label {
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: #6366f1;
+            color: var(--accent);
             font-weight: 600;
             margin-bottom: 10px;
         }
         .party-info {
             font-size: 14px;
-            color: #374151;
+            color: #334155;
             line-height: 1.6;
         }
         .details-section {
@@ -95,11 +110,11 @@
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: #6b7280;
+            color: var(--muted);
             font-weight: 600;
             margin-bottom: 15px;
             padding-bottom: 8px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border);
         }
         .details-grid {
             display: flex;
@@ -112,12 +127,12 @@
         }
         .detail-label {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--muted);
             margin-bottom: 4px;
         }
         .detail-value {
             font-size: 15px;
-            color: #1f2937;
+            color: var(--text);
             font-weight: 500;
         }
         .status-badge {
@@ -129,39 +144,39 @@
             letter-spacing: 0.5px;
         }
         .status-badge.paid {
-            background: #dcfce7;
-            color: #166534;
+            background: var(--success-bg);
+            color: var(--success-text);
         }
         .status-badge.pending {
-            background: #fef3c7;
-            color: #92400e;
+            background: var(--warn-bg);
+            color: var(--warn-text);
         }
         .status-badge.partial {
-            background: #dbeafe;
+            background: var(--accent-soft);
             color: #1e40af;
         }
         .notes-box {
-            background: #f9fafb;
+            background: var(--soft);
             padding: 15px 20px;
             margin-top: 15px;
-            border-left: 3px solid #9ca3af;
+            border-left: 3px solid #94a3b8;
         }
         .notes-box p {
             font-size: 14px;
-            color: #4b5563;
+            color: #475569;
             line-height: 1.6;
         }
         .total-section {
             margin-top: 40px;
             padding-top: 25px;
-            border-top: 2px solid #1f2937;
+            border-top: 2px solid var(--text);
             display: flex;
             justify-content: flex-end;
             align-items: center;
         }
         .total-label {
             font-size: 14px;
-            color: #6b7280;
+            color: var(--muted);
             text-transform: uppercase;
             letter-spacing: 1px;
             margin-right: 30px;
@@ -169,17 +184,17 @@
         .total-amount {
             font-size: 36px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--text);
         }
         .footer {
             margin-top: 40px;
             padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--border);
             text-align: center;
         }
         .footer p {
             font-size: 12px;
-            color: #9ca3af;
+            color: #94a3b8;
         }
     </style>
 </head>
@@ -193,7 +208,7 @@
             <div class="header-right">
                 <div class="invoice-number">Invoice Number</div>
                 <div class="invoice-id">{{ commission.id[:12] }}</div>
-                <p style="margin-top: 10px; font-size: 13px; color: #6b7280;">{{ commission.created_at[:10] }}</p>
+                <p style="margin-top: 10px; font-size: 13px; color: var(--muted);">{{ commission.created_at[:10] }}</p>
             </div>
         </div>
 

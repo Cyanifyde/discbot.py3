@@ -153,7 +153,7 @@ class RenderService:
             height += 100
 
         # Clamp to reasonable bounds
-        height = max(520, min(height, 2200))
+        height = max(520, min(height, 100))
         return await self._html_to_jpg(html, width=width, height=height)
 
     async def render_contract(
