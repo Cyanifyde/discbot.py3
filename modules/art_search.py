@@ -29,8 +29,7 @@ RESULTS_PER_PAGE = 5
 RESULT_BATCH_SIZE = 20
 SCAN_CHUNK_MESSAGES = 200
 MAX_MESSAGES_SCANNED_TOTAL = 50000
-PREVIEW_IMAGE_WIDTH = 768
-PREVIEW_IMAGE_HEIGHT = 768
+EMBED_IMAGE_MAX = 384
 
 
 @dataclass
@@ -196,28 +195,57 @@ async def _cmd_search(message: discord.Message, args: list[str]) -> None:
         hits=[],
         page_index=max(0, page - 1),
     )
-    await view.bootstrap(message.guild, desired_loaded=desired_loaded, time_budget_seconds=3.0)
+    view._set_loading(True)
+
+    searching_embed = discord.Embed(
+        title=f"Art Search: {target.display_name}",
+        description="Searching…",
+        color=discord.Color.dark_grey(),
+        timestamp=discord.utils.utcnow(),
+    )
+    sent = await message.channel.send(
+        embed=searching_embed,
+        view=view,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+    view.message = sent
+
+    async with message.channel.typing():
+        await view.bootstrap(message.guild, desired_loaded=desired_loaded, time_budget_seconds=3.0)
+
     hits = view.hits
     if not hits:
-        await message.channel.send(f"No recent images found for {target.mention}.", allowed_mentions=discord.AllowedMentions.none())
+        view._set_loading(False)
+        for child in view.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+        try:
+            await sent.edit(
+                content=f"No recent images found for {target.mention}.",
+                embed=None,
+                attachments=[],
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception:
+            pass
         return
 
     total_pages = max(1, int(math.ceil(len(hits) / RESULTS_PER_PAGE)))
     page = min(page, total_pages)
     start_page_index = page - 1
     if start_page_index * RESULTS_PER_PAGE >= len(hits):
-        await message.channel.send("No more results.", allowed_mentions=discord.AllowedMentions.none())
+        await sent.edit(content="No more results.", embed=None, attachments=[], view=None)
         return
 
     view.page_index = start_page_index
+    view._set_loading(False)
     view._sync_buttons()
-    embed = view.build_embed()
-    sent = await message.channel.send(
-        embed=embed,
-        view=view,
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
-    view.message = sent
+    embeds = view.build_page_embeds()
+    try:
+        await sent.edit(embeds=embeds, attachments=[], view=view)
+    except Exception:
+        pass
 
 
 def _pick_image_attachment(msg: discord.Message) -> Optional[discord.Attachment]:
@@ -278,6 +306,7 @@ class _ArtSearchView(discord.ui.View):
         self._channel_rr_index = 0
         self.scanned_messages_total = 0
         self.truncated = False  # scan limit reached
+        self.loading = False
         self._sync_buttons()
 
     def _page_count(self) -> int:
@@ -286,19 +315,31 @@ class _ArtSearchView(discord.ui.View):
     def _scan_complete(self) -> bool:
         return len(self.channel_done) >= len(self.channel_ids)
 
+    def _page_hits(self) -> tuple[int, list[_ArtHit]]:
+        start = self.page_index * RESULTS_PER_PAGE
+        end = start + RESULTS_PER_PAGE
+        return start, self.hits[start:end]
+
     def _sync_buttons(self) -> None:
         total_pages = self._page_count()
+        if self.loading:
+            self.prev.disabled = True
+            self.next.disabled = True
+            return
+
         self.prev.disabled = self.page_index <= 0
         at_last_known_page = self.page_index >= (total_pages - 1)
         self.next.disabled = bool(at_last_known_page and (self.truncated or self._scan_complete()))
+
+    def _set_loading(self, loading: bool) -> None:
+        self.loading = bool(loading)
+        self._sync_buttons()
 
     def build_embed(self) -> discord.Embed:
         total_pages = self._page_count()
         self.page_index = max(0, min(self.page_index, total_pages - 1))
 
-        start = self.page_index * RESULTS_PER_PAGE
-        end = start + RESULTS_PER_PAGE
-        page_hits = self.hits[start:end]
+        start, page_hits = self._page_hits()
 
         preview = page_hits[0] if page_hits else None
         preview_time = None
@@ -317,31 +358,50 @@ class _ArtSearchView(discord.ui.View):
         embed = discord.Embed(
             title=f"Art Search: {self.target_display_name}",
             description=desc,
-            color=discord.Color.blurple(),
+            color=discord.Color.dark_grey() if self.loading else discord.Color.blurple(),
             timestamp=preview_time or discord.utils.utcnow(),
         )
-
-        if preview:
-            embed.add_field(
-                name="Preview",
-                value=f"Result **#{start + 1}** • <#{preview.channel_id}>",
-                inline=False,
-            )
-            embed.set_image(
-                url=_scaled_image_url(
-                    preview.attachment_url,
-                    width=PREVIEW_IMAGE_WIDTH,
-                    height=PREVIEW_IMAGE_HEIGHT,
-                )
-            )
 
         footer = f"Page {self.page_index + 1}/{total_pages} • {len(self.hits)} results"
         if self.truncated:
             footer += " • scan limit reached"
         elif not self._scan_complete():
             footer += " • more may exist (keeps scanning as you page)"
+        if self.loading:
+            footer += " • loading…"
         embed.set_footer(text=footer)
         return embed
+
+    def build_page_embeds(self) -> list[discord.Embed]:
+        header = self.build_embed()
+        if self.loading:
+            return [header]
+
+        start, page_hits = self._page_hits()
+        embeds: list[discord.Embed] = [header]
+        for idx, hit in enumerate(page_hits, start=start + 1):
+            link = _message_link(self.guild_id, hit.channel_id, hit.message_id)
+            created_at = None
+            try:
+                created_at = datetime.fromisoformat(hit.created_at_iso)
+            except Exception:
+                created_at = None
+
+            e = discord.Embed(
+                title=f"Result #{idx}",
+                description=f"<#{hit.channel_id}> — `{hit.filename}`\n{link}",
+                color=discord.Color.blurple(),
+                timestamp=created_at,
+            )
+            e.set_image(
+                url=_scaled_image_url(
+                    hit.attachment_url,
+                    width=EMBED_IMAGE_MAX,
+                    height=EMBED_IMAGE_MAX,
+                )
+            )
+            embeds.append(e)
+        return embeds
 
     async def bootstrap(self, guild: discord.Guild, *, desired_loaded: int, time_budget_seconds: float) -> None:
         await self._scan_until(
@@ -491,9 +551,22 @@ class _ArtSearchView(discord.ui.View):
     @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary)
     async def prev(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         self.page_index = max(0, self.page_index - 1)
-        self._sync_buttons()
-        embed = self.build_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        try:
+            await interaction.response.defer()
+        except Exception:
+            return
+        self._set_loading(True)
+        try:
+            if interaction.message is not None:
+                await interaction.message.edit(embeds=self.build_page_embeds(), attachments=[], view=self)
+        except Exception:
+            pass
+        self._set_loading(False)
+        try:
+            if interaction.message is not None:
+                await interaction.message.edit(embeds=self.build_page_embeds(), attachments=[], view=self)
+        except Exception:
+            pass
 
     @discord.ui.button(label="Forward ▶", style=discord.ButtonStyle.secondary)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -504,6 +577,12 @@ class _ArtSearchView(discord.ui.View):
             await interaction.response.defer()
         except Exception:
             return
+        self._set_loading(True)
+        try:
+            if interaction.message is not None:
+                await interaction.message.edit(embeds=self.build_page_embeds(), attachments=[], view=self)
+        except Exception:
+            pass
 
         guild = interaction.guild
         if guild is not None:
@@ -513,13 +592,12 @@ class _ArtSearchView(discord.ui.View):
         if self.page_index * RESULTS_PER_PAGE >= len(self.hits):
             self.page_index = max(0, total_pages - 1)
 
-        self._sync_buttons()
-        embed = self.build_embed()
+        self._set_loading(False)
         try:
             if interaction.message is not None:
-                await interaction.message.edit(embed=embed, view=self)
+                await interaction.message.edit(embeds=self.build_page_embeds(), attachments=[], view=self)
             else:
-                await interaction.edit_original_response(embed=embed, view=self)
+                await interaction.edit_original_response(embeds=self.build_page_embeds(), attachments=[], view=self)
         except Exception:
             pass
 
