@@ -34,8 +34,13 @@ class AnalyticsService:
         """Load stats for a guild."""
         stats_file = self._get_stats_file(guild_id)
         if os.path.exists(stats_file):
-            with open(stats_file, 'r') as f:
-                return json.load(f)
+            try:
+                with open(stats_file, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                # Log error and return default stats
+                import logging
+                logging.getLogger("discbot.analytics").error(f"Failed to load stats for guild {guild_id}: {e}")
         return {
             "commission_stats": {
                 "total_completed": 0,
@@ -64,8 +69,12 @@ class AnalyticsService:
         """Load timeseries data for a metric."""
         ts_file = self._get_timeseries_file(guild_id, metric, period)
         if os.path.exists(ts_file):
-            with open(ts_file, 'r') as f:
-                return json.load(f)
+            try:
+                with open(ts_file, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                import logging
+                logging.getLogger("discbot.analytics").error(f"Failed to load timeseries {metric}/{period} for guild {guild_id}: {e}")
         return []
 
     def _save_timeseries(self, guild_id: int, metric: str, period: str, data: List[Dict[str, Any]]):

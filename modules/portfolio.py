@@ -24,15 +24,10 @@ logger = logging.getLogger("discbot.portfolio")
 
 MODULE_NAME = "portfolio"
 
-# URL validation regex (Discord CDN or common image hosts)
+# URL validation regex - accept any valid HTTP/HTTPS URL with common image extensions
+# or CDN URLs without extensions
 URL_PATTERN = re.compile(
-    r'https?://(?:'
-    r'cdn\.discordapp\.com|'
-    r'media\.discordapp\.net|'
-    r'imgur\.com|'
-    r'i\.imgur\.com|'
-    r'[^\s]+)'
-    r'[^\s]*\.(?:png|jpg|jpeg|gif|webp)',
+    r'https?://[^\s]+',
     re.IGNORECASE
 )
 

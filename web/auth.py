@@ -86,7 +86,9 @@ def require_auth(permission_level='user'):
             # Check permission level
             if permission_level == 'admin':
                 guild_id = request.match_info.get('guild_id')
-                if guild_id and not await is_guild_admin(request, user, guild_id):
+                if not guild_id:
+                    return web.Response(text='Forbidden: Guild ID required', status=403)
+                if not await is_guild_admin(request, user, guild_id):
                     return web.Response(text='Forbidden: Admin access required', status=403)
 
             elif permission_level == 'owner':
@@ -184,7 +186,7 @@ async def handle_callback(request):
 
     # Set cookie and redirect
     response = web.HTTPFound('/')
-    response.set_cookie('session_token', session_token, max_age=86400, httponly=True)
+    response.set_cookie('session_token', session_token, max_age=86400, httponly=True, secure=True, samesite='Lax')
 
     return response
 

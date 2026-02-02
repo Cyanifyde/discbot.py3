@@ -532,7 +532,14 @@ async def _handle_ack_create(
         description,
     )
 
-    await message.reply(f" Acknowledgment created for message!\n**Title:** {title}")
+    # Create button view
+    view = AcknowledgeButton(guild_id, message_id)
+    
+    await message.reply(
+        f" Acknowledgment created for message!\n**Title:** {title}\n"
+        f"Users can click the button below to acknowledge.",
+        view=view
+    )
 
 
 async def _handle_ack_check(message: discord.Message, bot: discord.Client) -> None:

@@ -36,6 +36,17 @@ async def handle_stats_command(message: discord.Message, args: list) -> bool:
     if not args or args[0] != "stats":
         return False
 
+    if not message.guild:
+        await message.channel.send("This command can only be used in servers.")
+        return True
+
+    if not await is_module_enabled(message.guild.id, "analytics"):
+        return False
+
+    if not await can_use_command(message.author, "stats", message.guild.id):
+        await message.channel.send("You don't have permission to use this command.")
+        return True
+
     analytics = AnalyticsService()
 
     if len(args) == 1 or args[1] == "help":

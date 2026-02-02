@@ -6,6 +6,7 @@ Handles sending responses via different modes (channel, reply, DM).
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Optional
 
 import discord
@@ -14,6 +15,8 @@ from core.paths import resolve_repo_path
 from core.utils import is_safe_relative_path, sanitize_text
 
 from .matching import normalize_id_list
+
+logger = logging.getLogger("discbot.responder.delivery")
 
 
 def resolve_targets(settings: dict[str, Any]) -> list[str]:
@@ -73,7 +76,7 @@ def build_allowed_mentions(
         allow_roles = True
     
     allowed_mentions = discord.AllowedMentions(
-        users=role_mentions if allow_users else False,
+        users=[message.author] if allow_users else False,
         roles=role_mentions if allow_roles else False,
         replied_user=bool(settings.get("reply_ping_author", False)),
     )
@@ -202,7 +205,12 @@ async def send_response(
     targets = resolve_targets(settings)
     handled = False
     
-    delay = float(settings.get("delay_seconds", 0) or 0)
+    # Safe parse delay with fallback
+    try:
+        delay = float(settings.get("delay_seconds", 0) or 0)
+    except (ValueError, TypeError):
+        delay = 0.0
+    
     if delay > 0:
         await asyncio.sleep(delay)
     
@@ -210,12 +218,14 @@ async def send_response(
     for target in targets:
         try:
             if target == "dm":
-                handled = await _send_dm(message, content, embeds, files, allowed_mentions, settings)
+                # Accumulate success instead of overwriting
+                handled = await _send_dm(message, content, embeds, files, allowed_mentions, settings) or handled
             elif target == "reply":
-                handled = await _send_reply(message, content, embeds, files, allowed_mentions, settings)
+                handled = await _send_reply(message, content, embeds, files, allowed_mentions, settings) or handled
             else:
-                handled = await _send_channel(message, content, embeds, files, allowed_mentions, settings)
-        except Exception:
+                handled = await _send_channel(message, content, embeds, files, allowed_mentions, settings) or handled
+        except Exception as e:
+            logger.warning(f"Failed to send response to {target}: {e}")
             continue
     
     return handled

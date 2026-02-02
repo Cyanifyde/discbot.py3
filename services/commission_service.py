@@ -63,7 +63,7 @@ class CommissionService:
 
         # Get custom stages
         custom_stages = await store.get_custom_stages()
-        initial_stage = custom_stages[0] if custom_stages else "Inquiry"
+        initial_stage = custom_stages[0] if custom_stages and len(custom_stages) > 0 else "Inquiry"
 
         commission = Commission(
             id=str(uuid.uuid4()),

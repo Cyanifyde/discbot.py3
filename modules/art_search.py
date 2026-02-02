@@ -38,13 +38,13 @@ def setup_art_search() -> None:
     help_system.register_module(
         name="Art Search",
         description="Search for images posted by a user in approved channels.",
-        help_command="art help",
+        help_command="artsearch help",
         commands=[
-            ("art search @user [page]", "Search a user's images (filters GIFs)"),
-            ("art channels", "List configured search channels"),
-            ("art channels add <channel_id>", "Add a channel to the search allowlist (mod only)"),
-            ("art channels remove <channel_id>", "Remove a channel from the search allowlist (mod only)"),
-            ("art help", "Show this help message"),
+            ("artsearch search @user [page]", "Search a user's images (filters GIFs)"),
+            ("artsearch channels", "List configured search channels"),
+            ("artsearch channels add <channel_id>", "Add a channel to the search allowlist (mod only)"),
+            ("artsearch channels remove <channel_id>", "Remove a channel from the search allowlist (mod only)"),
+            ("artsearch help", "Show this help message"),
         ],
     )
 
@@ -61,7 +61,7 @@ async def handle_art_search_command(message: discord.Message, bot: discord.Clien
         return False
 
     parts = content.split()
-    if not parts or parts[0].lower() != "art":
+    if not parts or parts[0].lower() != "artsearch":
         return False
 
     if len(parts) == 1:

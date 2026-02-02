@@ -155,7 +155,7 @@ def extract_input_text(
     start, end = match_span
     if start == 0:
         return content[end:].strip()
-    return content[end:].strip()
+    return content[start:end].strip()
 
 
 def strip_bot_mention_prefix(

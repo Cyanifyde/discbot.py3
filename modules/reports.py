@@ -26,6 +26,7 @@ def setup_reports() -> None:
         description="User report system for reporting rule violations to moderators.",
         help_command="report help",
         commands=[
+            ("report @user <category> <reason>", "Submit a report about a user"),
             ("report list [status]", "List reports (mod only)"),
             ("report view <id>", "View report details (mod only)"),
             ("report assign <id> @mod", "Assign report to moderator (mod only)"),
@@ -62,6 +63,11 @@ async def handle_report_command(message: discord.Message, bot: discord.Client) -
     if command != "report":
         return False
 
+    # Handle user report submission (doesn't require mod permissions)
+    if subcommand in ("submit", "@") or (message.mentions and len(parts) >= 3):
+        await _handle_submit(message, parts)
+        return True
+
     # Route to handlers (all require mod permissions)
     if subcommand == "list":
         await _handle_list(message, parts)
@@ -89,6 +95,69 @@ async def handle_report_command(message: discord.Message, bot: discord.Client) -
 
 
 # ─── Command Handlers ─────────────────────────────────────────────────────────
+
+
+async def _handle_submit(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'report @user <category> <reason>' command for users to submit reports."""
+    if not message.mentions:
+        await message.reply(" Please mention the user you want to report: `report @user <category> <reason>`")
+        return
+
+    target_user = message.mentions[0]
+    
+    if target_user.id == message.author.id:
+        await message.reply(" You cannot report yourself.")
+        return
+    
+    if target_user.bot:
+        await message.reply(" You cannot report bots.")
+        return
+
+    # Parse category and reason from remaining text
+    content_parts = message.content.split(maxsplit=2)
+    if len(content_parts) < 3:
+        categories = await report_service.get_categories(message.guild.id)
+        await message.reply(
+            f" Please provide a category and reason.\n"
+            f"Usage: `report @user <category> <reason>`\n"
+            f"Categories: {', '.join(categories)}"
+        )
+        return
+
+    # Extract text after the mention
+    remaining = content_parts[2]
+    reason_parts = remaining.split(maxsplit=1)
+    
+    if len(reason_parts) < 2:
+        await message.reply(" Please provide both a category and a reason.")
+        return
+    
+    category = reason_parts[0].lower()
+    reason = reason_parts[1] if len(reason_parts) > 1 else "No reason provided"
+    
+    # Validate category
+    categories = await report_service.get_categories(message.guild.id)
+    if category not in categories:
+        await message.reply(
+            f" Invalid category. Valid options: {', '.join(categories)}"
+        )
+        return
+
+    # Create the report
+    report = await report_service.create_report(
+        reporter_id=message.author.id,
+        target_id=target_user.id,
+        message_id=message.id,
+        guild_id=message.guild.id,
+        category=category,
+        details=reason,
+    )
+
+    await message.reply(
+        f" Report submitted! ID: `{report.id[:8]}`\n"
+        f"Category: {category}\n"
+        f"Moderators will review your report."
+    )
 
 
 async def _handle_list(message: discord.Message, parts: list[str]) -> None:

@@ -165,10 +165,13 @@ async def handle_servers_post(request):
     guild_id = data.get('guild_id')
 
     if action == 'leave' and guild_id:
-        bot = request.app['bot']
-        guild = bot.get_guild(int(guild_id))
-        if guild:
-            await guild.leave()
+        try:
+            bot = request.app['bot']
+            guild = bot.get_guild(int(guild_id))
+            if guild:
+                await guild.leave()
+        except (ValueError, TypeError) as e:
+            return web.Response(text=f'Invalid guild_id: {e}', status=400)
 
     return web.HTTPFound('/owner/servers')
 

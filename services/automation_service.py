@@ -6,11 +6,14 @@ Handles automated actions, trigger execution, scheduling, and vacation mode mana
 from __future__ import annotations
 
 import uuid
+import logging
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from core.automation_storage import AutomationStore
 from core.utils import utcnow, dt_to_iso
+
+logger = logging.getLogger("discbot.automation_service")
 
 if TYPE_CHECKING:
     import discord
@@ -213,8 +216,9 @@ class AutomationService:
         context: Dict[str, Any],
     ) -> None:
         """Auto-close commissions."""
-        # This would integrate with commission_service
-        pass
+        logger.info(f"Auto-close commissions triggered for guild {guild_id}")
+        # TODO: Integrate with commission_service to close open commission slots
+        # This requires commission_service integration
 
     async def _auto_open_commissions(
         self,
@@ -222,8 +226,9 @@ class AutomationService:
         context: Dict[str, Any],
     ) -> None:
         """Auto-open commissions."""
-        # This would integrate with commission_service
-        pass
+        logger.info(f"Auto-open commissions triggered for guild {guild_id}")
+        # TODO: Integrate with commission_service to open commission slots
+        # This requires commission_service integration
 
     async def _promote_waitlist(
         self,
@@ -231,8 +236,9 @@ class AutomationService:
         context: Dict[str, Any],
     ) -> None:
         """Promote from waitlist."""
-        # This would integrate with commission_service
-        pass
+        logger.info(f"Promote waitlist triggered for guild {guild_id}")
+        # TODO: Integrate with commission_service to promote users from waitlist
+        # This requires commission_service integration
 
     # ─── Trigger Chains ───────────────────────────────────────────────────────
 

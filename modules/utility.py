@@ -872,8 +872,9 @@ async def _handle_export(message: discord.Message) -> None:
     json_data = json.dumps(export_data, indent=2)
 
     # Send as file
+    import io
     file = discord.File(
-        fp=json_data.encode(),
+        fp=io.BytesIO(json_data.encode()),
         filename=f"user_data_{user_id}.json"
     )
 

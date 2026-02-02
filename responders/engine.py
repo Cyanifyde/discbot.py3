@@ -100,7 +100,20 @@ def _check_cooldown(
         return False
     
     _COOLDOWNS[key] = now
+    
+    # Clean up old entries periodically (every 100 checks)
+    if len(_COOLDOWNS) > 1000:
+        _cleanup_old_cooldowns(now)
+    
     return True
+
+
+def _cleanup_old_cooldowns(now: float, max_age: float = 3600.0) -> None:
+    """Remove cooldown entries older than max_age seconds."""
+    expired_keys = [key for key, timestamp in _COOLDOWNS.items() if now - timestamp > max_age]
+    for key in expired_keys:
+        _COOLDOWNS.pop(key, None)
+
 
 
 def _normalize_handler_path(path: str) -> Optional[str]:
@@ -301,7 +314,7 @@ async def handle_auto_responder(message: discord.Message) -> bool:
             response = spec.response
         
         if response is None:
-            return False
+            continue
         
         # Send response(s)
         final_settings = merge_settings(spec.settings, overrides)
