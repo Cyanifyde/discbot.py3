@@ -66,6 +66,15 @@
             margin-bottom: 15px;
             background: #f8f9fa;
             border-left: 4px solid #2c3e50;
+            gap: 15px;
+        }
+        .rate-thumbnail {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            flex-shrink: 0;
         }
         .rate-details {
             flex: 1;
@@ -118,13 +127,16 @@
         <div class="section-label">Available Services</div>
 
         <div class="rates-list">
-            {% for rate_name, rate_price in rates.items() %}
+            {% for rate_name, rate_data in rates.items() %}
             <div class="rate-item">
+                {% if rate_data.image %}
+                <img src="{{ rate_data.image }}" alt="{{ rate_name }}" class="rate-thumbnail">
+                {% endif %}
                 <div class="rate-details">
                     <div class="rate-name">{{ rate_name }}</div>
-                    <div class="rate-description">High-quality digital artwork crafted with care</div>
+                    <div class="rate-description">{{ rate_data.description if rate_data.description else "High-quality digital artwork crafted with care" }}</div>
                 </div>
-                <div class="rate-price">{{ rate_price }}</div>
+                <div class="rate-price">{{ rate_data.price }}</div>
             </div>
             {% endfor %}
         </div>

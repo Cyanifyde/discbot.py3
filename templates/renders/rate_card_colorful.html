@@ -81,6 +81,19 @@
         .rate-item:nth-child(n+7) {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
+        .rate-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .rate-thumbnail {
+            width: 45px;
+            height: 45px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid rgba(255,255,255,0.3);
+            flex-shrink: 0;
+        }
         .rate-name {
             font-size: 18px;
             font-weight: 600;
@@ -124,10 +137,15 @@
         </div>
 
         <div class="rates-list">
-            {% for rate_name, rate_price in rates.items() %}
+            {% for rate_name, rate_data in rates.items() %}
             <div class="rate-item">
-                <span class="rate-name">{{ rate_name }}</span>
-                <span class="rate-price">{{ rate_price }}</span>
+                <div class="rate-info">
+                    {% if rate_data.image %}
+                    <img src="{{ rate_data.image }}" alt="{{ rate_name }}" class="rate-thumbnail">
+                    {% endif %}
+                    <span class="rate-name">{{ rate_name }}</span>
+                </div>
+                <span class="rate-price">{{ rate_data.price }}</span>
             </div>
             {% endfor %}
         </div>

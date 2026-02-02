@@ -63,7 +63,8 @@ def setup_portfolio() -> None:
             ("ratecard subtitle <text>", "Set rate card subtitle"),
             ("ratecard status <open|closed>", "Set commission status"),
             ("ratecard currency <symbol>", "Set currency symbol (default: $)"),
-            ("ratecard image <url|remove>", "Set showcase image (or attach image)"),
+            ("ratecard image <rate> + attach", "Add image to rate (webp converted)"),
+            ("ratecard image <rate> remove", "Remove image from rate"),
             ("ratecard template <style>", "Styles: minimal, colorful, detailed, professional"),
             ("portfolio help", "Show this help message"),
         ],
@@ -632,14 +633,25 @@ async def _generate_ratecard(message: discord.Message, template: str = "minimal"
         "image": settings.get("image"),
     }
 
-    # Format rates for template (name -> price)
+    # Format rates for template (name -> {price, description, image})
     formatted_rates = {}
     currency = settings.get("currency", "$")
     for name, data in rates.items():
         if isinstance(data, dict):
-            formatted_rates[name] = f"{currency}{data.get('price', 0)}"
+            formatted_rates[name] = {
+                "price": f"{currency}{data.get('price', 0)}",
+                "description": data.get("description", ""),
+                "image": data.get("image"),
+            }
         else:
-            formatted_rates[name] = f"{currency}{data}"
+            formatted_rates[name] = {
+                "price": f"{currency}{data}",
+                "description": "",
+                "image": None,
+            }
+
+    # Count rates with images for dynamic height
+    images_count = sum(1 for r in formatted_rates.values() if r.get("image"))
 
     try:
         image_bytes = await render_service.render_rate_card(
@@ -803,11 +815,15 @@ async def _handle_ratecard_image(message: discord.Message, parts: list[str]) -> 
             )
         return
 
-    rate_name = parts[2].strip() if len(parts) >= 3 else None
+    rate_name = parts[2].strip() if len(parts) >= 3 else ""
+
+    if not rate_name:
+        await message.reply("Please specify a rate name: `ratecard image <rate_name>`")
+        return
 
     # Check if this rate exists
     rates = await portfolio_service.get_rates(user_id)
-    if rate_name and rate_name.lower() not in [r.lower() for r in rates.keys()]:
+    if rate_name.lower() not in [r.lower() for r in rates.keys()]:
         # Check for remove command on showcase image
         if rate_name.lower() in ["remove", "clear"]:
             await portfolio_service.update_rate_card_settings(user_id, {"image": None})

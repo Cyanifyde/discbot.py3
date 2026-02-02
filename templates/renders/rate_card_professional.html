@@ -58,6 +58,15 @@
             padding: 30px;
             background: #f9fafb;
             border: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        .service-thumbnail {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 15px;
         }
         .service-name {
             font-size: 14px;
@@ -126,11 +135,14 @@
 
         <div class="services-section">
             <div class="services-grid">
-                {% for rate_name, rate_price in rates.items() %}
+                {% for rate_name, rate_data in rates.items() %}
                 <div class="service-card">
+                    {% if rate_data.image %}
+                    <img src="{{ rate_data.image }}" alt="{{ rate_name }}" class="service-thumbnail">
+                    {% endif %}
                     <div class="service-name">{{ rate_name }}</div>
-                    <div class="service-price">{{ rate_price }}</div>
-                    <div class="service-note">Starting price</div>
+                    <div class="service-price">{{ rate_data.price }}</div>
+                    <div class="service-note">{{ rate_data.description if rate_data.description else "Starting price" }}</div>
                 </div>
                 {% endfor %}
             </div>

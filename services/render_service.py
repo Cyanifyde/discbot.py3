@@ -117,8 +117,15 @@ class RenderService:
             template_obj = self.env.get_template("rate_card_minimal.html")
 
         html = template_obj.render(profile=profile, rates=rates)
-        # Dynamic height: base 250px + 50px per rate item + 220px if image
-        height = 250 + (len(rates) * 50)
+        # Dynamic height: base 250px + height per rate item + 220px if showcase image
+        # Rate items with images get 70px, without get 50px
+        rate_height = 0
+        for rate_data in rates.values():
+            if isinstance(rate_data, dict) and rate_data.get("image"):
+                rate_height += 70
+            else:
+                rate_height += 50
+        height = 250 + rate_height
         if profile.get("image"):
             height += 220
         return await self._html_to_jpg(html, width=540, height=height)

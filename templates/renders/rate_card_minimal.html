@@ -53,19 +53,40 @@
             align-items: center;
             padding: 14px 0;
             border-bottom: 1px solid #f3f4f6;
+            gap: 12px;
         }
         .rate-item:last-child {
             border-bottom: none;
+        }
+        .rate-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+        .rate-thumbnail {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+            flex-shrink: 0;
         }
         .rate-name {
             font-size: 15px;
             font-weight: 500;
             color: #374151;
         }
+        .rate-description {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
         .rate-price {
             font-size: 18px;
             font-weight: 700;
             color: #6366f1;
+            flex-shrink: 0;
         }
         .footer {
             text-align: center;
@@ -107,10 +128,20 @@
         </div>
 
         <div class="rates-list">
-            {% for rate_name, rate_price in rates.items() %}
+            {% for rate_name, rate_data in rates.items() %}
             <div class="rate-item">
-                <span class="rate-name">{{ rate_name }}</span>
-                <span class="rate-price">{{ rate_price }}</span>
+                <div class="rate-info">
+                    {% if rate_data.image %}
+                    <img src="{{ rate_data.image }}" alt="{{ rate_name }}" class="rate-thumbnail">
+                    {% endif %}
+                    <div>
+                        <div class="rate-name">{{ rate_name }}</div>
+                        {% if rate_data.description %}
+                        <div class="rate-description">{{ rate_data.description }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <span class="rate-price">{{ rate_data.price }}</span>
             </div>
             {% endfor %}
         </div>
