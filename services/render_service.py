@@ -118,13 +118,19 @@ class RenderService:
 
         html = template_obj.render(profile=profile, rates=rates)
 
-        # WeasyPrint doesn't reliably "auto-fit" page height; if we don't give a
-        # target height, the PDF->image conversion can include a lot of empty
-        # background. Use a conservative dynamic height instead.
-        height = 260 + (len(rates) * 70)
+        # Calculate height based on content:
+        # - Base: 200px (header ~80, footer ~80, body padding ~40)
+        # - Per rate: 55px without image, 75px with image
+        # - Showcase image: +220px
+        rate_count = len(rates)
+        has_rate_images = any(
+            isinstance(r, dict) and r.get("image") for r in rates.values()
+        )
+        height = 200 + (rate_count * (75 if has_rate_images else 55))
         if profile.get("image"):
-            height += 240
-        height = max(520, min(height, 1800))
+            height += 220
+        # Clamp to reasonable bounds
+        height = max(320, min(height, 1600))
         return await self._html_to_jpg(html, width=540, height=height)
 
     async def render_contract(
