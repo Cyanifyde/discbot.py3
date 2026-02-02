@@ -29,7 +29,7 @@ RESULTS_PER_PAGE = 5
 RESULT_BATCH_SIZE = 20
 SCAN_CHUNK_MESSAGES = 200
 MAX_MESSAGES_SCANNED_TOTAL = 50000
-EMBED_IMAGE_MAX = 384
+EMBED_THUMB_MAX = 384
 
 
 @dataclass
@@ -401,11 +401,13 @@ class _ArtSearchView(discord.ui.View):
                 color=discord.Color.blurple(),
                 timestamp=created_at,
             )
-            e.set_image(
+            # Discord renders `embed.image` large regardless of the image's actual resolution.
+            # Using thumbnails keeps all results visible without taking over the screen.
+            e.set_thumbnail(
                 url=_scaled_image_url(
                     hit.attachment_url,
-                    width=EMBED_IMAGE_MAX,
-                    height=EMBED_IMAGE_MAX,
+                    width=EMBED_THUMB_MAX,
+                    height=EMBED_THUMB_MAX,
                 )
             )
             embeds.append(e)
