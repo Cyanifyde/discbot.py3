@@ -158,6 +158,10 @@ class HelpSystem:
         if module_help is None:
             return None
         return module_help.to_detailed_embed()
+
+    def get_module_help(self, name: str) -> Optional[discord.Embed]:
+        """Backward-compatible wrapper for module help."""
+        return self.get_module_embed(name)
     
     def get_module_names(self) -> list[str]:
         """Get list of registered module names in order."""

@@ -27,6 +27,9 @@ except ImportError:
 try:
     from weasyprint import HTML
     HAS_WEASYPRINT = True
+    # Suppress WeasyPrint's verbose logging
+    logging.getLogger("weasyprint").setLevel(logging.WARNING)
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
 except ImportError:
     HAS_WEASYPRINT = False
 
@@ -202,27 +205,30 @@ class RenderService:
             html_doc = HTML(string=html)
             pdf_bytes = html_doc.write_pdf()
 
-            if pdf_bytes and HAS_PDF2IMAGE:
+            if not HAS_PDF2IMAGE:
+                logger.error("pdf2image not available. Install with: pip install pdf2image")
+                logger.error("Also requires poppler: https://github.com/oschwartz10612/poppler-windows/releases")
+                return self._render_placeholder(width, height)
+
+            if pdf_bytes:
                 # Convert PDF to image using pdf2image (requires poppler)
-                images = convert_from_bytes(pdf_bytes, dpi=150)
-                if images:
-                    img = images[0].convert("RGB")
-                    out = io.BytesIO()
-                    img.save(out, format="JPEG", quality=95)
-                    out.seek(0)
-                    return out.getvalue()
-            elif pdf_bytes and HAS_PILLOW:
-                # Fallback: try to open PDF directly with Pillow (unlikely to work)
                 try:
-                    img = Image.open(io.BytesIO(pdf_bytes)).convert("RGB")
-                    out = io.BytesIO()
-                    img.save(out, format="JPEG", quality=95)
-                    out.seek(0)
-                    return out.getvalue()
-                except Exception:
-                    pass
+                    images = convert_from_bytes(pdf_bytes, dpi=150)
+                    if images:
+                        img = images[0].convert("RGB")
+                        out = io.BytesIO()
+                        img.save(out, format="JPEG", quality=95)
+                        out.seek(0)
+                        return out.getvalue()
+                except Exception as pdf_error:
+                    logger.error("PDF to image conversion failed: %s", pdf_error)
+                    logger.error("Ensure poppler is installed and in PATH")
+                    logger.error("Windows: Download from https://github.com/oschwartz10612/poppler-windows/releases")
+                    logger.error("Linux: apt-get install poppler-utils")
+                    logger.error("macOS: brew install poppler")
+                    return self._render_placeholder(width, height)
         except Exception as e:
-            logger.warning("WeasyPrint rendering failed: %s", e)
+            logger.error("WeasyPrint rendering failed: %s", e)
 
         # Fallback to placeholder if rendering fails
         return self._render_placeholder(width, height)

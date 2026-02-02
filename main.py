@@ -33,6 +33,13 @@ logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 logging.getLogger("discord").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 logging.getLogger("asyncio").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 
+# Suppress verbose third-party library logs unless LOG_LEVEL is DEBUG
+if LOG_LEVEL.upper() != "DEBUG":
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
+    logging.getLogger("weasyprint").setLevel(logging.WARNING)
+    logging.getLogger("pdf2image").setLevel(logging.WARNING)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
+
 # Debug: show if .env was found
 if not env_path.exists():
     logger.warning(".env file not found at %s", env_path)
