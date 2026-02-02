@@ -329,6 +329,7 @@ class _ArtSearchView(discord.ui.View):
         self.scanned_messages_total = 0
         self.truncated = False  # scan limit reached
         self.loading = False
+        self.rate_limited_until: Optional[float] = None
         self._sync_buttons()
 
     def _page_count(self) -> int:
@@ -362,6 +363,21 @@ class _ArtSearchView(discord.ui.View):
         self.page_index = max(0, min(self.page_index, total_pages - 1))
 
         start, page_hits = self._page_hits()
+
+        if self.loading:
+            desc = "Searching…"
+            if self.rate_limited_until:
+                remaining = max(0.0, float(self.rate_limited_until) - time.monotonic())
+                if remaining >= 0.5:
+                    desc += f"\nRate limited — waiting ~{int(math.ceil(remaining))}s…"
+            embed = discord.Embed(
+                title=f"Art Search: {self.target_display_name}",
+                description=desc,
+                color=discord.Color.dark_grey(),
+                timestamp=discord.utils.utcnow(),
+            )
+            embed.set_footer(text="loading…")
+            return embed
 
         if page_hits:
             showing_from = start + 1
@@ -509,6 +525,31 @@ class _ArtSearchView(discord.ui.View):
                     found_in_chunk += 1
                     if len(self.hits) >= desired_loaded:
                         break
+            except discord.RateLimited as e:
+                retry_after = float(getattr(e, "retry_after", 1.0) or 1.0)
+                retry_after = max(0.5, min(retry_after, 60.0))
+                self.rate_limited_until = time.monotonic() + retry_after
+                try:
+                    await asyncio.sleep(retry_after)
+                finally:
+                    self.rate_limited_until = None
+                # Don't count rate-limit sleep against our scan time budget.
+                start += retry_after
+                continue
+            except discord.HTTPException as e:
+                if getattr(e, "status", None) == 429:
+                    retry_after = float(getattr(e, "retry_after", 1.0) or 1.0)
+                    retry_after = max(0.5, min(retry_after, 60.0))
+                    self.rate_limited_until = time.monotonic() + retry_after
+                    try:
+                        await asyncio.sleep(retry_after)
+                    finally:
+                        self.rate_limited_until = None
+                    start += retry_after
+                    continue
+                logger.warning("Art search scan failed in channel %s: %s", channel_id, e)
+                self.channel_done.add(channel_id)
+                continue
             except Exception as e:
                 logger.warning("Art search scan failed in channel %s: %s", channel_id, e)
                 self.channel_done.add(channel_id)
