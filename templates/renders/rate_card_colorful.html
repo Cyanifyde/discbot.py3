@@ -119,7 +119,7 @@
 <body>
     <div class="rate-card">
         <div class="header">
-            <h1>COMMISSIONS</h1>
+            <h1>{{ profile.title if profile.title else "COMMISSIONS" }}</h1>
             <p class="subtitle">{{ profile.bio[:60] if profile.bio else "Bringing your ideas to life with vibrant artwork!" }}</p>
         </div>
 
@@ -127,20 +127,14 @@
             {% for rate_name, rate_price in rates.items() %}
             <div class="rate-item">
                 <span class="rate-name">{{ rate_name }}</span>
-                <span class="rate-price">
-                    {% if rate_price is mapping %}
-                    ${{ rate_price.price }}
-                    {% else %}
-                    ${{ rate_price }}
-                    {% endif %}
-                </span>
+                <span class="rate-price">{{ rate_price }}</span>
             </div>
             {% endfor %}
         </div>
 
         <div class="footer">
             <p>Ready to create something amazing together!</p>
-            <span class="status-badge">Open for Commissions</span>
+            <span class="status-badge">{{ profile.status.upper() if profile.status else "OPEN" }} for Commissions</span>
         </div>
     </div>
 </body>

@@ -67,10 +67,6 @@ def setup_art_tools() -> None:
             ("prompt custom <subject> <action> <setting>", "Create custom prompt"),
             ("artdice <sides>", "Roll art-themed dice"),
             ("artdice challenge", "Roll for art challenge"),
-            ("ratecard [type]", "Generate rate card template (standard/character/background)"),
-            ("ratecard standard", "Standard commission rate card template"),
-            ("ratecard character", "Character commission rate card template"),
-            ("ratecard background", "Background/scene rate card template"),
         ],
     )
 
@@ -113,9 +109,6 @@ async def handle_art_tools_command(message: discord.Message, bot: discord.Client
         return True
     elif command == "artdice":
         await _handle_artdice(message, parts)
-        return True
-    elif command == "ratecard":
-        await _handle_ratecard(message, parts)
         return True
 
     return False
@@ -505,78 +498,5 @@ async def _handle_art_challenge(message: discord.Message) -> None:
         value=restriction,
         inline=False,
     )
-
-    await message.reply(embed=embed)
-
-
-# ─── Rate Card Generator ──────────────────────────────────────────────────────
-
-
-async def _handle_ratecard(message: discord.Message, parts: list[str]) -> None:
-    """Handle rate card generation."""
-    card_type = "standard"
-    if len(parts) >= 2:
-        card_type = parts[1].lower()
-
-    templates = {
-        "standard": {
-            "title": "Commission Rate Card",
-            "items": [
-                ("Sketch", "$X"),
-                ("Lineart", "$Y"),
-                ("Flat Colors", "$Z"),
-                ("Full Render", "$W"),
-            ],
-        },
-        "character": {
-            "title": "Character Commission Rates",
-            "items": [
-                ("Headshot", "$X"),
-                ("Bust", "$Y"),
-                ("Half Body", "$Z"),
-                ("Full Body", "$W"),
-            ],
-        },
-        "background": {
-            "title": "Background & Scene Rates",
-            "items": [
-                ("Simple Background", "$X"),
-                ("Detailed Background", "$Y"),
-                ("Full Scene", "$Z"),
-            ],
-        },
-    }
-
-    if card_type not in templates:
-        card_type = "standard"
-
-    template = templates[card_type]
-
-    embed = discord.Embed(
-        title=f" {template['title']} Template",
-        description="Fill in your prices!",
-        color=discord.Color.green(),
-        timestamp=discord.utils.utcnow(),
-    )
-
-    for item, price in template["items"]:
-        embed.add_field(
-            name=item,
-            value=price,
-            inline=True,
-        )
-
-    embed.add_field(
-        name=" Tip",
-        value="Replace the placeholder prices with your actual rates.\n"
-              "Consider adding:\n"
-              "• Additional character fees\n"
-              "• Commercial use pricing\n"
-              "• Rush order fees\n"
-              "• Revision policies",
-        inline=False,
-    )
-
-    embed.set_footer(text="Use 'ratecard standard', 'ratecard character', or 'ratecard background'")
 
     await message.reply(embed=embed)

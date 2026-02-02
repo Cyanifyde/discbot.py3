@@ -120,8 +120,8 @@
 <body>
     <div class="rate-card">
         <div class="header">
-            <h1>Studio</h1>
-            <p class="subtitle">Digital Art Services</p>
+            <h1>{{ profile.title if profile.title else "Studio" }}</h1>
+            <p class="subtitle">{{ profile.bio[:40] if profile.bio else "Digital Art Services" }}</p>
         </div>
 
         <div class="services-section">
@@ -129,13 +129,7 @@
                 {% for rate_name, rate_price in rates.items() %}
                 <div class="service-card">
                     <div class="service-name">{{ rate_name }}</div>
-                    <div class="service-price">
-                        {% if rate_price is mapping %}
-                        ${{ rate_price.price }}
-                        {% else %}
-                        ${{ rate_price }}
-                        {% endif %}
-                    </div>
+                    <div class="service-price">{{ rate_price }}</div>
                     <div class="service-note">Starting price</div>
                 </div>
                 {% endfor %}
@@ -145,8 +139,8 @@
         <div class="info-section">
             <div class="info-grid">
                 <div class="info-item">
-                    <div class="info-label">Turnaround</div>
-                    <div class="info-value">2-4 Weeks</div>
+                    <div class="info-label">Status</div>
+                    <div class="info-value">{{ profile.status.upper() if profile.status else "OPEN" }}</div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Revisions</div>

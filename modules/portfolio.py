@@ -81,10 +81,19 @@ async def handle_portfolio_command(message: discord.Message, bot: discord.Client
     content = message.content.strip()
     parts = content.split(maxsplit=2)
 
-    if len(parts) < 2:
+    if len(parts) < 1:
         return False
 
     command = parts[0].lower()
+
+    # Handle ratecard command separately
+    if command == "ratecard":
+        await _handle_ratecard_command(message, parts)
+        return True
+
+    if len(parts) < 2:
+        return False
+
     subcommand = parts[1].lower()
 
     if command != "portfolio":
@@ -547,3 +556,221 @@ async def _handle_help(message: discord.Message) -> None:
         await message.reply(embed=help_text)
     else:
         await message.reply(" Help information not available.")
+
+
+# ─── Rate Card Commands ───────────────────────────────────────────────────────
+
+
+async def _handle_ratecard_command(message: discord.Message, parts: list[str]) -> None:
+    """Route ratecard subcommands."""
+    if len(parts) < 2:
+        # No subcommand, generate rate card image
+        await _generate_ratecard(message)
+        return
+
+    subcommand = parts[1].lower()
+
+    if subcommand == "set":
+        await _handle_ratecard_set(message, parts)
+    elif subcommand == "remove":
+        await _handle_ratecard_remove(message, parts)
+    elif subcommand == "list":
+        await _handle_ratecard_list(message)
+    elif subcommand == "title":
+        await _handle_ratecard_setting(message, parts, "title")
+    elif subcommand == "subtitle":
+        await _handle_ratecard_setting(message, parts, "subtitle")
+    elif subcommand == "status":
+        await _handle_ratecard_status(message, parts)
+    elif subcommand == "currency":
+        await _handle_ratecard_setting(message, parts, "currency")
+    elif subcommand == "template":
+        await _handle_ratecard_template(message, parts)
+    elif subcommand == "help":
+        help_text = help_system.get_module_help("Portfolio")
+        if help_text:
+            await message.reply(embed=help_text)
+    else:
+        # Unknown subcommand, generate rate card
+        await _generate_ratecard(message, subcommand)
+
+
+async def _generate_ratecard(message: discord.Message, template: str = "minimal") -> None:
+    """Generate and send rate card image."""
+    user_id = message.author.id
+
+    # Get rates and settings
+    rates = await portfolio_service.get_rates(user_id)
+    settings = await portfolio_service.get_rate_card_settings(user_id)
+
+    if not rates:
+        await message.reply(
+            "You haven't set any rates yet!\n"
+            "Use `ratecard set <name> <price>` to add rates.\n"
+            "Example: `ratecard set Sketch 25`"
+        )
+        return
+
+    # Validate template
+    valid_templates = ["minimal", "colorful", "detailed", "professional"]
+    if template not in valid_templates:
+        template = settings.get("template", "minimal")
+
+    # Build profile dict for template
+    profile = {
+        "bio": settings.get("subtitle", "Quality digital artwork tailored to your vision"),
+        "title": settings.get("title", "Commission Rates"),
+        "status": settings.get("status", "open"),
+        "currency": settings.get("currency", "$"),
+    }
+
+    # Format rates for template (name -> price)
+    formatted_rates = {}
+    currency = settings.get("currency", "$")
+    for name, data in rates.items():
+        if isinstance(data, dict):
+            formatted_rates[name] = f"{currency}{data.get('price', 0)}"
+        else:
+            formatted_rates[name] = f"{currency}{data}"
+
+    try:
+        image_bytes = await render_service.render_rate_card(
+            profile=profile,
+            rates=formatted_rates,
+            template=template,
+        )
+
+        file = discord.File(fp=io.BytesIO(image_bytes), filename=f"ratecard_{template}.jpg")
+        await message.reply(file=file)
+    except Exception as e:
+        logger.error("Failed to render rate card: %s", e)
+        # Fallback to embed
+        await _handle_ratecard_list(message)
+
+
+async def _handle_ratecard_set(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'ratecard set <name> <price> [description]'."""
+    if len(parts) < 3:
+        await message.reply("Usage: `ratecard set <name> <price> [description]`\nExample: `ratecard set Sketch 25 Quick sketch commission`")
+        return
+
+    args = parts[2].split(maxsplit=2)
+    if len(args) < 2:
+        await message.reply("Usage: `ratecard set <name> <price> [description]`")
+        return
+
+    name = args[0]
+    try:
+        price = float(args[1].replace("$", "").replace(",", ""))
+    except ValueError:
+        await message.reply("Invalid price. Please enter a number (e.g., 25 or 25.50)")
+        return
+
+    description = args[2] if len(args) > 2 else ""
+
+    await portfolio_service.set_rate(message.author.id, name, price, description)
+    settings = await portfolio_service.get_rate_card_settings(message.author.id)
+    currency = settings.get("currency", "$")
+
+    await message.reply(f"Rate set: **{name}** - {currency}{price:.2f}")
+
+
+async def _handle_ratecard_remove(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'ratecard remove <name>'."""
+    if len(parts) < 3:
+        await message.reply("Usage: `ratecard remove <name>`")
+        return
+
+    name = parts[2].strip()
+    success = await portfolio_service.remove_rate(message.author.id, name)
+
+    if success:
+        await message.reply(f"Removed rate: **{name}**")
+    else:
+        await message.reply(f"Rate not found: **{name}**")
+
+
+async def _handle_ratecard_list(message: discord.Message) -> None:
+    """Handle 'ratecard list' - show all rates."""
+    user_id = message.author.id
+
+    rates = await portfolio_service.get_rates(user_id)
+    settings = await portfolio_service.get_rate_card_settings(user_id)
+
+    if not rates:
+        await message.reply(
+            "No rates set. Use `ratecard set <name> <price>` to add rates.\n"
+            "Example: `ratecard set Sketch 25`"
+        )
+        return
+
+    currency = settings.get("currency", "$")
+    title = settings.get("title", "Commission Rates")
+    status = settings.get("status", "open")
+
+    embed = discord.Embed(
+        title=title,
+        description=f"Status: **{status.upper()}**",
+        color=discord.Color.green() if status == "open" else discord.Color.red(),
+        timestamp=discord.utils.utcnow(),
+    )
+
+    for name, data in rates.items():
+        if isinstance(data, dict):
+            price = data.get("price", 0)
+            desc = data.get("description", "")
+            value = f"{currency}{price:.2f}"
+            if desc:
+                value += f"\n*{desc}*"
+        else:
+            value = f"{currency}{data:.2f}"
+
+        embed.add_field(name=name, value=value, inline=True)
+
+    embed.set_footer(text="Use 'ratecard' to generate an image")
+    await message.reply(embed=embed)
+
+
+async def _handle_ratecard_setting(message: discord.Message, parts: list[str], setting: str) -> None:
+    """Handle ratecard title/subtitle/currency settings."""
+    if len(parts) < 3:
+        await message.reply(f"Usage: `ratecard {setting} <value>`")
+        return
+
+    value = parts[2].strip()
+
+    await portfolio_service.update_rate_card_settings(message.author.id, {setting: value})
+    await message.reply(f"Rate card {setting} set to: **{value}**")
+
+
+async def _handle_ratecard_status(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'ratecard status <open|closed>'."""
+    if len(parts) < 3:
+        await message.reply("Usage: `ratecard status <open|closed>`")
+        return
+
+    status = parts[2].strip().lower()
+    if status not in ["open", "closed"]:
+        await message.reply("Status must be `open` or `closed`")
+        return
+
+    await portfolio_service.update_rate_card_settings(message.author.id, {"status": status})
+    await message.reply(f"Commission status set to: **{status.upper()}**")
+
+
+async def _handle_ratecard_template(message: discord.Message, parts: list[str]) -> None:
+    """Handle 'ratecard template <style>'."""
+    valid_templates = ["minimal", "colorful", "detailed", "professional"]
+
+    if len(parts) < 3:
+        await message.reply(f"Usage: `ratecard template <style>`\nStyles: {', '.join(valid_templates)}")
+        return
+
+    template = parts[2].strip().lower()
+    if template not in valid_templates:
+        await message.reply(f"Invalid template. Choose from: {', '.join(valid_templates)}")
+        return
+
+    await portfolio_service.update_rate_card_settings(message.author.id, {"template": template})
+    await message.reply(f"Default template set to: **{template}**")
+
