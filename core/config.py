@@ -6,13 +6,29 @@ Handles loading, validating, and normalizing guild-specific configuration files.
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any, Dict, List, Tuple
 
 from .io_utils import read_json, write_json_atomic
 from .paths import BASE_DIR
 from .utils import is_int, is_safe_relative_path, is_sha256_hex, is_valid_id
 
-OWNER_ID = 701780009777496094
+_DEFAULT_OWNER_ID = 701780009777496094
+
+
+def _load_owner_id() -> int:
+    raw = os.getenv("OWNER_ID")
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if raw.isdigit():
+            try:
+                return int(raw)
+            except Exception:
+                pass
+    return _DEFAULT_OWNER_ID
+
+
+OWNER_ID = _load_owner_id()
 
 DEFAULT_CONFIG_PATH = BASE_DIR / "config.default.json"
 GUILD_CONFIG_DIR = BASE_DIR / "config.guild"

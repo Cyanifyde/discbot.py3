@@ -21,7 +21,6 @@ from core.config import GUILD_CONFIG_DIR
 from core.io_utils import read_json, write_json_atomic
 from core.paths import resolve_repo_path
 from core.utils import is_safe_relative_path, sanitize_text
-from core.modules_config import module_is_enabled
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled, can_use_module
 from classes.response_handlers import ResponderInput
@@ -671,8 +670,7 @@ async def handle_auto_responder(message: discord.Message) -> bool:
         await _cmd_help(message)
         return True
     
-    enabled = await module_is_enabled(message.guild.id, MODULE_NAME)
-    if not enabled:
+    if not await is_module_enabled(message.guild.id, MODULE_NAME):
         return False
     content = message.content or ""
     if not content.strip():

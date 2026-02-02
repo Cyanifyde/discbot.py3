@@ -106,6 +106,14 @@ async def handle_verify_button(interaction: discord.Interaction) -> bool:
             ephemeral=True,
         )
         return True
+
+    if not await is_module_enabled(interaction.guild.id, MODULE_NAME):
+        await interaction.response.send_message(
+            "Verification module is disabled in this server.\n"
+            "An administrator can enable it with `modules enable verification`",
+            ephemeral=True,
+        )
+        return True
     
     member = interaction.guild.get_member(interaction.user.id)
     if not member:

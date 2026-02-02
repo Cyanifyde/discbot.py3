@@ -11,13 +11,14 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-
-from bot import DiscBot
 from discord.errors import PrivilegedIntentsRequired
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent / ".env"
 load_dotenv(env_path)
+
+# Import bot after .env is loaded so modules can read env vars at import time.
+from bot import DiscBot
 
 # Get configuration from environment
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("BOT_TOKEN")
@@ -39,10 +40,7 @@ async def main() -> None:
     if not token:
         logger.error("Missing bot token. Set DISCORD_BOT_TOKEN in .env or environment.")
         return
-    
-    # Show token info for debugging (first 10 chars only for security)
-    logger.info("Using token starting with: %s...", token[:10] if len(token) > 10 else "***")
-    
+
     bot = DiscBot()
     try:
         await bot.start(token)

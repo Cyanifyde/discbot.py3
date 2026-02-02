@@ -30,7 +30,7 @@ AVAILABLE_COMMANDS = {
     "scanner": ["scanner enable", "scanner disable", "scanner status", "scanner help"],
     "inactivity": ["inactivity enable", "inactivity disable", "inactivity status", "inactivity help"],
     "verification": ["addverification", "removeverification"],
-    "autoresponder": ["addresponse", "removeresponse"],
+    "autoresponder": ["addresponse", "listresponses", "removeresponse"],
 }
 
 

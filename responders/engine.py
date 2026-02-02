@@ -14,7 +14,7 @@ from typing import Any, Optional
 import discord
 
 from classes.response_handlers import ResponderInput
-from core.modules_config import module_is_enabled
+from core.permissions import is_module_enabled
 
 from .config_loader import (
     TriggerSpec,
@@ -225,8 +225,7 @@ async def handle_auto_responder(message: discord.Message) -> bool:
         return False
     
     # Check if module is enabled
-    enabled = await module_is_enabled(message.guild.id, MODULE_NAME)
-    if not enabled:
+    if not await is_module_enabled(message.guild.id, MODULE_NAME):
         return False
     
     content = message.content or ""

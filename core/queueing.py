@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import aiohttp
 import discord
 
+from .permissions import is_module_enabled
 from .io_utils import (
     append_text,
     read_json,
@@ -232,6 +233,8 @@ class QueueProcessor:
     async def _process_job(self, job: Dict[str, Any]) -> None:
         guild_id = safe_int(job.get("guild_id"), default=0)
         if not guild_id or guild_id != self.guild_id:
+            return
+        if not await is_module_enabled(self.guild_id, "scanner"):
             return
         channel_id = safe_int(job.get("channel_id"), default=0)
         message_id = safe_int(job.get("message_id"), default=0)

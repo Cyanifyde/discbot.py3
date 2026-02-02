@@ -1,6 +1,6 @@
 # Discord Bot
 
-A modular Discord bot with auto-responder, profile management, and content moderation features.
+A modular Discord bot with auto-responder, verification, and moderation utilities (scanner + inactivity enforcement).
 
 ## Quick Start
 
@@ -15,7 +15,12 @@ A modular Discord bot with auto-responder, profile management, and content moder
    # Edit .env with your bot token
    ```
 
-3. **Run the bot:**
+3. **Enable privileged intents (Discord Developer Portal):**
+   - Bot → **Privileged Gateway Intents**
+     - Enable **SERVER MEMBERS INTENT** (members)
+     - Enable **MESSAGE CONTENT INTENT** (message content)
+
+4. **Run the bot:**
    ```bash
    python main.py
    ```
@@ -33,6 +38,8 @@ discbot/
 │   └── guild_state.py      # Per-guild state management
 │
 ├── services/               # Business logic (Discord-independent)
+│   ├── scanner.py          # Scanner commands + persisted state
+│   ├── inactivity.py       # Inactivity commands + persisted state
 │   ├── enforcement.py      # Role removal, unverified assignment
 │   ├── job_factory.py      # Create scan jobs from messages
 │   └── hash_checker.py     # Image hash matching
@@ -58,8 +65,10 @@ discbot/
 │   └── reminder.py         # Reminder functionality
 │
 ├── modules/                # Optional features
-│   ├── auto_responder.py   # Compat layer → responders/
-│   └── dm_sender.py        # DM sending logic
+│   ├── auto_responder.py   # Auto-responder (commands + runtime)
+│   ├── verification.py     # Verification buttons (add/remove/restore)
+│   ├── modules_command.py  # Per-guild module enable + permissions
+│   └── dm_sender.py        # Owner-only DM send utility
 │
 └── config.guild/           # Per-guild configurations
     └── template.*.json     # Config templates
@@ -95,12 +104,15 @@ discbot/
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `DISCORD_BOT_TOKEN` | Your bot token | Yes |
-| `OWNER_ID` | Bot owner's Discord ID | No |
+| `OWNER_ID` | Bot owner's Discord ID (used for owner-only DM commands) | No |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, etc.) | No |
 
 ### Guild Configuration
 
-Each guild has a config file in `config.guild/{guild_id}.json`:
+Each guild has a config file in `config.guild/{guild_id}.json`.
+
+- New guilds: config is auto-created when the bot joins the server.
+- Existing guilds: if a config is missing, you can create it by copying `config.default.json` and setting `guild_id`.
 
 ```json
 {
@@ -111,6 +123,25 @@ Each guild has a config file in `config.guild/{guild_id}.json`:
   "ignored_channel_ids": []
 }
 ```
+
+### Module Management + Help
+
+- In any server channel: mention the bot and say `help` (example: `@YourBot help`) to see all registered modules/commands.
+- Admins can control modules and permissions per guild with:
+  - `modules list`
+  - `modules enable <module>` / `modules disable <module>`
+  - `modules allow <module|command> <role_id>` / `modules deny <module|command> <role_id>`
+
+Available modules: `scanner`, `inactivity`, `verification`, `autoresponder`.
+
+### Auto-Responder Config
+
+Auto-responder triggers are stored per guild in `config.guild/{guild_id}.autoresponder.json`.
+User-added triggers can be managed via text commands:
+
+- `addresponse "trigger" "response"`
+- `listresponses`
+- `removeresponse "trigger"`
 
 ## Adding New Features
 

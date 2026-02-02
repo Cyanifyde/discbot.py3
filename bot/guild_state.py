@@ -156,6 +156,7 @@ class GuildState:
 
     async def _periodic_enforcement(self) -> None:
         """Periodically run inactivity enforcement if enabled."""
+        from core.permissions import is_module_enabled
         from services.inactivity import is_enabled, run_enforcement_step, increment_stats
         
         interval = float(self.config.get(K.ENFORCEMENT_INTERVAL_SECONDS, 21600))
@@ -164,6 +165,8 @@ class GuildState:
             await asyncio.sleep(interval)
             
             try:
+                if not await is_module_enabled(self.guild_id, "inactivity"):
+                    continue
                 if not await is_enabled(self.guild_id):
                     continue
                 
