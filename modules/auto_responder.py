@@ -644,7 +644,6 @@ async def handle_auto_responder(message: discord.Message) -> bool:
         help_system.register_module(
             name="Auto-Responder",
             description="Automatic responses to configured triggers with custom handlers, filters, and delivery modes.",
-            help_command="@bot help",
             commands=[
                 ("addresponse \"trigger\" \"response\"", "Add a simple text response"),
                 ("addresponse \"trigger\" \"\" --embed title=\"Title\" description=\"Desc\" color=#hex", "Add an embed response"),
