@@ -363,46 +363,22 @@ class _ArtSearchView(discord.ui.View):
 
         start, page_hits = self._page_hits()
 
-        desc_lines: list[str] = []
         if page_hits:
             showing_from = start + 1
             showing_to = start + len(page_hits)
-            desc_lines.append(f"Results **{showing_from}–{showing_to}** of **{len(self.hits)}**.")
+            desc = f"Results **{showing_from}–{showing_to}** of **{len(self.hits)}**."
         else:
-            desc_lines.append("No results on this page.")
+            desc = "No results on this page."
 
         if not self._scan_complete() and not self.truncated:
-            desc_lines.append("More may exist — use **Forward ▶** to keep scanning.")
-
-        if page_hits and not self.loading:
-            desc_lines.append("")
-            for idx, hit in enumerate(page_hits, start=start + 1):
-                link = _message_link(self.guild_id, hit.channel_id, hit.message_id)
-                created_at_ts: Optional[int] = None
-                try:
-                    created_at_ts = int(datetime.fromisoformat(hit.created_at_iso).timestamp())
-                except Exception:
-                    created_at_ts = None
-
-                filename = _ellipsize(_safe_inline_code(hit.filename), 48) or "image"
-                ts_part = f" • <t:{created_at_ts}:R>" if created_at_ts else ""
-                desc_lines.append(f"**{idx}.** <#{hit.channel_id}> • [jump]({link}) • `{filename}`{ts_part}")
-
-        desc = "\n".join(desc_lines)
+            desc += "\nMore may exist — use **Forward ▶** to keep scanning."
+        if not self.loading:
+            desc += "\n(See image embeds above.)"
         embed = discord.Embed(
             title=f"Art Search: {self.target_display_name}",
             description=desc,
             color=discord.Color.dark_grey() if self.loading else discord.Color.blurple(),
         )
-
-        if page_hits and not self.loading:
-            embed.set_thumbnail(
-                url=_scaled_image_url(
-                    page_hits[0].attachment_url,
-                    width=EMBED_THUMB_MAX,
-                    height=EMBED_THUMB_MAX,
-                )
-            )
 
         footer = f"Page {self.page_index + 1}/{total_pages} • {len(self.hits)} results"
         if self.truncated:
@@ -415,7 +391,41 @@ class _ArtSearchView(discord.ui.View):
         return embed
 
     def build_page_embeds(self) -> list[discord.Embed]:
-        return [self.build_embed()]
+        summary = self.build_embed()
+        if self.loading:
+            return [summary]
+
+        start, page_hits = self._page_hits()
+        embeds: list[discord.Embed] = []
+        for idx, hit in enumerate(page_hits, start=start + 1):
+            link = _message_link(self.guild_id, hit.channel_id, hit.message_id)
+            created_at = None
+            try:
+                created_at = datetime.fromisoformat(hit.created_at_iso)
+            except Exception:
+                created_at = None
+
+            filename = _ellipsize(_safe_inline_code(hit.filename), 80) or "image"
+            e = discord.Embed(
+                title=f"#{idx} — {filename}",
+                description=f"<#{hit.channel_id}> • [jump]({link})",
+                color=discord.Color.blurple(),
+                timestamp=created_at,
+            )
+            # Discord renders `embed.image` large regardless of the image's actual resolution.
+            # Using thumbnails keeps all results visible without taking over the screen.
+            e.set_thumbnail(
+                url=_scaled_image_url(
+                    hit.attachment_url,
+                    width=EMBED_THUMB_MAX,
+                    height=EMBED_THUMB_MAX,
+                )
+            )
+            embeds.append(e)
+
+        # Put the summary last so the image embeds are "above" it in Discord's render order.
+        embeds.append(summary)
+        return embeds
 
     async def bootstrap(self, guild: discord.Guild, *, desired_loaded: int, time_budget_seconds: float) -> None:
         await self._scan_until(
