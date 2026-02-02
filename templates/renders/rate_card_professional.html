@@ -5,95 +5,99 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rate Card - Professional</title>
     <style>
+        @page {
+            size: 800px 900px;
+            margin: 0;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            margin: 0;
-            background: #1a1a1a;
-            padding: 40px;
+            background: #0f0f0f;
+            padding: 30px;
+            min-height: 100%;
         }
         .rate-card {
             background: #ffffff;
-            padding: 60px;
-            max-width: 800px;
+            max-width: 740px;
             margin: 0 auto;
-            box-shadow: 0 0 40px rgba(0,0,0,0.5);
         }
-        .logo-section {
+        .header {
             text-align: center;
-            margin-bottom: 50px;
-            padding-bottom: 30px;
-            border-bottom: 1px solid #e0e0e0;
+            padding: 50px 40px 40px;
+            border-bottom: 1px solid #e5e7eb;
         }
         h1 {
-            margin: 0;
-            font-size: 36px;
-            color: #1a1a1a;
+            font-size: 32px;
             font-weight: 300;
-            letter-spacing: 4px;
+            color: #1a1a1a;
+            letter-spacing: 6px;
             text-transform: uppercase;
+            margin-bottom: 10px;
         }
         .subtitle {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #666;
-            letter-spacing: 2px;
+            font-size: 12px;
+            color: #6b7280;
+            letter-spacing: 3px;
             text-transform: uppercase;
+        }
+        .services-section {
+            padding: 40px;
         }
         .services-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 25px;
-            margin-bottom: 40px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
         }
         .service-card {
-            background: #f8f8f8;
+            flex: 1;
+            min-width: 280px;
             padding: 30px;
-            border: 1px solid #e0e0e0;
-            transition: all 0.3s;
-        }
-        .service-card:hover {
-            background: #f0f0f0;
-            border-color: #1a1a1a;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
         }
         .service-name {
-            font-size: 18px;
+            font-size: 14px;
             font-weight: 600;
             color: #1a1a1a;
-            margin-bottom: 10px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
+            margin-bottom: 15px;
         }
         .service-price {
-            font-size: 32px;
+            font-size: 36px;
             font-weight: 300;
             color: #1a1a1a;
             font-family: 'Georgia', serif;
         }
-        .service-price-label {
-            font-size: 12px;
-            color: #999;
-            margin-top: 5px;
+        .service-note {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         .info-section {
             background: #1a1a1a;
             color: white;
             padding: 40px;
-            margin: 0 -60px -60px -60px;
         }
         .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 30px;
+            display: flex;
+            justify-content: space-around;
             text-align: center;
         }
         .info-item {
-            padding: 20px;
+            padding: 0 20px;
         }
         .info-label {
-            font-size: 11px;
+            font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 2px;
-            color: #999;
+            color: #6b7280;
             margin-bottom: 10px;
         }
         .info-value {
@@ -101,29 +105,41 @@
             color: white;
             font-weight: 500;
         }
+        .footer {
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer p {
+            font-size: 11px;
+            color: #9ca3af;
+            letter-spacing: 1px;
+        }
     </style>
 </head>
 <body>
     <div class="rate-card">
-        <div class="logo-section">
-            <h1>STUDIO</h1>
-            <div class="subtitle">Digital Art Services</div>
+        <div class="header">
+            <h1>Studio</h1>
+            <p class="subtitle">Digital Art Services</p>
         </div>
 
-        <div class="services-grid">
-            {% for rate_name, rate_price in rates.items() %}
-            <div class="service-card">
-                <div class="service-name">{{ rate_name }}</div>
-                <div class="service-price">
-                    {% if rate_price is mapping %}
-                    ${{ rate_price.price }}
-                    {% else %}
-                    ${{ rate_price }}
-                    {% endif %}
+        <div class="services-section">
+            <div class="services-grid">
+                {% for rate_name, rate_price in rates.items() %}
+                <div class="service-card">
+                    <div class="service-name">{{ rate_name }}</div>
+                    <div class="service-price">
+                        {% if rate_price is mapping %}
+                        ${{ rate_price.price }}
+                        {% else %}
+                        ${{ rate_price }}
+                        {% endif %}
+                    </div>
+                    <div class="service-note">Starting price</div>
                 </div>
-                <div class="service-price-label">Starting price</div>
+                {% endfor %}
             </div>
-            {% endfor %}
         </div>
 
         <div class="info-section">
@@ -141,6 +157,10 @@
                     <div class="info-value">50% Upfront</div>
                 </div>
             </div>
+        </div>
+
+        <div class="footer">
+            <p>Contact for custom quotes and availability</p>
         </div>
     </div>
 </body>

@@ -162,7 +162,7 @@ class RenderService:
         """
         if HAS_WEASYPRINT:
             try:
-                return self._render_with_weasyprint(html)
+                return self._render_with_weasyprint(html, width, height)
             except Exception as exc:
                 logger.warning("WeasyPrint render failed, using fallback: %s", exc)
 
@@ -186,32 +186,26 @@ class RenderService:
         buffer.seek(0)
         return buffer.getvalue()
 
-    def _render_with_weasyprint(self, html: str) -> bytes:
+    def _render_with_weasyprint(self, html: str, width: int = 800, height: int = 600) -> bytes:
         if not HAS_WEASYPRINT:
             raise RuntimeError("WeasyPrint not available")
 
-        # WeasyPrint supports PNG rendering via write_png in some versions.
-        # Fall back to PDF if PNG isn't available.
         doc = HTML(string=html)
-        if hasattr(doc, "write_png"):
-            png_bytes = doc.write_png()
-            img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-            out = io.BytesIO()
-            img.save(out, format="JPEG", quality=95)
-            out.seek(0)
-            return out.getvalue()
 
-        pdf_bytes = doc.write_pdf()
-        if not HAS_PILLOW:
-            return pdf_bytes
+        # WeasyPrint write_png returns bytes when target is None
         try:
-            img = Image.open(io.BytesIO(pdf_bytes)).convert("RGB")
-        except Exception:
-            return self._render_placeholder(800, 600)
-        out = io.BytesIO()
-        img.save(out, format="JPEG", quality=95)
-        out.seek(0)
-        return out.getvalue()
+            png_bytes = doc.write_png()
+            if png_bytes:
+                img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+                out = io.BytesIO()
+                img.save(out, format="JPEG", quality=95)
+                out.seek(0)
+                return out.getvalue()
+        except Exception as e:
+            logger.warning("WeasyPrint PNG rendering failed: %s", e)
+
+        # Fallback to placeholder if PNG rendering fails
+        return self._render_placeholder(width, height)
 
 
 

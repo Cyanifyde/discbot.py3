@@ -5,6 +5,7 @@ Provides commands for artists to manage their commission queues, waitlists, and 
 """
 from __future__ import annotations
 
+import io
 import logging
 from typing import Optional
 
@@ -715,7 +716,7 @@ async def _handle_invoice(message: discord.Message, parts: list[str], bot: disco
     # Render invoice
     try:
         invoice_bytes = await render_service.render_invoice(commission.to_dict(), profile)
-        file = discord.File(fp=invoice_bytes, filename=f"invoice_{commission.id[:8]}.jpg")
+        file = discord.File(fp=io.BytesIO(invoice_bytes), filename=f"invoice_{commission.id[:8]}.jpg")
         await message.reply(" Invoice generated:", file=file)
     except Exception as e:
         logger.error(f"Failed to render invoice: {e}")
@@ -756,7 +757,7 @@ async def _handle_contract(message: discord.Message, parts: list[str], bot: disc
     # Render contract
     try:
         contract_bytes = await render_service.render_contract(commission.to_dict(), terms)
-        file = discord.File(fp=contract_bytes, filename=f"contract_{commission.id[:8]}.jpg")
+        file = discord.File(fp=io.BytesIO(contract_bytes), filename=f"contract_{commission.id[:8]}.jpg")
         await message.reply(" Contract generated:", file=file)
     except Exception as e:
         logger.error(f"Failed to render contract: {e}")

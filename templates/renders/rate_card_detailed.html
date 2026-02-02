@@ -5,114 +5,128 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rate Card - Detailed</title>
     <style>
-        body {
-            font-family: 'Georgia', serif;
+        @page {
+            size: 700px 900px;
             margin: 0;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
             background: #2c3e50;
-            padding: 40px;
+            padding: 30px;
+            min-height: 100%;
         }
         .rate-card {
-            background: white;
-            padding: 50px;
-            max-width: 700px;
+            background: #ffffff;
+            padding: 45px;
+            max-width: 640px;
             margin: 0 auto;
-            border-radius: 0;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            border-top: 5px solid #2c3e50;
         }
         .header {
-            border-bottom: 4px double #2c3e50;
-            padding-bottom: 20px;
-            margin-bottom: 40px;
+            text-align: center;
+            padding-bottom: 30px;
+            margin-bottom: 35px;
+            border-bottom: 3px double #2c3e50;
         }
         h1 {
-            margin: 0 0 10px 0;
-            font-size: 42px;
+            font-size: 32px;
+            font-weight: 400;
             color: #2c3e50;
-            font-weight: normal;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
         }
         .tagline {
+            font-size: 15px;
             color: #7f8c8d;
-            font-size: 18px;
             font-style: italic;
         }
-        .rate-section {
+        .section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #95a5a6;
+            font-weight: bold;
+            margin-bottom: 20px;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+        .rates-list {
             margin-bottom: 35px;
         }
-        .rate-category {
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #95a5a6;
-            margin-bottom: 15px;
-            font-weight: bold;
-        }
         .rate-item {
-            padding: 20px;
-            background: #ecf0f1;
-            margin-bottom: 15px;
-            border-left: 5px solid #2c3e50;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #2c3e50;
         }
         .rate-details {
             flex: 1;
+            padding-right: 20px;
         }
         .rate-name {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
             color: #2c3e50;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
         }
         .rate-description {
-            font-size: 14px;
+            font-size: 13px;
             color: #7f8c8d;
             line-height: 1.5;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
         }
         .rate-price {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: bold;
-            color: #e74c3c;
+            color: #c0392b;
             white-space: nowrap;
-            margin-left: 20px;
         }
         .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #ecf0f1;
+            padding-top: 25px;
+            border-top: 1px solid #ecf0f1;
             text-align: center;
         }
-        .footer-text {
+        .terms {
+            font-size: 12px;
             color: #95a5a6;
-            font-size: 14px;
             line-height: 1.8;
+            margin-bottom: 15px;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
         }
-        .contact-info {
-            margin-top: 15px;
-            font-size: 14px;
+        .contact {
+            font-size: 13px;
             color: #7f8c8d;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
     <div class="rate-card">
         <div class="header">
-            <h1>COMMISSION RATES</h1>
-            <div class="tagline">{{ profile.bio[:80] if profile.bio else "Professional Digital Art Services" }}</div>
+            <h1>Commission Rates</h1>
+            <p class="tagline">{{ profile.bio[:80] if profile.bio else "Professional Digital Art Services" }}</p>
         </div>
 
-        <div class="rate-section">
-            <div class="rate-category">Standard Commissions</div>
+        <div class="section-label">Available Services</div>
+
+        <div class="rates-list">
             {% for rate_name, rate_info in rates.items() %}
             <div class="rate-item">
                 <div class="rate-details">
                     <div class="rate-name">{{ rate_name }}</div>
                     <div class="rate-description">
-                        {% if rate_info is mapping %}
+                        {% if rate_info is mapping and rate_info.description %}
                         {{ rate_info.description }}
                         {% else %}
-                        High-quality digital artwork with full commercial rights
+                        High-quality digital artwork crafted with care and attention to detail
                         {% endif %}
                     </div>
                 </div>
@@ -128,13 +142,13 @@
         </div>
 
         <div class="footer">
-            <div class="footer-text">
-                <strong>Terms:</strong> Payment upfront • Revisions included • 2-4 week turnaround<br>
+            <p class="terms">
+                <strong>Terms:</strong> Payment upfront | Revisions included | 2-4 week turnaround<br>
                 Custom quotes available for complex projects
-            </div>
-            <div class="contact-info">
-                {{ profile.contact_preference.replace('_', ' ').title() if profile.contact_preference else "DM for inquiries" }}
-            </div>
+            </p>
+            <p class="contact">
+                {{ profile.contact_preference.replace('_', ' ').title() if profile.contact_preference else "Send a DM to inquire about commissions" }}
+            </p>
         </div>
     </div>
 </body>

@@ -5,6 +5,7 @@ Provides color palettes, art prompts, dice rolls, and rate card generation.
 """
 from __future__ import annotations
 
+import io
 import logging
 import random
 from typing import List, Tuple
@@ -292,7 +293,7 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         await message.reply(" Failed to render palette.")
         return
 
-    file = discord.File(fp=image_bytes, filename="palette.jpg")
+    file = discord.File(fp=io.BytesIO(image_bytes), filename="palette.jpg")
     await message.reply(file=file)
 
 

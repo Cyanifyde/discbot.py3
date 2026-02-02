@@ -5,71 +5,116 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rate Card - Minimal</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        @page {
+            size: 600px 800px;
             margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 40px;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 30px;
+            min-height: 100%;
         }
         .rate-card {
-            background: white;
+            background: #ffffff;
             padding: 40px;
-            max-width: 600px;
+            max-width: 540px;
             margin: 0 auto;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-top: 5px solid #6366f1;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 35px;
+            padding-bottom: 25px;
+            border-bottom: 1px solid #e5e7eb;
         }
         h1 {
-            margin: 0 0 10px 0;
-            font-size: 36px;
-            color: #333;
+            font-size: 28px;
+            font-weight: 700;
+            color: #1f2937;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
         }
         .subtitle {
-            color: #666;
-            font-size: 16px;
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.5;
+        }
+        .rates-list {
             margin-bottom: 30px;
         }
         .rate-item {
-            padding: 20px 0;
-            border-bottom: 1px solid #eee;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 18px 0;
+            border-bottom: 1px solid #f3f4f6;
         }
         .rate-item:last-child {
             border-bottom: none;
         }
         .rate-name {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 500;
+            color: #374151;
         }
         .rate-price {
-            font-size: 24px;
-            font-weight: bold;
-            color: #667eea;
+            font-size: 20px;
+            font-weight: 700;
+            color: #6366f1;
         }
         .footer {
-            margin-top: 30px;
             text-align: center;
-            color: #999;
-            font-size: 14px;
+            padding-top: 25px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer p {
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .cta {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 25px;
+            background: #6366f1;
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
     </style>
 </head>
 <body>
     <div class="rate-card">
-        <h1>Commission Rates</h1>
-        <div class="subtitle">{{ profile.bio[:100] if profile.bio else "Artist" }}</div>
-
-        {% for rate_name, rate_price in rates.items() %}
-        <div class="rate-item">
-            <span class="rate-name">{{ rate_name }}</span>
-            <span class="rate-price">${{ rate_price }}</span>
+        <div class="header">
+            <h1>Commission Rates</h1>
+            <p class="subtitle">{{ profile.bio[:100] if profile.bio else "Quality digital artwork tailored to your vision" }}</p>
         </div>
-        {% endfor %}
+
+        <div class="rates-list">
+            {% for rate_name, rate_price in rates.items() %}
+            <div class="rate-item">
+                <span class="rate-name">{{ rate_name }}</span>
+                <span class="rate-price">
+                    {% if rate_price is mapping %}
+                    ${{ rate_price.price }}
+                    {% else %}
+                    ${{ rate_price }}
+                    {% endif %}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
 
         <div class="footer">
-            Contact for custom quotes and commissions
+            <p>Prices are starting rates - Custom quotes available</p>
+            <span class="cta">Open for Commissions</span>
         </div>
     </div>
 </body>

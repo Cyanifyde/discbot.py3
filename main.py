@@ -29,6 +29,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("discbot")
+logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
+logging.getLogger("discord").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
+logging.getLogger("asyncio").setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 
 # Debug: show if .env was found
 if not env_path.exists():

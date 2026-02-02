@@ -5,116 +5,250 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Commission Invoice</title>
     <style>
+        @page {
+            size: 800px 1000px;
+            margin: 0;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background: #f5f5f5;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 30px;
+            min-height: 100%;
         }
         .invoice {
-            background: white;
+            background: #ffffff;
             padding: 40px;
-            max-width: 800px;
+            max-width: 740px;
             margin: 0 auto;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-top: 6px solid #6366f1;
         }
         .header {
-            border-bottom: 3px solid #333;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            margin: 0;
-            font-size: 32px;
-        }
-        .invoice-info {
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 30px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .header-left h1 {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1f2937;
+            letter-spacing: -1px;
+        }
+        .header-left p {
+            color: #6b7280;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .header-right {
+            text-align: right;
+        }
+        .invoice-number {
+            font-size: 12px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .invoice-id {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: #374151;
+            background: #f3f4f6;
+            padding: 6px 12px;
+            margin-top: 5px;
+            display: inline-block;
+        }
+        .parties {
+            display: flex;
+            gap: 40px;
+            margin-bottom: 35px;
+        }
+        .party {
+            flex: 1;
+            padding: 20px;
+            background: #f9fafb;
+            border-left: 3px solid #6366f1;
+        }
+        .party-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #6366f1;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .party-info {
+            font-size: 14px;
+            color: #374151;
+            line-height: 1.6;
+        }
+        .details-section {
             margin-bottom: 30px;
         }
-        .section {
-            margin-bottom: 20px;
+        .section-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #6b7280;
+            font-weight: 600;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
         }
-        .section h2 {
-            font-size: 18px;
-            margin-bottom: 10px;
-            color: #555;
+        .details-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
         }
-        .details {
-            background: #f9f9f9;
-            padding: 15px;
-            border-left: 4px solid #333;
+        .detail-item {
+            flex: 1;
+            min-width: 200px;
         }
-        .total {
-            text-align: right;
-            font-size: 24px;
-            font-weight: bold;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 2px solid #333;
+        .detail-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
         }
-        .status {
+        .detail-value {
+            font-size: 15px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+        .status-badge {
             display: inline-block;
-            padding: 5px 15px;
-            border-radius: 4px;
-            font-weight: bold;
+            padding: 6px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        .status.paid {
-            background: #4CAF50;
-            color: white;
+        .status-badge.paid {
+            background: #dcfce7;
+            color: #166534;
         }
-        .status.pending {
-            background: #FFC107;
-            color: black;
+        .status-badge.pending {
+            background: #fef3c7;
+            color: #92400e;
         }
-        .status.partial {
-            background: #2196F3;
-            color: white;
+        .status-badge.partial {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .notes-box {
+            background: #f9fafb;
+            padding: 15px 20px;
+            margin-top: 15px;
+            border-left: 3px solid #9ca3af;
+        }
+        .notes-box p {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.6;
+        }
+        .total-section {
+            margin-top: 40px;
+            padding-top: 25px;
+            border-top: 2px solid #1f2937;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+        .total-label {
+            font-size: 14px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-right: 30px;
+        }
+        .total-amount {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        .footer p {
+            font-size: 12px;
+            color: #9ca3af;
         }
     </style>
 </head>
 <body>
     <div class="invoice">
         <div class="header">
-            <h1>INVOICE</h1>
-            <p><strong>Invoice #:</strong> {{ commission.id }}</p>
-            <p><strong>Date:</strong> {{ commission.created_at[:10] }}</p>
-        </div>
-
-        <div class="invoice-info">
-            <div class="section">
-                <h2>From</h2>
-                <div class="details">
-                    <p><strong>Artist ID:</strong> {{ commission.artist_id }}</p>
-                </div>
+            <div class="header-left">
+                <h1>INVOICE</h1>
+                <p>Commission Services</p>
             </div>
-            <div class="section">
-                <h2>To</h2>
-                <div class="details">
-                    <p><strong>Client ID:</strong> {{ commission.client_id }}</p>
-                </div>
+            <div class="header-right">
+                <div class="invoice-number">Invoice Number</div>
+                <div class="invoice-id">{{ commission.id[:12] }}</div>
+                <p style="margin-top: 10px; font-size: 13px; color: #6b7280;">{{ commission.created_at[:10] }}</p>
             </div>
         </div>
 
-        <div class="section">
-            <h2>Commission Details</h2>
-            <div class="details">
-                <p><strong>Stage:</strong> {{ commission.stage }}</p>
+        <div class="parties">
+            <div class="party">
+                <div class="party-label">From (Artist)</div>
+                <div class="party-info">
+                    {% if profile.display_name %}
+                    <strong>{{ profile.display_name }}</strong><br>
+                    {% endif %}
+                    ID: {{ commission.artist_id }}
+                </div>
+            </div>
+            <div class="party">
+                <div class="party-label">To (Client)</div>
+                <div class="party-info">
+                    ID: {{ commission.client_id }}
+                </div>
+            </div>
+        </div>
+
+        <div class="details-section">
+            <div class="section-title">Commission Details</div>
+            <div class="details-grid">
+                <div class="detail-item">
+                    <div class="detail-label">Current Stage</div>
+                    <div class="detail-value">{{ commission.stage.replace('_', ' ').title() }}</div>
+                </div>
                 {% if commission.deadline %}
-                <p><strong>Deadline:</strong> {{ commission.deadline[:10] }}</p>
+                <div class="detail-item">
+                    <div class="detail-label">Deadline</div>
+                    <div class="detail-value">{{ commission.deadline[:10] }}</div>
+                </div>
                 {% endif %}
-                {% if commission.notes %}
-                <p><strong>Notes:</strong> {{ commission.notes }}</p>
-                {% endif %}
+                <div class="detail-item">
+                    <div class="detail-label">Payment Status</div>
+                    <div class="detail-value">
+                        <span class="status-badge {{ commission.payment_status }}">{{ commission.payment_status }}</span>
+                    </div>
+                </div>
             </div>
+            {% if commission.notes %}
+            <div class="notes-box">
+                <p><strong>Notes:</strong> {{ commission.notes }}</p>
+            </div>
+            {% endif %}
         </div>
 
-        <div class="section">
-            <h2>Payment Status</h2>
-            <span class="status {{ commission.payment_status }}">{{ commission.payment_status.upper() }}</span>
+        <div class="total-section">
+            <span class="total-label">Total Due</span>
+            <span class="total-amount">{{ commission.currency }} {{ "%.2f"|format(commission.price) }}</span>
         </div>
 
-        <div class="total">
-            Total: {{ commission.currency }} {{ "%.2f"|format(commission.price) }}
+        <div class="footer">
+            <p>Thank you for your business</p>
         </div>
     </div>
 </body>
