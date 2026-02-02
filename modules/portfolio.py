@@ -5,6 +5,7 @@ Provides commands for managing artwork portfolios with categories, privacy, and 
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -861,47 +862,68 @@ async def _handle_ratecard_image(message: discord.Message, parts: list[str]) -> 
 
     # Download and convert image to webp
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(attachment.url) as resp:
                 if resp.status != 200:
                     await message.reply("Failed to download image.")
                     return
-                image_data = await resp.read()
+                
+                # Check content length before downloading
+                content_length = resp.headers.get("Content-Length")
+                if content_length and int(content_length) > 10 * 1024 * 1024:  # 10MB limit
+                    await message.reply("Image is too large (max 10MB).")
+                    return
+                
+                # Download in chunks with size limit
+                chunks = []
+                total_size = 0
+                max_size = 10 * 1024 * 1024
+                async for chunk in resp.content.iter_chunked(8192):
+                    total_size += len(chunk)
+                    if total_size > max_size:
+                        await message.reply("Image is too large (max 10MB).")
+                        return
+                    chunks.append(chunk)
+                image_data = b"".join(chunks)
 
-        # Convert to webp with compression
-        img = Image.open(io.BytesIO(image_data))
+        # Offload CPU-intensive PIL processing to thread
+        def process_image(data: bytes) -> bytes:
+            img = Image.open(io.BytesIO(data))
 
-        # Convert to RGB if necessary (for transparency handling)
-        if img.mode in ("RGBA", "LA", "P"):
-            background = Image.new("RGB", img.size, (255, 255, 255))
-            if img.mode == "P":
-                img = img.convert("RGBA")
-            background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
-            img = background
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
+            # Convert to RGB if necessary (for transparency handling)
+            if img.mode in ("RGBA", "LA", "P"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
 
-        # Resize if too large (max 400px on longest side for rate thumbnails)
-        max_size = 400
-        if img.width > max_size or img.height > max_size:
-            ratio = min(max_size / img.width, max_size / img.height)
-            new_size = (int(img.width * ratio), int(img.height * ratio))
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            # Resize if too large (max 400px on longest side for rate thumbnails)
+            max_size = 400
+            if img.width > max_size or img.height > max_size:
+                ratio = min(max_size / img.width, max_size / img.height)
+                new_size = (int(img.width * ratio), int(img.height * ratio))
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
 
-        # Save as webp with compression
-        webp_buffer = io.BytesIO()
-        img.save(webp_buffer, format="WEBP", quality=80, method=6)
-        webp_buffer.seek(0)
+            # Save as webp with compression
+            webp_buffer = io.BytesIO()
+            img.save(webp_buffer, format="WEBP", quality=80, method=6)
+            return webp_buffer.getvalue()
+        
+        webp_data = await asyncio.to_thread(process_image, image_data)
 
         # Convert to base64 data URI for embedding in HTML
-        webp_base64 = base64.b64encode(webp_buffer.getvalue()).decode("utf-8")
+        webp_base64 = base64.b64encode(webp_data).decode("utf-8")
         data_uri = f"data:image/webp;base64,{webp_base64}"
 
         # Save to rate
         success = await portfolio_service.set_rate_image(user_id, actual_rate_name, data_uri)
 
         if success:
-            size_kb = len(webp_buffer.getvalue()) / 1024
+            size_kb = len(webp_data) / 1024
             await message.reply(
                 f"Image set for **{actual_rate_name}**\n"
                 f"Converted to WebP ({size_kb:.1f} KB)"

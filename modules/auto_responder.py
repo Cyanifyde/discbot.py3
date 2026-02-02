@@ -740,8 +740,10 @@ async def handle_auto_responder(message: discord.Message) -> bool:
         if handled and final_settings.get("delete_trigger_message"):
             try:
                 await message.delete()
-            except Exception:
-                pass
+            except discord.HTTPException as e:
+                logging.getLogger("discbot.autoresponder").debug(
+                    "Failed to delete trigger message: %s", e
+                )
         if handled:
             return True
     return False

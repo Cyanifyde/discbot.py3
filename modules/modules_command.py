@@ -15,6 +15,7 @@ import discord
 from core.permissions import (
     AVAILABLE_COMMANDS,
     AVAILABLE_MODULES,
+    DEFAULT_MODULE_ENABLED,
     add_role_to_command,
     add_role_to_module,
     can_use_command,
@@ -134,11 +135,17 @@ async def _cmd_list(message: discord.Message) -> None:
         "**Available Modules:**"
     ]
     
+    # Load config once instead of per-module to avoid N disk reads
+    from core.config_migration import get_guild_module_data
+    guild_config = await get_guild_module_data(guild_id)
+    modules_config = guild_config.get("modules", {})
+    
     for module, description in AVAILABLE_MODULES.items():
-        enabled = await is_module_enabled(guild_id, module)
+        module_data = modules_config.get(module, {})
+        enabled = module_data.get("enabled", module not in DEFAULT_MODULE_ENABLED or DEFAULT_MODULE_ENABLED[module])
         status = "Enabled" if enabled else "Disabled"
         
-        role_ids = await get_module_roles(guild_id, module)
+        role_ids = module_data.get("allowed_roles", [])
         if role_ids:
             roles_text = f" - Roles: {', '.join(str(rid) for rid in role_ids)}"
         else:

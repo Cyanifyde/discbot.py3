@@ -56,12 +56,13 @@ def _safe_url_fetcher(url: str) -> dict:
     
     Only allows data: URIs, blocks file:// and private IPs.
     """
+    from weasyprint import default_url_fetcher
+    
     parsed = urlparse(url)
     
-    # Allow data: URIs for embedded images
+    # Allow data: URIs for embedded images by using default fetcher
     if parsed.scheme == "data":
-        # Let WeasyPrint handle data URIs normally
-        return None  # None means use default fetcher
+        return default_url_fetcher(url)
     
     # Block file:// and other dangerous schemes
     if parsed.scheme in ("file", "ftp", ""):
@@ -450,5 +451,12 @@ def get_render_service() -> RenderService:
     return _render_service
 
 
-# Shared instance for convenient imports
-render_service = get_render_service()
+# Shared instance for convenient imports - lazy initialization
+# Do not initialize at import time to avoid startup crashes
+_render_service_proxy = None
+
+def __getattr__(name):
+    """Lazy proxy for render_service attribute access."""
+    if name == "render_service":
+        return get_render_service()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

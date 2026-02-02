@@ -37,7 +37,10 @@ def dt_to_iso(value: Optional[dt.datetime]) -> Optional[str]:
 def iso_to_dt(value: Optional[str]) -> Optional[dt.datetime]:
     if not value:
         return None
-    return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
 
 
 def sanitize_text(text: Any, max_len: int = 1500) -> str:
@@ -209,7 +212,7 @@ def parse_deadline(text: str) -> Optional[dt.datetime]:
     # Try ISO format first
     try:
         return dt.datetime.fromisoformat(text)
-    except Exception:
+    except (ValueError, AttributeError):
         pass
 
     # Try parsing as relative duration

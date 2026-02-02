@@ -3,7 +3,7 @@ Discord OAuth2 authentication for web UI.
 """
 import os
 import secrets
-from aiohttp import web, ClientSession
+from aiohttp import web, ClientSession, ClientTimeout
 from functools import wraps
 import logging
 
@@ -16,7 +16,39 @@ DISCORD_TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
 DISCORD_USER_URL = f"{DISCORD_API_BASE}/users/@me"
 
 # Session storage (in production, use Redis or similar)
-sessions = {}
+# Split OAuth state from actual sessions to avoid key collisions
+oauth_pending_states = {}  # state -> timestamp
+sessions = {}  # session_token -> session_data
+MAX_SESSIONS = 10000
+SESSION_TTL = 86400  # 24 hours
+
+
+async def evict_expired_sessions():
+    """Background task to evict expired sessions and OAuth states."""
+    import time
+    while True:
+        await asyncio.sleep(300)  # Check every 5 minutes
+        now = time.time()
+        
+        # Evict expired OAuth states (1 hour TTL)
+        expired_states = [state for state, ts in oauth_pending_states.items() if now - ts > 3600]
+        for state in expired_states:
+            oauth_pending_states.pop(state, None)
+        
+        # Evict expired sessions
+        expired_sessions = [token for token, data in sessions.items() if data.get('expires_at', 0) < now]
+        for token in expired_sessions:
+            sessions.pop(token, None)
+        
+        # Enforce max session count (LRU-style)
+        if len(sessions) > MAX_SESSIONS:
+            sorted_sessions = sorted(sessions.items(), key=lambda x: x[1].get('expires_at', 0))
+            to_remove = len(sessions) - MAX_SESSIONS
+            for token, _ in sorted_sessions[:to_remove]:
+                sessions.pop(token, None)
+        
+        if expired_states or expired_sessions:
+            logger.info("Evicted %d OAuth states and %d sessions", len(expired_states), len(expired_sessions))
 
 
 def setup_auth(app, bot):
@@ -29,6 +61,11 @@ def setup_auth(app, bot):
     """
     app['bot'] = bot
     app['sessions'] = sessions
+    app['oauth_pending_states'] = oauth_pending_states
+    
+    # Start session eviction task
+    import asyncio
+    asyncio.create_task(evict_expired_sessions())
 
     # OAuth2 configuration
     client_id = os.getenv('DISCORD_CLIENT_ID')
@@ -118,8 +155,8 @@ async def handle_login(request):
         return web.Response(text='OAuth2 not configured', status=500)
 
     # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    request.app['sessions'][state] = {'pending': True}
+    import time\n    state = secrets.token_urlsafe(32)
+    request.app['oauth_pending_states'][state] = time.time()
 
     # Redirect to Discord OAuth2
     oauth_url = (
@@ -143,13 +180,17 @@ async def handle_callback(request):
         return web.Response(text='Invalid callback', status=400)
 
     # Verify state
-    if state not in request.app['sessions']:
+    if state not in request.app['oauth_pending_states']:
         return web.Response(text='Invalid state', status=400)
+    
+    # Remove used state
+    request.app['oauth_pending_states'].pop(state, None)
 
     oauth_config = request.app['oauth_config']
 
     # Exchange code for token
-    async with ClientSession() as session:
+    timeout = ClientTimeout(total=30, connect=10, sock_read=20)
+    async with ClientSession(timeout=timeout) as session:
         data = {
             'client_id': oauth_config['client_id'],
             'client_secret': oauth_config['client_secret'],
@@ -160,6 +201,8 @@ async def handle_callback(request):
 
         async with session.post(DISCORD_TOKEN_URL, data=data) as resp:
             if resp.status != 200:
+                error_body = await resp.text()
+                logger.error("Token exchange failed: %s - %s", resp.status, error_body)
                 return web.Response(text='Failed to get token', status=500)
 
             token_data = await resp.json()
@@ -169,6 +212,8 @@ async def handle_callback(request):
         headers = {'Authorization': f"Bearer {access_token}"}
         async with session.get(DISCORD_USER_URL, headers=headers) as resp:
             if resp.status != 200:
+                error_body = await resp.text()
+                logger.error("User info fetch failed: %s - %s", resp.status, error_body)
                 return web.Response(text='Failed to get user info', status=500)
 
             user_data = await resp.json()

@@ -141,15 +141,21 @@ async def migrate_all_guild_configs() -> Dict[str, int]:
     
     guild_ids: Set[int] = set()
     
-    for path in GUILD_CONFIG_DIR.iterdir():
-        if path.suffix == ".json" and path.stem.isdigit():
-            guild_ids.add(int(path.stem))
-        elif path.name.endswith(".autoresponder.json"):
-            try:
-                guild_id = int(path.name.replace(".autoresponder.json", ""))
-                guild_ids.add(guild_id)
-            except ValueError:
-                pass
+    # Offload filesystem iteration to avoid blocking event loop
+    def _scan_guild_files() -> Set[int]:
+        ids: Set[int] = set()
+        for path in GUILD_CONFIG_DIR.iterdir():
+            if path.suffix == ".json" and path.stem.isdigit():
+                ids.add(int(path.stem))
+            elif path.name.endswith(".autoresponder.json"):
+                try:
+                    guild_id = int(path.name.replace(".autoresponder.json", ""))
+                    ids.add(guild_id)
+                except ValueError:
+                    pass
+        return ids
+    
+    guild_ids = await asyncio.to_thread(_scan_guild_files)
     
     for guild_id in guild_ids:
         if await migrate_guild_autoresponder(guild_id):

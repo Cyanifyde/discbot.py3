@@ -70,12 +70,20 @@ class QueueStore:
             if queued >= max_jobs:
                 return False
             
-            # Write to queue file first
-            await append_text(self.queue_path, json.dumps(job, ensure_ascii=True) + "\n")
-            
-            # Then update state (this way if append fails, state isn't incremented)
-            self.state["queued_jobs"] = queued + 1
-            await write_json_atomic(self.state_path, self.state)
+            try:
+                # Write to queue file first
+                await append_text(self.queue_path, json.dumps(job, ensure_ascii=True) + "\n")
+                
+                # Then update state (this way if append fails, state isn't incremented)
+                self.state["queued_jobs"] = queued + 1
+                await write_json_atomic(self.state_path, self.state)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger("discbot.queue")
+                logger.error("Failed to enqueue job, rebuilding state: %s", e)
+                # Rebuild queued_jobs count from file
+                await self.rebuild_state_from_file()
+                return False
         return True
 
     async def update_state(self, read_offset: int, queued_jobs: int) -> None:
@@ -122,7 +130,8 @@ class QueueProcessor:
         self.session: Optional[aiohttp.ClientSession] = None
         self.cdn_regex = build_cdn_regex(config.get("allowed_discord_cdn_domains", []))
         self.allowed_cdn_domains = {d.lower() for d in config.get("allowed_discord_cdn_domains", [])}
-        # Lock for ACK processing to prevent concurrent state modification\n        self.ack_lock = asyncio.Lock()
+        # Lock for ACK processing to prevent concurrent state modification
+        self.ack_lock = asyncio.Lock()
 
     def update_config(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -136,7 +145,7 @@ class QueueProcessor:
 
     async def start(self) -> None:
         if self.session is None:
-            timeout = aiohttp.ClientTimeout(total=self.worker_timeout)
+            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=20)
             self.session = aiohttp.ClientSession(timeout=timeout)
         self.stop_event.clear()
         self.reader_task = asyncio.create_task(self._reader_loop())
@@ -198,13 +207,30 @@ class QueueProcessor:
                 job, end_offset = await self.queue.get()
             except asyncio.CancelledError:
                 break
-            try:
-                await asyncio.wait_for(self._process_job(job), timeout=self.worker_timeout)
-            except asyncio.TimeoutError:
-                logger.warning("Worker %d: Job timed out after %ds", worker_id, self.worker_timeout)
-            except Exception as e:
-                logger.error("Worker %d: Job processing failed: %s", worker_id, e)
-            await self._ack_processed(end_offset)
+            
+            success = False
+            max_attempts = 3
+            attempt = job.get("_attempt", 0)
+            
+            for retry in range(max_attempts - attempt):
+                try:
+                    await asyncio.wait_for(self._process_job(job), timeout=self.worker_timeout)
+                    success = True
+                    break
+                except asyncio.TimeoutError:
+                    logger.warning("Worker %d: Job timed out after %ds (attempt %d/%d)", worker_id, self.worker_timeout, attempt + retry + 1, max_attempts)
+                except Exception as e:
+                    logger.error("Worker %d: Job processing failed: %s (attempt %d/%d)", worker_id, e, attempt + retry + 1, max_attempts)
+                
+                if retry < max_attempts - attempt - 1:
+                    await asyncio.sleep(min(2 ** (attempt + retry), 30))
+            
+            if success:
+                await self._ack_processed(end_offset)
+            else:
+                logger.error("Worker %d: Job permanently failed after %d attempts, offset %d", worker_id, max_attempts, end_offset)
+                await self._ack_processed(end_offset)
+            
             self.queue.task_done()
 
     async def _ack_processed(self, end_offset: int) -> None:
@@ -367,13 +393,19 @@ class QueueProcessor:
         return hash_bytes(data)
 
     async def _download_url(self, url: str) -> Optional[bytes]:
+        import logging
+        logger = logging.getLogger("discbot.queue")
+        
         if not self.session:
+            logger.debug("Download failed: no session")
             return None
         parsed = urlparse(url)
         if parsed.scheme.lower() != "https":
+            logger.debug("Download failed: non-HTTPS scheme %s", parsed.scheme)
             return None
         host = (parsed.hostname or "").lower()
         if host not in self.allowed_cdn_domains:
+            logger.debug("Download failed: blocked domain %s", host)
             return None
         max_bytes = self.max_image_bytes
         current_url = url

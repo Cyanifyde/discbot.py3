@@ -139,20 +139,38 @@ class GuildState:
 
     async def _periodic_flush(self) -> None:
         """Periodically flush dirty shards to disk."""
+        import random
         interval = float(self.config.get(K.QUEUE_FLUSH_INTERVAL_SECONDS, 30))
+        # Add jitter to prevent thundering herd
+        jitter = random.uniform(0, interval * 0.1)
+        await asyncio.sleep(jitter)
+        
         while True:
-            await asyncio.sleep(interval)
-            await self.storage.flush_dirty_shards()
+            try:
+                await asyncio.sleep(interval)
+                await self.storage.flush_dirty_shards()
+            except Exception as e:
+                logger.error("Error in periodic flush for guild %s: %s", self.guild_id, e, exc_info=True)
+                await asyncio.sleep(min(interval, 60))
 
     async def _periodic_queue_state_flush(self) -> None:
         """Periodically save queue state."""
+        import random
         interval = float(self.config.get(K.QUEUE_STATE_FLUSH_INTERVAL_SECONDS, 15))
+        # Add jitter to prevent thundering herd
+        jitter = random.uniform(0, interval * 0.1)
+        await asyncio.sleep(jitter)
+        
         while True:
-            await asyncio.sleep(interval)
-            await self.queue_store.update_state(
-                self.queue_processor.read_offset_bytes,
-                self.queue_processor.queued_jobs,
-            )
+            try:
+                await asyncio.sleep(interval)
+                await self.queue_store.update_state(
+                    self.queue_processor.read_offset_bytes,
+                    self.queue_processor.queued_jobs,
+                )
+            except Exception as e:
+                logger.error("Error in periodic queue state flush for guild %s: %s", self.guild_id, e, exc_info=True)
+                await asyncio.sleep(min(interval, 60))
 
     async def _periodic_enforcement(self) -> None:
         """Periodically run inactivity enforcement if enabled."""

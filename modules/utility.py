@@ -527,6 +527,8 @@ def _format_bookmark_delivery_text(bookmark: Bookmark, message: Optional[discord
 
 async def deliver_pending_bookmarks(bot: discord.Client) -> int:
     """Send any delayed bookmarks that are due."""
+    import logging
+    logger = logging.getLogger("discbot.utility")
     sent = 0
     from core.paths import BASE_DIR
     base = BASE_DIR / "data" / "utility"
@@ -541,19 +543,32 @@ async def deliver_pending_bookmarks(bot: discord.Client) -> int:
         except ValueError:
             continue
 
-        store = UtilityStore(user_id)
-        await store.initialize()
-        pending = await store.get_pending_deliveries()
-        for bookmark in pending:
-            await _deliver_bookmark_now(bot, bookmark)
-            await store.mark_delivered(bookmark.id)
-            sent += 1
+        try:
+            store = UtilityStore(user_id)
+            await store.initialize()
+            pending = await store.get_pending_deliveries()
+            for bookmark in pending:
+                try:
+                    await _deliver_bookmark_now(bot, bookmark)
+                    await store.mark_delivered(bookmark.id)
+                    sent += 1
+                except Exception as e:
+                    logger.error("Failed to deliver bookmark %s for user %s: %s", bookmark.id, user_id, e)
+                    # Continue with next bookmark
+        except Exception as e:
+            logger.error("Failed to process bookmarks for user %s: %s", user_id, e)
+            # Continue with next user
 
     return sent
 
 
 async def bookmark_delivery_loop(bot: discord.Client) -> None:
     """Background loop to deliver delayed bookmarks."""
+    import random
+    # Add jitter to prevent thundering herd
+    jitter = random.uniform(0, 6)
+    await asyncio.sleep(jitter)
+    
     while True:
         try:
             await deliver_pending_bookmarks(bot)

@@ -203,10 +203,19 @@ class DiscBot(discord.Client):
         """Cleanup when shutting down."""
         for state in list(self.guild_states.values()):
             await state.stop()
+        
+        # Cancel and await background tasks
+        tasks_to_cancel = []
         if self._status_task:
             self._status_task.cancel()
+            tasks_to_cancel.append(self._status_task)
         if self._bookmark_task:
             self._bookmark_task.cancel()
+            tasks_to_cancel.append(self._bookmark_task)
+        
+        if tasks_to_cancel:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+        
         await super().close()
 
     # ─── Guild State Management ───────────────────────────────────────────────
@@ -311,9 +320,10 @@ class DiscBot(discord.Client):
                         try:
                             await message.author.send(dm_text)
                         except discord.Forbidden:
-                            pass
-        except Exception:
+                            logger.debug("Cannot DM user %s for AFK recap", message.author.id)
+        except Exception as e:
             # AFK is a convenience feature; never block message handling.
+            logger.debug("AFK auto-clear error: %s", e)
             pass
 
         # Handle DMs

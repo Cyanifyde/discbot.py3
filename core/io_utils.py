@@ -19,6 +19,11 @@ async def read_json(path: Path, default: Any = None) -> Any:
                 return json.load(handle)
         except FileNotFoundError:
             return default
+        except (json.JSONDecodeError, OSError) as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error("Failed to read JSON from %s: %s", path, e)
+            return default
 
     return await asyncio.to_thread(_read)
 
@@ -98,16 +103,21 @@ async def read_queue_lines(path: Path, offset: int, max_lines: int = 50) -> List
 
 async def rewrite_queue_file(src: Path, offset: int) -> None:
     def _rewrite() -> None:
+        import secrets
         if not src.exists():
             return
-        tmp_path = src.with_suffix(".tmp")
-        with src.open("rb") as reader, tmp_path.open("wb") as writer:
-            reader.seek(offset)
-            while True:
-                chunk = reader.read(1024 * 1024)
-                if not chunk:
-                    break
-                writer.write(chunk)
-        os.replace(tmp_path, src)
+        tmp_path = src.parent / f"{src.stem}.tmp.{os.getpid()}.{secrets.token_hex(4)}{src.suffix}"
+        try:
+            with src.open("rb") as reader, tmp_path.open("wb") as writer:
+                reader.seek(offset)
+                while True:
+                    chunk = reader.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    writer.write(chunk)
+            os.replace(tmp_path, src)
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
 
     await asyncio.to_thread(_rewrite)

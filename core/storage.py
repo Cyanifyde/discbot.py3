@@ -85,7 +85,7 @@ class SuspicionStore:
             await write_json_atomic(self.state_path, self.state_data)
 
     async def increment_queue_dropped(self) -> None:
-        async def _inc(state: Dict[str, Any]) -> None:
+        def _inc(state: Dict[str, Any]) -> None:
             state["queue_dropped"] = int(state.get("queue_dropped", 0)) + 1
 
         await self.update_state(_inc)

@@ -133,8 +133,8 @@ async def handle_invite_protection(message: discord.Message, bot: discord.Client
             f"Mods: `invite approve {short_id}` to allowlist, or `invite deny {short_id}` to dismiss.",
             allowed_mentions=discord.AllowedMentions.none(),
         )
-    except Exception:
-        pass
+    except discord.HTTPException as e:
+        logger.debug("Failed to send invite removal message: %s", e)
 
     return True
 
