@@ -228,7 +228,7 @@ async def handle_warn_command(message: discord.Message, bot: discord.Client) -> 
     )
     if synced_to:
         await message.channel.send(
-            f"📤 Synced warning to {len(synced_to)} linked server(s).",
+            f" Synced warning to {len(synced_to)} linked server(s).",
             delete_after=10,
         )
 
@@ -447,7 +447,7 @@ async def handle_mute_command(message: discord.Message, bot: discord.Client) -> 
         )
         if synced_to:
             await message.channel.send(
-                f"📤 Synced mute to {len(synced_to)} linked server(s).",
+                f" Synced mute to {len(synced_to)} linked server(s).",
                 delete_after=10,
             )
 
@@ -597,7 +597,7 @@ async def handle_ban_command(message: discord.Message, bot: discord.Client) -> b
         )
         if synced_to:
             await message.channel.send(
-                f"📤 Synced ban to {len(synced_to)} linked server(s).",
+                f" Synced ban to {len(synced_to)} linked server(s).",
                 delete_after=10,
             )
 
@@ -745,7 +745,7 @@ async def handle_kick_command(message: discord.Message, bot: discord.Client) -> 
         )
         if synced_to:
             await message.channel.send(
-                f"📤 Synced kick to {len(synced_to)} linked server(s).",
+                f" Synced kick to {len(synced_to)} linked server(s).",
                 delete_after=10,
             )
 

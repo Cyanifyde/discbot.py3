@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commission Contract</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', serif;
+            margin: 20px;
+            background: #fff;
+            line-height: 1.6;
+        }
+        .contract {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px;
+            border: 2px solid #333;
+        }
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section h2 {
+            font-size: 18px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        .section p {
+            margin: 10px 0;
+        }
+        .terms-list {
+            list-style-type: decimal;
+            padding-left: 25px;
+        }
+        .terms-list li {
+            margin: 10px 0;
+        }
+        .signature-section {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 60px;
+        }
+        .signature-box {
+            width: 45%;
+        }
+        .signature-line {
+            border-top: 1px solid #333;
+            margin-top: 40px;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="contract">
+        <h1>Commission Agreement</h1>
+
+        <div class="section">
+            <h2>Commission Details</h2>
+            <p><strong>Commission ID:</strong> {{ commission.id }}</p>
+            <p><strong>Artist:</strong> {{ commission.artist_id }}</p>
+            <p><strong>Client:</strong> {{ commission.client_id }}</p>
+            <p><strong>Date:</strong> {{ commission.created_at[:10] }}</p>
+            {% if commission.deadline %}
+            <p><strong>Deadline:</strong> {{ commission.deadline[:10] }}</p>
+            {% endif %}
+        </div>
+
+        <div class="section">
+            <h2>Price & Payment</h2>
+            <p><strong>Total Price:</strong> {{ commission.currency }} {{ "%.2f"|format(commission.price) }}</p>
+            <p><strong>Payment Status:</strong> {{ commission.payment_status }}</p>
+        </div>
+
+        <div class="section">
+            <h2>Terms & Conditions</h2>
+            <ol class="terms-list">
+                {% for term in terms.conditions %}
+                <li>{{ term }}</li>
+                {% endfor %}
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>Revisions</h2>
+            <p>Number of revisions included: <strong>{{ commission.revisions_limit }}</strong></p>
+            <p>Additional revisions may incur extra charges.</p>
+        </div>
+
+        <div class="signature-section">
+            <div class="signature-box">
+                <div class="signature-line">
+                    Artist Signature & Date
+                </div>
+            </div>
+            <div class="signature-box">
+                <div class="signature-line">
+                    Client Signature & Date
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

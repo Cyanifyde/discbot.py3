@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Card - Detailed</title>
+    <style>
+        body {
+            font-family: 'Georgia', serif;
+            margin: 0;
+            background: #2c3e50;
+            padding: 40px;
+        }
+        .rate-card {
+            background: white;
+            padding: 50px;
+            max-width: 700px;
+            margin: 0 auto;
+            border-radius: 0;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+        .header {
+            border-bottom: 4px double #2c3e50;
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 42px;
+            color: #2c3e50;
+            font-weight: normal;
+            letter-spacing: 2px;
+        }
+        .tagline {
+            color: #7f8c8d;
+            font-size: 18px;
+            font-style: italic;
+        }
+        .rate-section {
+            margin-bottom: 35px;
+        }
+        .rate-category {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #95a5a6;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .rate-item {
+            padding: 20px;
+            background: #ecf0f1;
+            margin-bottom: 15px;
+            border-left: 5px solid #2c3e50;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .rate-details {
+            flex: 1;
+        }
+        .rate-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        .rate-description {
+            font-size: 14px;
+            color: #7f8c8d;
+            line-height: 1.5;
+        }
+        .rate-price {
+            font-size: 28px;
+            font-weight: bold;
+            color: #e74c3c;
+            white-space: nowrap;
+            margin-left: 20px;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #ecf0f1;
+            text-align: center;
+        }
+        .footer-text {
+            color: #95a5a6;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .contact-info {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="rate-card">
+        <div class="header">
+            <h1>COMMISSION RATES</h1>
+            <div class="tagline">{{ profile.bio[:80] if profile.bio else "Professional Digital Art Services" }}</div>
+        </div>
+
+        <div class="rate-section">
+            <div class="rate-category">Standard Commissions</div>
+            {% for rate_name, rate_info in rates.items() %}
+            <div class="rate-item">
+                <div class="rate-details">
+                    <div class="rate-name">{{ rate_name }}</div>
+                    <div class="rate-description">
+                        {% if rate_info is mapping %}
+                        {{ rate_info.description }}
+                        {% else %}
+                        High-quality digital artwork with full commercial rights
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="rate-price">
+                    {% if rate_info is mapping %}
+                    ${{ rate_info.price }}
+                    {% else %}
+                    ${{ rate_info }}
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="footer">
+            <div class="footer-text">
+                <strong>Terms:</strong> Payment upfront • Revisions included • 2-4 week turnaround<br>
+                Custom quotes available for complex projects
+            </div>
+            <div class="contact-info">
+                {{ profile.contact_preference.replace('_', ' ').title() if profile.contact_preference else "DM for inquiries" }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

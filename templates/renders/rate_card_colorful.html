@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Card - Colorful</title>
+    <style>
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        body {
+            font-family: 'Comic Sans MS', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+            padding: 40px;
+        }
+        .rate-card {
+            background: white;
+            padding: 40px;
+            max-width: 650px;
+            margin: 0 auto;
+            border-radius: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 8px solid white;
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-align: center;
+            font-weight: 900;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 40px;
+        }
+        .rate-item {
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            transition: transform 0.2s;
+        }
+        .rate-item:nth-child(2) {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            box-shadow: 0 5px 15px rgba(240, 147, 251, 0.4);
+        }
+        .rate-item:nth-child(3) {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+        }
+        .rate-item:nth-child(4) {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            box-shadow: 0 5px 15px rgba(67, 233, 123, 0.4);
+        }
+        .rate-item:nth-child(5) {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            box-shadow: 0 5px 15px rgba(250, 112, 154, 0.4);
+        }
+        .rate-name {
+            font-size: 22px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .rate-price {
+            font-size: 32px;
+            font-weight: 900;
+            background: white;
+            color: #333;
+            padding: 10px 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .emoji {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="rate-card">
+        <div class="emoji"></div>
+        <h1>COMMISSIONS!</h1>
+        <div class="subtitle">{{ profile.bio[:60] if profile.bio else "Bringing your ideas to life!" }}</div>
+
+        {% for rate_name, rate_price in rates.items() %}
+        <div class="rate-item">
+            <span class="rate-name">{{ rate_name }}</span>
+            <span class="rate-price">
+                {% if rate_price is mapping %}
+                ${{ rate_price.price }}
+                {% else %}
+                ${{ rate_price }}
+                {% endif %}
+            </span>
+        </div>
+        {% endfor %}
+
+        <div class="footer">
+             Open for commissions! DM me to get started! 
+        </div>
+    </div>
+</body>
+</html>

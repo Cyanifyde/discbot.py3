@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commission Invoice</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .invoice {
+            background: white;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            border-bottom: 3px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 32px;
+        }
+        .invoice-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #555;
+        }
+        .details {
+            background: #f9f9f9;
+            padding: 15px;
+            border-left: 4px solid #333;
+        }
+        .total {
+            text-align: right;
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #333;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.paid {
+            background: #4CAF50;
+            color: white;
+        }
+        .status.pending {
+            background: #FFC107;
+            color: black;
+        }
+        .status.partial {
+            background: #2196F3;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice">
+        <div class="header">
+            <h1>INVOICE</h1>
+            <p><strong>Invoice #:</strong> {{ commission.id }}</p>
+            <p><strong>Date:</strong> {{ commission.created_at[:10] }}</p>
+        </div>
+
+        <div class="invoice-info">
+            <div class="section">
+                <h2>From</h2>
+                <div class="details">
+                    <p><strong>Artist ID:</strong> {{ commission.artist_id }}</p>
+                </div>
+            </div>
+            <div class="section">
+                <h2>To</h2>
+                <div class="details">
+                    <p><strong>Client ID:</strong> {{ commission.client_id }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Commission Details</h2>
+            <div class="details">
+                <p><strong>Stage:</strong> {{ commission.stage }}</p>
+                {% if commission.deadline %}
+                <p><strong>Deadline:</strong> {{ commission.deadline[:10] }}</p>
+                {% endif %}
+                {% if commission.notes %}
+                <p><strong>Notes:</strong> {{ commission.notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Payment Status</h2>
+            <span class="status {{ commission.payment_status }}">{{ commission.payment_status.upper() }}</span>
+        </div>
+
+        <div class="total">
+            Total: {{ commission.currency }} {{ "%.2f"|format(commission.price) }}
+        </div>
+    </div>
+</body>
+</html>

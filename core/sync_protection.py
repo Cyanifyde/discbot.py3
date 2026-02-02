@@ -361,9 +361,9 @@ class SyncProtection:
             if cb.state == "closed":
                 return True, None
             elif cb.state == "pending_approval":
-                return False, f"⚠️ Protection triggered: {cb.trigger_reason}. Awaiting approval."
+                return False, f" Protection triggered: {cb.trigger_reason}. Awaiting approval."
             else:  # open
-                return False, f"🚫 Sync blocked: {cb.trigger_reason}. Declined by admin."
+                return False, f" Sync blocked: {cb.trigger_reason}. Declined by admin."
 
     async def get_action_count(self, guild_id: int) -> int:
         """Get current action count in detection window."""

@@ -93,6 +93,18 @@ class ProfileResponder(BaseResponder):
             return await _handle_remove_link(payload, rest)
         if command in {"commission", "commision"}:
             return await _handle_commission(payload, rest)
+        if command == "timezone":
+            return await _handle_timezone_command(payload, rest)
+        if command == "contact":
+            return await _handle_contact_command(payload, rest)
+        if command == "quiethours":
+            return await _handle_quiethours_command(payload, rest)
+        if command == "notifications":
+            return await _handle_notifications_command(payload, rest)
+        if command == "privacy":
+            return await _handle_privacy_command(payload, rest)
+        if command == "quickedit":
+            return await _handle_quickedit_command(payload, rest)
         return _help_text()
 
 
@@ -335,6 +347,12 @@ def _help_text() -> str:
         "profile setbio <text>\n"
         "profile setpronouns <text>\n"
         "profile setspecialities <list>\n"
+        "profile timezone set <timezone>\n"
+        "profile contact set <dm_open|dm_closed|email_only>\n"
+        "profile quiethours set <start> <end>\n"
+        "profile notifications <setting> <on|off>\n"
+        "profile privacy <on|off>\n"
+        "profile quickedit <field=value> ...\n"
         "profile commissionstatus set <text>\n"
         "profile commissioninfo set <text|embed-json>\n"
         "profile addlink <url> [text]\n"
@@ -360,6 +378,28 @@ def _default_record() -> Dict[str, Any]:
         "commission_info": "",
         "commission_embed": None,
         "embed": dict(DEFAULT_EMBED),
+        # Enhanced profile fields
+        "timezone": None,
+        "contact_preference": "dm_open",
+        "email": None,
+        "featured_commission_id": None,
+        "identity_verified": False,
+        "verified_at": None,
+        "verified_by": None,
+        "profile_views": 0,
+        "privacy_mode": False,
+        "quiet_hours": {
+            "enabled": False,
+            "start": "22:00",
+            "end": "08:00",
+            "timezone": None,
+        },
+        "notification_preferences": {
+            "commission_updates": True,
+            "waitlist_notifications": True,
+            "vouch_received": True,
+            "digest_mode": False,
+        },
     }
 
 
@@ -406,6 +446,54 @@ def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
     embed = record.get("embed")
     if not isinstance(embed, dict):
         embed = dict(DEFAULT_EMBED)
+
+    # Enhanced profile fields
+    timezone = record.get("timezone") if isinstance(record.get("timezone"), str) else None
+    contact_preference = record.get("contact_preference", "dm_open")
+    if contact_preference not in ["dm_open", "dm_closed", "email_only"]:
+        contact_preference = "dm_open"
+    email = record.get("email") if isinstance(record.get("email"), str) else None
+    featured_commission_id = record.get("featured_commission_id") if isinstance(record.get("featured_commission_id"), str) else None
+    identity_verified = bool(record.get("identity_verified"))
+    verified_at = record.get("verified_at") if isinstance(record.get("verified_at"), str) else None
+    verified_by = record.get("verified_by") if isinstance(record.get("verified_by"), (int, str)) else None
+    profile_views = int(record.get("profile_views", 0))
+    privacy_mode = bool(record.get("privacy_mode"))
+
+    # Quiet hours
+    quiet_hours_raw = record.get("quiet_hours")
+    if isinstance(quiet_hours_raw, dict):
+        quiet_hours = {
+            "enabled": bool(quiet_hours_raw.get("enabled")),
+            "start": quiet_hours_raw.get("start", "22:00"),
+            "end": quiet_hours_raw.get("end", "08:00"),
+            "timezone": quiet_hours_raw.get("timezone"),
+        }
+    else:
+        quiet_hours = {
+            "enabled": False,
+            "start": "22:00",
+            "end": "08:00",
+            "timezone": None,
+        }
+
+    # Notification preferences
+    notif_prefs_raw = record.get("notification_preferences")
+    if isinstance(notif_prefs_raw, dict):
+        notif_prefs = {
+            "commission_updates": bool(notif_prefs_raw.get("commission_updates", True)),
+            "waitlist_notifications": bool(notif_prefs_raw.get("waitlist_notifications", True)),
+            "vouch_received": bool(notif_prefs_raw.get("vouch_received", True)),
+            "digest_mode": bool(notif_prefs_raw.get("digest_mode", False)),
+        }
+    else:
+        notif_prefs = {
+            "commission_updates": True,
+            "waitlist_notifications": True,
+            "vouch_received": True,
+            "digest_mode": False,
+        }
+
     return {
         "bio": _trim(bio, BIO_LIMIT),
         "pronouns": _trim(pronouns, PRONOUNS_LIMIT),
@@ -415,6 +503,18 @@ def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
         "commission_info": _trim(commission_info, COMMISSION_INFO_LIMIT),
         "commission_embed": commission_embed,
         "embed": embed,
+        # Enhanced fields
+        "timezone": timezone,
+        "contact_preference": contact_preference,
+        "email": email,
+        "featured_commission_id": featured_commission_id,
+        "identity_verified": identity_verified,
+        "verified_at": verified_at,
+        "verified_by": verified_by,
+        "profile_views": profile_views,
+        "privacy_mode": privacy_mode,
+        "quiet_hours": quiet_hours,
+        "notification_preferences": notif_prefs,
     }
 
 
@@ -778,3 +878,181 @@ async def _load_default_record() -> Dict[str, Any]:
 async def _save_record(user_id: int, record: Dict[str, Any]) -> None:
     path = PROFILE_DIR / f"{user_id}.json"
     await write_json_atomic(path, record)
+
+
+# ─── Enhanced Profile Command Handlers ─────────────────────────────────────
+
+
+async def _handle_timezone_command(payload: ResponderInput, rest: str) -> str:
+    """Handle 'profile timezone set <timezone>' command."""
+    subcommand, value = _split_command(rest)
+    if subcommand.lower() != "set":
+        return "Usage: profile timezone set <timezone> (e.g., America/New_York)"
+
+    timezone = value.strip()
+    if not timezone:
+        return "Usage: profile timezone set <timezone> (e.g., America/New_York)"
+
+    # Basic validation - just check it's not empty
+    record = await _load_or_default(payload.message.author.id)
+    record["timezone"] = timezone
+    await _save_record(payload.message.author.id, record)
+    return f"Timezone set to: {timezone}"
+
+
+async def _handle_contact_command(payload: ResponderInput, rest: str) -> str:
+    """Handle 'profile contact set <dm_open|dm_closed|email_only>' command."""
+    subcommand, value = _split_command(rest)
+    if subcommand.lower() != "set":
+        return "Usage: profile contact set <dm_open|dm_closed|email_only>"
+
+    preference = value.strip().lower()
+    if preference not in ["dm_open", "dm_closed", "email_only"]:
+        return "Usage: profile contact set <dm_open|dm_closed|email_only>"
+
+    record = await _load_or_default(payload.message.author.id)
+    record["contact_preference"] = preference
+    await _save_record(payload.message.author.id, record)
+
+    labels = {
+        "dm_open": "DMs Open",
+        "dm_closed": "DMs Closed",
+        "email_only": "Email Only",
+    }
+    return f"Contact preference set to: {labels[preference]}"
+
+
+async def _handle_quiethours_command(payload: ResponderInput, rest: str) -> str:
+    """Handle 'profile quiethours set <start> <end>' command."""
+    subcommand, value = _split_command(rest)
+    if subcommand.lower() == "off" or subcommand.lower() == "disable":
+        record = await _load_or_default(payload.message.author.id)
+        record["quiet_hours"]["enabled"] = False
+        await _save_record(payload.message.author.id, record)
+        return "Quiet hours disabled."
+
+    if subcommand.lower() != "set":
+        return "Usage: profile quiethours set <start> <end> (e.g., 22:00 08:00)\nOr: profile quiethours off"
+
+    parts = value.split()
+    if len(parts) < 2:
+        return "Usage: profile quiethours set <start> <end> (e.g., 22:00 08:00)"
+
+    start_time = parts[0].strip()
+    end_time = parts[1].strip()
+
+    # Basic validation - check format HH:MM
+    if not _is_valid_time(start_time) or not _is_valid_time(end_time):
+        return "Times must be in HH:MM format (e.g., 22:00)"
+
+    record = await _load_or_default(payload.message.author.id)
+    record["quiet_hours"]["enabled"] = True
+    record["quiet_hours"]["start"] = start_time
+    record["quiet_hours"]["end"] = end_time
+    if record.get("timezone"):
+        record["quiet_hours"]["timezone"] = record["timezone"]
+
+    await _save_record(payload.message.author.id, record)
+    return f"Quiet hours set: {start_time} - {end_time}"
+
+
+async def _handle_notifications_command(payload: ResponderInput, rest: str) -> str:
+    """Handle 'profile notifications <setting> <on|off>' command."""
+    parts = rest.split()
+    if len(parts) < 2:
+        return "Usage: profile notifications <setting> <on|off>\nSettings: commission_updates, waitlist_notifications, vouch_received, digest_mode"
+
+    setting = parts[0].lower()
+    toggle = parts[1].lower()
+
+    valid_settings = ["commission_updates", "waitlist_notifications", "vouch_received", "digest_mode"]
+    if setting not in valid_settings:
+        return f"Invalid setting. Valid: {', '.join(valid_settings)}"
+
+    if toggle not in ["on", "off"]:
+        return "Usage: profile notifications <setting> <on|off>"
+
+    value = toggle == "on"
+
+    record = await _load_or_default(payload.message.author.id)
+    record["notification_preferences"][setting] = value
+    await _save_record(payload.message.author.id, record)
+
+    status = "enabled" if value else "disabled"
+    return f"Notification '{setting}' {status}."
+
+
+async def _handle_privacy_command(payload: ResponderInput, rest: str) -> str:
+    """Handle 'profile privacy <on|off>' command."""
+    toggle = rest.strip().lower()
+
+    if toggle not in ["on", "off"]:
+        return "Usage: profile privacy <on|off>"
+
+    value = toggle == "on"
+
+    record = await _load_or_default(payload.message.author.id)
+    record["privacy_mode"] = value
+    await _save_record(payload.message.author.id, record)
+
+    status = "enabled" if value else "disabled"
+    return f"Privacy mode {status}."
+
+
+async def _handle_quickedit_command(payload: ResponderInput, rest: str) -> str:
+    """Handle 'profile quickedit <field=value> ...' command."""
+    if not rest.strip():
+        return "Usage: profile quickedit <field=value> ...\nFields: bio, pronouns, timezone, contact, privacy"
+
+    record = await _load_or_default(payload.message.author.id)
+    updates: List[str] = []
+
+    # Split by spaces, but be careful with values containing spaces
+    parts = rest.split()
+    for part in parts:
+        if "=" not in part:
+            continue
+
+        field, _, value = part.partition("=")
+        field = field.lower().strip()
+        value = value.strip()
+
+        if field == "bio":
+            record["bio"] = _trim(value, BIO_LIMIT)
+            updates.append("bio")
+        elif field == "pronouns":
+            record["pronouns"] = _trim(value, PRONOUNS_LIMIT)
+            updates.append("pronouns")
+        elif field == "timezone":
+            record["timezone"] = value
+            updates.append("timezone")
+        elif field == "contact":
+            if value in ["dm_open", "dm_closed", "email_only"]:
+                record["contact_preference"] = value
+                updates.append("contact preference")
+        elif field == "privacy":
+            if value.lower() in ["on", "true", "yes"]:
+                record["privacy_mode"] = True
+                updates.append("privacy mode")
+            elif value.lower() in ["off", "false", "no"]:
+                record["privacy_mode"] = False
+                updates.append("privacy mode")
+
+    if not updates:
+        return "No valid fields updated. Fields: bio, pronouns, timezone, contact, privacy"
+
+    await _save_record(payload.message.author.id, record)
+    return f"Updated: {', '.join(updates)}"
+
+
+def _is_valid_time(time_str: str) -> bool:
+    """Check if a time string is in HH:MM format."""
+    parts = time_str.split(":")
+    if len(parts) != 2:
+        return False
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+        return 0 <= hour < 24 and 0 <= minute < 60
+    except ValueError:
+        return False

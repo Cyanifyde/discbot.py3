@@ -57,9 +57,9 @@ async def _cmd_help(message: discord.Message) -> None:
     embed.add_field(
         name="Key Types",
         value=(
-            "**Admin key** (🔒): Created by admins. Children get full trust - "
+            "**Admin key** (): Created by admins. Children get full trust - "
             "can request upstream approval.\n"
-            "**Public key** (📖): Created by non-admins. Children are read-only - "
+            "**Public key** (): Created by non-admins. Children are read-only - "
             "can only receive, never send upstream."
         ),
         inline=False,
@@ -121,7 +121,7 @@ async def handle_linkserver_command(
         is_admin_key=is_admin,
     )
 
-    key_type = "🔒 **Admin key** (trusted)" if is_admin else "📖 **Public key** (read-only)"
+    key_type = " **Admin key** (trusted)" if is_admin else " **Public key** (read-only)"
 
     # DM the key to the user
     try:
@@ -278,7 +278,7 @@ async def handle_addlink_command(
         trust_level=trust_level,
     )
 
-    trust_icon = "🔒" if trust_level == "trusted" else "📖"
+    trust_icon = "" if trust_level == "trusted" else ""
     trust_desc = "trusted" if trust_level == "trusted" else "read-only"
 
     await message.reply(
@@ -341,13 +341,13 @@ async def handle_links_command(
     if parents:
         parent_lines = []
         for p in parents:
-            trust_icon = "🔒" if p.get("trust_level") == "trusted" else "📖"
+            trust_icon = "" if p.get("trust_level") == "trusted" else ""
             name = p.get("guild_name", "Unknown")
             guild_id = p.get("guild_id", "?")
             parent_lines.append(f"{trust_icon} **{name}** (`{guild_id}`)")
 
         embed.add_field(
-            name="⬆️ Parents (receiving from)",
+            name=" Parents (receiving from)",
             value="\n".join(parent_lines) or "None",
             inline=False,
         )
@@ -356,21 +356,21 @@ async def handle_links_command(
     if children:
         child_lines = []
         for c in children:
-            trust_icon = "🔒" if c.get("trust_level") == "trusted" else "📖"
+            trust_icon = "" if c.get("trust_level") == "trusted" else ""
             name = c.get("guild_name", "Unknown")
             guild_id = c.get("guild_id", "?")
-            upstream = "⬆️" if c.get("accept_upstream") else ""
+            upstream = "" if c.get("accept_upstream") else ""
             child_lines.append(f"{trust_icon} **{name}** (`{guild_id}`) {upstream}")
 
         embed.add_field(
-            name="⬇️ Children (sending to)",
+            name=" Children (sending to)",
             value="\n".join(child_lines) or "None",
             inline=False,
         )
 
     embed.add_field(
         name="Legend",
-        value="🔒 = trusted (can send upstream)  📖 = read-only\n⬆️ = upstream enabled",
+        value=" = trusted (can send upstream)   = read-only\n = upstream enabled",
         inline=False,
     )
 
@@ -551,7 +551,7 @@ async def handle_linksettings_command(
             color=0x5865F2,
         )
 
-        trust_icon = "🔒" if link.get("trust_level") == "trusted" else "📖"
+        trust_icon = "" if link.get("trust_level") == "trusted" else ""
         embed.add_field(
             name="Trust Level",
             value=f"{trust_icon} {link.get('trust_level', 'unknown')}",
@@ -560,7 +560,7 @@ async def handle_linksettings_command(
 
         sync_settings = []
         for key in ["sync_bans", "sync_kicks", "sync_mutes", "sync_warnings", "sync_autoresponder", "sync_hashes"]:
-            val = "✅" if link.get(key, False) else "❌"
+            val = "" if link.get(key, False) else ""
             name = key.replace("sync_", "").replace("_", " ").title()
             sync_settings.append(f"{val} {name}")
 
@@ -574,9 +574,9 @@ async def handle_linksettings_command(
             embed.add_field(
                 name="Upstream Settings",
                 value=(
-                    f"Accept upstream: {'✅' if link.get('accept_upstream') else '❌'}\n"
+                    f"Accept upstream: {'' if link.get('accept_upstream') else ''}\n"
                     f"Approval channel: {link.get('approval_channel_id') or 'Not set'}\n"
-                    f"Auto cascade: {'✅' if link.get('auto_cascade', True) else '❌'}"
+                    f"Auto cascade: {'' if link.get('auto_cascade', True) else ''}"
                 ),
                 inline=False,
             )

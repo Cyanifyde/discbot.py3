@@ -1184,8 +1184,8 @@ async def handle_remove_response_command(message: discord.Message) -> bool:
     # Check if it's user-added
     if trigger not in user_added:
         await message.reply(
-            f'⛔ Cannot remove `{trigger}` - this is a built-in trigger.\\n'
-            f'You can only remove triggers you added yourself.',
+            f"Cannot remove `{trigger}` - this is a built-in trigger.\\n"
+            "You can only remove triggers you added yourself.",
             mention_author=False,
         )
         return True

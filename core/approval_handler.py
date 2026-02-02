@@ -1,7 +1,7 @@
 """
 Approval handler - manages pending upstream approval requests.
 
-Tracks pending approvals and handles reaction events for approve/decline.
+Tracks pending approvals and handles approval decisions.
 """
 from __future__ import annotations
 

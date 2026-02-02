@@ -2,7 +2,7 @@
 Sync service - handles propagation of moderation actions across linked servers.
 
 Downstream (parent → children): Automatic, respects sync settings
-Upstream (child → parent): Requires approval via reactions
+Upstream (child → parent): Requires approval via buttons
 """
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ class SyncService:
             reason_text = reason_text[:900] + "..."
 
         embed = discord.Embed(
-            title="⚠️ Sync Protection Triggered",
+            title="Sync Protection Triggered",
             description=(
                 f"Syncing **{direction_label}** actions from **{from_guild.name}** "
                 "is paused due to a burst of moderation activity."
@@ -187,16 +187,18 @@ class SyncService:
         embed.add_field(name="Origin Server", value=action.origin_guild_name, inline=True)
         embed.add_field(name="Reason", value=reason_text, inline=False)
         embed.add_field(
-            name="React to Approve/Decline",
-            value="✅ = Resume syncing (apply queued actions)\n❌ = Block until unlinked/reset",
+            name="Approval",
+            value=(
+                "Approve to resume syncing (apply queued actions).\n"
+                "Decline to block until unlinked/reset."
+            ),
             inline=False,
         )
         embed.set_footer(text=f"From Guild ID: {from_guild.id}")
 
         try:
-            msg = await channel.send(embed=embed)
-            await msg.add_reaction("✅")
-            await msg.add_reaction("❌")
+            view = _build_decision_view(SYNC_PROTECTION_BUTTON_PREFIX)
+            msg = await channel.send(embed=embed, view=view)
             return msg.id
         except discord.HTTPException as exc:
             logger.error("Failed to send protection request in guild %s: %s", to_guild.id, exc)
@@ -404,7 +406,7 @@ class SyncService:
 
         # Build approval embed
         embed = discord.Embed(
-            title=f"🔔 Upstream Action Request",
+            title="Upstream Action Request",
             description=f"A child server wants to sync a **{action.action_type}**.",
             color=0xFF9900,
         )
@@ -441,17 +443,19 @@ class SyncService:
         )
 
         embed.add_field(
-            name="React to Approve/Decline",
-            value="✅ = Approve (apply here + cascade to children)\n❌ = Decline",
+            name="Approval",
+            value=(
+                "Approve to apply here and cascade to children.\n"
+                "Decline to reject this action."
+            ),
             inline=False,
         )
 
         embed.set_footer(text=f"Child Guild ID: {child_guild_id}")
 
         try:
-            msg = await channel.send(embed=embed)
-            await msg.add_reaction("✅")
-            await msg.add_reaction("❌")
+            view = _build_decision_view(SYNC_APPROVAL_BUTTON_PREFIX)
+            msg = await channel.send(embed=embed, view=view)
 
             # Store pending approval
             from core.approval_handler import get_approval_handler
@@ -714,6 +718,177 @@ class SyncService:
             from_guild_id,
             to_guild_id,
         )
+
+
+# Button handling for approvals/protection
+SYNC_APPROVAL_BUTTON_PREFIX = "sync_approval:"
+SYNC_PROTECTION_BUTTON_PREFIX = "sync_protection:"
+
+
+def _build_decision_view(prefix: str) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(
+        discord.ui.Button(
+            label="Approve",
+            style=discord.ButtonStyle.green,
+            custom_id=f"{prefix}approve",
+        )
+    )
+    view.add_item(
+        discord.ui.Button(
+            label="Decline",
+            style=discord.ButtonStyle.red,
+            custom_id=f"{prefix}decline",
+        )
+    )
+    return view
+
+
+def _normalize_status_title(title: Optional[str], status: str) -> str:
+    base = title or ""
+    for prefix in ("APPROVED - ", "DECLINED - "):
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    base = base.strip()
+    if base:
+        return f"{status} - {base}"
+    return status
+
+
+async def _update_decision_message(
+    message: discord.Message,
+    approved: bool,
+) -> None:
+    status = "APPROVED" if approved else "DECLINED"
+    embed = message.embeds[0] if message.embeds else None
+    if embed:
+        embed.color = 0x00FF00 if approved else 0xFF0000
+        embed.title = _normalize_status_title(embed.title, status)
+        await message.edit(embed=embed, view=None)
+        return
+    await message.edit(content=status, view=None)
+
+
+async def _handle_sync_approval_button(interaction: discord.Interaction) -> bool:
+    if not interaction.data:
+        return False
+
+    custom_id = interaction.data.get("custom_id", "")
+    if not isinstance(custom_id, str) or not custom_id.startswith(SYNC_APPROVAL_BUTTON_PREFIX):
+        return False
+
+    decision = custom_id[len(SYNC_APPROVAL_BUTTON_PREFIX):]
+    if decision not in ("approve", "decline"):
+        return False
+
+    if not interaction.guild or not interaction.message:
+        await interaction.response.send_message(
+            "This approval can only be used in a server.",
+            ephemeral=True,
+        )
+        return True
+
+    member = interaction.guild.get_member(interaction.user.id)
+    if not member or not member.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You need Administrator permission to approve or decline.",
+            ephemeral=True,
+        )
+        return True
+
+    from core.approval_handler import get_approval_handler
+
+    handler = await get_approval_handler()
+    approval_info = await handler.consume_pending_approval(
+        parent_guild_id=interaction.guild.id,
+        message_id=interaction.message.id,
+    )
+
+    if not approval_info:
+        await interaction.response.send_message(
+            "This approval is no longer pending.",
+            ephemeral=True,
+        )
+        return True
+
+    approved = decision == "approve"
+    action = handler.info_to_sync_action(approval_info)
+
+    service = get_sync_service(interaction.client)
+    await service.handle_approval(interaction.guild.id, action, approved)
+
+    await _update_decision_message(interaction.message, approved)
+
+    await interaction.response.send_message(
+        "Approved." if approved else "Declined.",
+        ephemeral=True,
+    )
+    return True
+
+
+async def _handle_sync_protection_button(interaction: discord.Interaction) -> bool:
+    if not interaction.data:
+        return False
+
+    custom_id = interaction.data.get("custom_id", "")
+    if not isinstance(custom_id, str) or not custom_id.startswith(SYNC_PROTECTION_BUTTON_PREFIX):
+        return False
+
+    decision = custom_id[len(SYNC_PROTECTION_BUTTON_PREFIX):]
+    if decision not in ("approve", "decline"):
+        return False
+
+    if not interaction.guild or not interaction.message:
+        await interaction.response.send_message(
+            "This action can only be used in a server.",
+            ephemeral=True,
+        )
+        return True
+
+    member = interaction.guild.get_member(interaction.user.id)
+    if not member or not member.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You need Administrator permission to approve or decline.",
+            ephemeral=True,
+        )
+        return True
+
+    from core.sync_protection import get_sync_protection
+
+    protection = await get_sync_protection()
+    match = await protection.find_circuit_by_message_id(
+        message_id=interaction.message.id,
+        to_guild_id=interaction.guild.id,
+    )
+
+    if not match:
+        await interaction.response.send_message(
+            "This approval is no longer pending.",
+            ephemeral=True,
+        )
+        return True
+
+    from_guild_id, to_guild_id, _cb = match
+    approved = decision == "approve"
+
+    service = get_sync_service(interaction.client)
+    await service.handle_protection_approval(from_guild_id, to_guild_id, approved)
+
+    await _update_decision_message(interaction.message, approved)
+
+    await interaction.response.send_message(
+        "Approved." if approved else "Declined.",
+        ephemeral=True,
+    )
+    return True
+
+
+def setup_sync_interactions() -> None:
+    from core.interactions import register_component_handler
+
+    register_component_handler(SYNC_APPROVAL_BUTTON_PREFIX, _handle_sync_approval_button)
+    register_component_handler(SYNC_PROTECTION_BUTTON_PREFIX, _handle_sync_protection_button)
 
 
 # Global singleton

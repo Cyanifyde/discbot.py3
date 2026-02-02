@@ -408,7 +408,7 @@ async def _cmd_step(
         return
 
     guild = message.guild
-    await message.reply("⏳ Running enforcement step...", mention_author=False)
+    await message.reply(" Running enforcement step...", mention_author=False)
 
     try:
         enforced, scanned = await run_enforcement_step(bot, state, guild)

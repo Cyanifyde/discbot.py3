@@ -57,6 +57,7 @@ from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
 from services.scanner import restore_state as restore_scanner_state
+from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
 
@@ -100,6 +101,7 @@ class DiscBot(discord.Client):
         setup_moderation()
         setup_server_stats()
         setup_server_link()
+        setup_sync_interactions()
 
         await self._register_commands()
         await self.tree.sync()
@@ -272,105 +274,6 @@ class DiscBot(discord.Client):
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         """Handle interactions (button clicks, etc.)."""
         await handle_interaction(interaction)
-
-    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
-        """Handle raw reaction events for approval handling."""
-        # Only handle ✅ and ❌ reactions
-        if str(payload.emoji) not in ("✅", "❌"):
-            return
-
-        # Ignore bot reactions
-        if payload.user_id == self.user.id:
-            return
-
-        # Must be in a guild
-        if not payload.guild_id:
-            return
-
-        # Check if this is an approval message
-        from core.approval_handler import get_approval_handler
-        handler = await get_approval_handler()
-
-        approval_info = await handler.consume_pending_approval(
-            parent_guild_id=payload.guild_id,
-            message_id=payload.message_id,
-        )
-
-        if approval_info:
-            # Check if the reactor is an admin
-            guild = self.get_guild(payload.guild_id)
-            if not guild:
-                return
-
-            member = guild.get_member(payload.user_id)
-            if not member or not member.guild_permissions.administrator:
-                return
-
-            # Handle the approval/decline
-            approved = str(payload.emoji) == "✅"
-
-            from services.sync_service import get_sync_service
-            service = get_sync_service(self)
-
-            action = handler.info_to_sync_action(approval_info)
-            await service.handle_approval(payload.guild_id, action, approved)
-
-            # Update the message to show it was handled
-            try:
-                channel = guild.get_channel(payload.channel_id)
-                if channel and isinstance(channel, discord.TextChannel):
-                    message = await channel.fetch_message(payload.message_id)
-                    status = "✅ **APPROVED**" if approved else "❌ **DECLINED**"
-                    embed = message.embeds[0] if message.embeds else None
-                    if embed:
-                        embed.color = 0x00FF00 if approved else 0xFF0000
-                        embed.title = f"{status} - {embed.title}"
-                        await message.edit(embed=embed)
-                        await message.clear_reactions()
-            except discord.HTTPException:
-                pass
-            return
-
-        # Check if this is a sync protection approval message
-        from core.sync_protection import get_sync_protection
-        protection = await get_sync_protection()
-        match = await protection.find_circuit_by_message_id(
-            message_id=payload.message_id,
-            to_guild_id=payload.guild_id,
-        )
-        if not match:
-            return
-
-        from_guild_id, to_guild_id, _cb = match
-
-        guild = self.get_guild(payload.guild_id)
-        if not guild:
-            return
-
-        member = guild.get_member(payload.user_id)
-        if not member or not member.guild_permissions.administrator:
-            return
-
-        approved = str(payload.emoji) == "✅"
-
-        from services.sync_service import get_sync_service
-        service = get_sync_service(self)
-        await service.handle_protection_approval(from_guild_id, to_guild_id, approved)
-
-        # Update the message to show it was handled
-        try:
-            channel = guild.get_channel(payload.channel_id)
-            if channel and isinstance(channel, discord.TextChannel):
-                message = await channel.fetch_message(payload.message_id)
-                status = "✅ **APPROVED**" if approved else "❌ **DECLINED**"
-                embed = message.embeds[0] if message.embeds else None
-                if embed:
-                    embed.color = 0x00FF00 if approved else 0xFF0000
-                    embed.title = f"{status} - {embed.title}"
-                    await message.edit(embed=embed)
-                    await message.clear_reactions()
-        except discord.HTTPException:
-            pass
 
     # ─── Enforcement ──────────────────────────────────────────────────────────
 
