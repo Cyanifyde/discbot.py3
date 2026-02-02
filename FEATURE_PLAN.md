@@ -6,23 +6,23 @@ Technical Note: Use web rendering to JPG for visual outputs (rate cards, invoice
 
 ## Core Features
 
-- [ ] **Federated Trust Network** - Trust scoring based on children count, upflow status, vouches, link age, approval rate
+- [ ] **Federated Trust Network** - Trust scoring based on children count, upflow status, vouches, link age, approval rate. Trust factors: children_count (15%), upflow_status (20%), vouches (25%), link_age (15%), approval_rate (25%). Tiers: 0-20 untrusted, 21-50 neutral, 51-80 trusted, 81-100 highly trusted. Negative events decay at 2x rate of positive. Actions gated by tier: cross-server sync requires 50+, vouch others requires 60+, mediate disputes requires 80+
 - [ ] **Bot Statistics** - Uptime, commands, messages scanned, guilds, federation stats
 - [ ] **Server Invite Protection** - Admin-approved allowlist with approval workflow
 - [ ] **Enhanced Portfolio System** - Gallery entries with categories, tags, featured piece
-- [ ] **Commission Management** - Queue slots, status progression, TOS, price lists
+- [ ] **Commission Management** - Queue slots, status progression, TOS, price lists. Default stages: Inquiry → Accepted → Queued → In Progress → WIP Shared → Revision → Final Delivered → Completed → Archived. Transitions can be manual or triggered by client confirmation. Each stage change logs timestamp and notifies client via DM or channel ping based on preference
 
 ---
 
 ## Moderation & Safety
 
-- [ ] **Auto-Escalation System** - Warning thresholds trigger automatic mute/ban escalation
-- [ ] **Shadow Mod Log** - Private channel logging all mod actions with rich embeds
+- [ ] **Auto-Escalation System** - Warning thresholds trigger automatic mute/ban escalation. Default thresholds configurable per guild. Suggested defaults: 3 active warnings = 1h mute, 5 = 24h mute, 7 = temp ban (7d), 10 = permanent ban. Category-specific paths supported. Cooldown between escalations: 24h. Each tier triggers DM notification with appeal info if configured
+- [ ] **Shadow Mod Log** - Private channel logging all mod actions with rich embeds. Logs: warns, mutes, kicks, bans, unmutes, unbans, note additions, role changes (mod-relevant), message deletes (by mods), channel locks. Embed includes: action, target, moderator, reason, timestamp, case number. Case numbers sequential per guild
 - [ ] **User History Lookup** - Combined timeline of warnings, notes, bans, mutes, scan matches
-- [ ] **Probation System** - Restricted role for new/returning users until threshold met
+- [ ] **Probation System** - Restricted role for new/returning users until threshold met. Triggers: new account (<7d), rejoin after kick/ban, federation flag, manual assignment. Restrictions: no DMs to non-friends, no embeds/attachments, slowmode applied, limited channel access. Exit: X days clean (default 7), mod approval, or trust score threshold reached
 - [ ] **Mod Action Templates** - Pre-configured reasons with shortcuts
-- [ ] **Warning Expiry** - Default 30 days, configurable per guild
-- [ ] **Report System** - Users report messages via context menu, creates private mod thread
+- [ ] **Warning Expiry** - Default 30 days, configurable per guild. Warnings track: issued_at, expires_at, issued_by, reason, category. Expired warnings remain in history but don't count toward escalation. Permanent warnings supported. Expiry notifications optional
+- [ ] **Report System** - Users report messages via context menu, creates private mod thread. Categories: harassment, scam_attempt, spam, nsfw_violation, impersonation, other. Priority: urgent (mod ping), normal (queue), low (batch review). Auto-close after 14 days inactive. Reporter receives outcome notification (resolved/dismissed) without details. Repeat reporters flagged for review
 - [ ] **Action Reversal** - Quick undo for recent mod actions within grace period
 
 ---
@@ -64,7 +64,7 @@ Technical Note: Use web rendering to JPG for visual outputs (rate cards, invoice
 - [ ] **Contact Preferences** - Preferred contact method (DM open, DM closed, email only) shown on profile
 - [ ] **Timezone Display** - Profile shows user's current local time
 - [ ] **Identity Verification** - Manual federation-wide verification with flexible mod discretion on evidence; propagates to all federated servers
-- [ ] **Vouching System** - Users vouch for each other after completed transaction proof, visible on profile
+- [ ] **Vouching System** - Users vouch for each other after completed transaction proof, visible on profile. Requires transaction proof (screenshot, payment confirmation, or mod-verified). Vouch cooldown: 1 vouch per pair per 30 days. Vouches display: count, recent vouchers (last 5), oldest vouch date. Mutual vouches weighted higher. Vouch removal requires mod review
 
 ---
 
@@ -195,5 +195,92 @@ Technical Note: Use web rendering to JPG for visual outputs (rate cards, invoice
 
 - [ ] **Mod Action Reasons Audit** - Review if mod reasons are consistent, flag low-effort reasons
 - [ ] **Escalation Paths** - Define custom escalation paths for different violation types
+
+---
+
+## Server Organization
+
+- [ ] **Reaction Roles** - Assign roles via reactions, mutually exclusive groups, verification required option
+
+---
+
+## Custom Content
+
+- [ ] **Custom Commands** - Admins create text/embed responses triggered by keywords
+- [ ] **Auto-Responder Enhancements** - Regex support, cooldowns, role restrictions, random responses from list
+- [ ] **Form Builder** - Create multi-question forms, responses logged to channel, used for applications/signups
+
+---
+
+## Automation & Workflows
+
+- [ ] **Trigger Chains** - When event X happens, execute action Y (e.g., when user gets role A, also give role B)
+- [ ] **Scheduled Actions** - Schedule role additions/removals, channel permission changes, message sends at future times
+
+---
+
+## Role Management
+
+- [ ] **Temporary Roles** - Assign roles that auto-expire after duration
+- [ ] **Role Request System** - Users request roles, mods approve/deny, request tracking
+- [ ] **Role Bundles** - Assign multiple roles at once with one command/action
+
+---
+
+## Content Management
+
+- [ ] **Cross-Post Manager** - Auto-share content across federation (e.g., art-share channels), configurable filters, source attribution
+
+---
+
+## Server Customization
+
+- [ ] **Bot Persona** - Customize bot name, avatar, response style per server
+- [ ] **Command Cooldowns** - Set per-command cooldowns globally or per-user/role
+
+---
+
+## Web UI System
+
+Lightweight, minimal CSS/JS web interface (old internet aesthetic - fast, no frameworks, vanilla HTML/CSS/JS). Authentication via Discord OAuth.
+
+### Server Admin Panel
+- [ ] **Dashboard** - Server overview, quick stats, recent activity
+- [ ] **Modules** - Enable/disable modules, per-module settings
+- [ ] **Moderation Settings** - Warning thresholds, escalation paths, auto-mod config
+- [ ] **Auto-Responders** - Create/edit/delete auto-responders, test patterns
+- [ ] **Custom Commands** - Manage custom commands, view usage stats
+- [ ] **Forms** - Build and manage forms, view submissions
+- [ ] **Roles** - Reaction roles setup, role requests queue, temporary roles, bundles
+- [ ] **Automation** - Trigger chains builder, scheduled actions calendar
+- [ ] **Commission Settings** - Stages, templates, defaults (if commission module enabled)
+- [ ] **Logs** - View mod logs, action history, filterable
+- [ ] **Bot Persona** - Customize bot name/avatar/style for this server
+
+### Federation Admin Panel
+- [ ] **Dashboard** - Federation overview, member servers, health status
+- [ ] **Member Servers** - View/manage linked servers, trust scores, sync status
+- [ ] **Trust Network** - Visualize trust relationships, adjust weights
+- [ ] **Sync Settings** - Configure what syncs, from which tiers, delays
+- [ ] **Cross-Post Channels** - Manage art-share and cross-post configurations
+- [ ] **Blocklist** - Federation-wide blocklist management
+- [ ] **Audit Log** - Federation sync events, membership changes
+- [ ] **Announcements** - Push announcements to children servers
+- [ ] **Applications** - Review server applications to join federation
+
+### Bot Owner Panel
+- [ ] **Dashboard** - Global stats, all servers, uptime, resource usage
+- [ ] **Servers** - List all servers, per-server controls, leave server
+- [ ] **Federation Management** - All federations overview, intervene if needed
+- [ ] **AI Checker Module**
+  - [ ] **Pricing** - Set cost per use, bulk discounts, free tier limits
+  - [ ] **Server Credits** - View/adjust server credits, transaction history
+  - [ ] **Usage Stats** - Per-server usage, revenue tracking, cost analysis
+  - [ ] **Enable/Disable** - Toggle AI checker availability per server
+  - [ ] **Rate Limits** - Configure rate limits, abuse prevention
+  - [ ] **Billing** - Payment integration settings, invoice generation
+- [ ] **Global Settings** - Bot-wide defaults, feature flags
+- [ ] **Maintenance** - Restart, update, backup controls
+- [ ] **Logs** - Global error logs, performance metrics
 
 ---
