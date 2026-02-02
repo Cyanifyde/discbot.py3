@@ -248,22 +248,27 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         colors.extend(generate_analogous(base_color, 2))
         method_label = "harmony"
     elif parts[1].lower() in {"complementary", "analogous", "triadic", "monochromatic"}:
-        if len(parts) < 3:
-            await message.reply(" Usage: `palette <method> <#color> [count]`")
-            return
         method = parts[1].lower()
-        args = parts[2].split()
-        base_color = args[0]
-        if not base_color.startswith("#") or len(base_color) != 7:
-            await message.reply(" Invalid hex color")
-            return
+        base_color = None
         count = 5
-        if len(args) > 1:
-            try:
-                count = int(args[1])
-                count = max(2, min(8, count))
-            except ValueError:
-                count = 5
+        if len(parts) >= 3:
+            args = parts[2].split()
+            if args:
+                if args[0].startswith("#") and len(args[0]) == 7:
+                    base_color = args[0]
+                    if len(args) > 1:
+                        try:
+                            count = int(args[1])
+                        except ValueError:
+                            count = 5
+                else:
+                    try:
+                        count = int(args[0])
+                    except ValueError:
+                        count = 5
+        count = max(2, min(8, count))
+        if base_color is None:
+            base_color = generate_random_color()
         colors = _build_palette_by_method(method, base_color, count)
         if not colors:
             await message.reply(" Unknown palette method")

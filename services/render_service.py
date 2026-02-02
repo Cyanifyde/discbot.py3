@@ -146,8 +146,8 @@ class RenderService:
             JPG image as bytes
         """
         template_obj = self.env.get_template("palette.html")
-        _ = template_obj.render(colors=colors, method=method, count=count)
-        return self._render_palette_image(colors, method, count)
+        html = template_obj.render(colors=colors, method=method, count=count)
+        return await self._html_to_jpg(html, width=800, height=400)
 
     async def _html_to_jpg(
         self,
@@ -213,63 +213,6 @@ class RenderService:
         out.seek(0)
         return out.getvalue()
 
-    def _render_palette_image(
-        self,
-        colors: list[str],
-        method: str,
-        count: int,
-    ) -> bytes:
-        width = 800
-        height = 400
-        margin = 40
-        header_h = 70
-        gutter = 10
-        swatch_h = height - margin * 2 - header_h
-        swatch_w = max(1, (width - margin * 2 - gutter * (len(colors) - 1)) // max(1, len(colors)))
-
-        img = Image.new("RGB", (width, height), color="#f5f5f5")
-        draw = ImageDraw.Draw(img)
-
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 24)
-            meta_font = ImageFont.truetype("arial.ttf", 14)
-        except Exception:
-            title_font = ImageFont.load_default()
-            meta_font = ImageFont.load_default()
-
-        draw.text((margin, margin), "Color Palette", fill="#111111", font=title_font)
-        draw.text(
-            (margin, margin + 30),
-            f"{method} · {count} colors",
-            fill="#666666",
-            font=meta_font,
-        )
-
-        x = margin
-        y = margin + header_h
-        for color in colors:
-            draw.rounded_rectangle(
-                [x, y, x + swatch_w, y + swatch_h],
-                radius=8,
-                fill=color,
-                outline="#dddddd",
-                width=1,
-            )
-            text = color.upper()
-            text_w, text_h = draw.textsize(text, font=meta_font)
-            text_x = x + (swatch_w - text_w) / 2
-            text_y = y + swatch_h - text_h - 10
-            draw.rectangle(
-                [text_x - 6, text_y - 4, text_x + text_w + 6, text_y + text_h + 4],
-                fill="#ffffff",
-            )
-            draw.text((text_x, text_y), text, fill="#111111", font=meta_font)
-            x += swatch_w + gutter
-
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=95)
-        buffer.seek(0)
-        return buffer.getvalue()
 
 
 # Global service instance
