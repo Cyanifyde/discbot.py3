@@ -491,12 +491,6 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         a for a in args if not (a.startswith("%") and len(a) >= 3 and a[1:2].lower() in {"h", "s", "l"})
     ]
 
-    if args_no_constraint and args_no_constraint[0].lower() in {"shade", "shades"}:
-        await message.reply(
-            " `palette shade` was removed. Use `%h/%s/%l` constraints instead (only one at a time).",
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        return
     def apply_constraint(hex_color: str) -> str:
         if not constraint:
             return hex_color
