@@ -99,11 +99,6 @@ def setup_art_tools() -> None:
             ("palette warmcool [%h]", "Temperature contrast (warm subjects + cool shadows)"),
             ("palette limited [3-5]", "Small harmonious palette for color mixing"),
             ("palette skintone [#hex]", "Portrait palette (warm light = cool shadows)"),
-            ("Reroll button", "Regenerate unlocked colors"),
-            ("Lock buttons", "Toggle lock per color"),
-            ("Send to DM button", "DM yourself the current palette"),
-            ("Temperature indicators", "🔥 Warm / ❄️ Cool / ⚖️ Neutral shown on all colors"),
-            ("Value indicators", "✨ Highlight / 🎨 Midtone / 🌑 Shadow for shading guidance"),
         ],
         group="Art Tools",
         hidden=True,
@@ -1263,6 +1258,67 @@ class _PaletteView(discord.ui.View):
                     colors[i] = new_colors[i]
 
             self.state.proportions = proportions
+
+        # Special handling for Shading palette
+        elif self.state.method_label == "Shading":
+            # Use locked color as base (prefer middle/base color at index 2)
+            if 2 in locked:
+                base = colors[2]
+            elif locked_colors:
+                base = locked_colors[0]
+            else:
+                base = _random_color_with_constraint(self.state.constraint)
+
+            new_colors = _generate_shading_palette(base)
+
+            # Apply locked colors back
+            for i in range(len(colors)):
+                if i not in locked:
+                    colors[i] = new_colors[i]
+
+        # Special handling for Warm/Cool Split palette
+        elif self.state.method_label == "Warm/Cool Split":
+            # Use locked color as base
+            if locked_colors:
+                base = locked_colors[0]
+            else:
+                base = _random_color_with_constraint(self.state.constraint)
+
+            new_colors = _generate_warmcool_palette(base)
+
+            # Apply locked colors back
+            for i in range(len(colors)):
+                if i not in locked:
+                    colors[i] = new_colors[i]
+
+        # Special handling for Limited Palette
+        elif self.state.method_label == "Limited Palette":
+            # Regenerate with same count
+            count = len(colors)
+            new_colors = _generate_limited_palette(count)
+
+            # Apply locked colors back
+            for i in range(len(colors)):
+                if i not in locked:
+                    colors[i] = new_colors[i]
+
+        # Special handling for Skin Tone palette
+        elif self.state.method_label == "Skin Tone":
+            # Use locked color as base (prefer base skin tone at index 0)
+            if 0 in locked:
+                base = colors[0]
+            elif locked_colors:
+                base = locked_colors[0]
+            else:
+                base = _random_color_with_constraint(self.state.constraint)
+
+            new_colors = _generate_skintone_palette(base)
+
+            # Apply locked colors back
+            for i in range(len(colors)):
+                if i not in locked:
+                    colors[i] = new_colors[i]
+
         else:
             # Determine a base to generate "in symphony" with.
             if locked_colors:
@@ -1368,9 +1424,8 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
 
     if not args_no_constraint:
         count = 5
-        colors = [_random_color_with_constraint(constraint)]
-        while len(colors) < count:
-            colors.append(_vary_color_from_seed(colors[-1], constraint))
+        # Generate each color independently with smart ranges for variety
+        colors = [_random_color_with_constraint(constraint) for _ in range(count)]
     elif args_no_constraint[0].lower() == "hex":
         if len(args_no_constraint) < 2:
             await message.reply(" Usage: `palette hex <#color1> <#color2>...`")
@@ -1474,9 +1529,8 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
             count = max(1, min(8, int(args_no_constraint[0])))
         else:
             count = 5
-        colors = [_random_color_with_constraint(constraint)]
-        while len(colors) < count:
-            colors.append(_vary_color_from_seed(colors[-1], constraint))
+        # Generate each color independently with smart ranges for variety
+        colors = [_random_color_with_constraint(constraint) for _ in range(count)]
         method_label = "random"
 
     colors = [apply_constraint(c) for c in colors]
