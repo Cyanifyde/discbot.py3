@@ -91,6 +91,7 @@ def setup_art_tools() -> None:
             ("palette monochromatic [%h/%s/%l] [count]", "Monochromatic palette (optional constraint)"),
             ("Reroll button", "Regenerate unlocked colors"),
             ("Lock buttons", "Toggle lock per color"),
+            ("Send to DM button", "DM yourself the current palette"),
         ],
         group="Art Tools",
         hidden=True,
@@ -752,6 +753,40 @@ class _PaletteView(discord.ui.View):
                 colors[i] = _hls_to_hex(h, l, s)
 
         await self.update(interaction)
+
+    @discord.ui.button(label="Send to DM", style=discord.ButtonStyle.secondary, row=2)
+    async def send_dm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            return
+
+        user = interaction.user
+        if user is None:
+            return
+
+        files, embeds = await self.build_files_and_embeds()
+        try:
+            dm = await user.create_dm()
+            await dm.send(
+                embeds=embeds,
+                files=files,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            try:
+                await interaction.followup.send("Sent to your DMs.", ephemeral=True)
+            except Exception:
+                pass
+        except discord.Forbidden:
+            try:
+                await interaction.followup.send("I can't DM you (your DMs might be closed).", ephemeral=True)
+            except Exception:
+                pass
+        except Exception:
+            try:
+                await interaction.followup.send("Failed to send DM.", ephemeral=True)
+            except Exception:
+                pass
 
 
 async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
