@@ -369,6 +369,51 @@ def _blend_locked_base(locked_colors: list[str]) -> Optional[str]:
     return _hls_to_hex(avg_h, avg_l, avg_s)
 
 
+def _rotate_hue(hex_color: str, degrees: float) -> str:
+    hls = _hex_to_hls(hex_color)
+    if hls is None:
+        return hex_color
+    h, l, s = hls
+    h = (h + (degrees / 360.0)) % 1.0
+    return _hls_to_hex(h, l, s)
+
+
+def _generate_analogous_random(base_color: str, count: int) -> list[str]:
+    """Analogous colors with randomized step and direction, based on base_color."""
+    count = max(0, int(count))
+    if count <= 0:
+        return []
+
+    step_deg = random.uniform(18.0, 42.0)
+    direction = -1.0 if random.random() < 0.5 else 1.0
+    colors: list[str] = []
+    for i in range(1, count + 1):
+        colors.append(_rotate_hue(base_color, direction * step_deg * i))
+    return colors
+
+
+def _generate_monochromatic_random(base_color: str, count: int) -> list[str]:
+    """Monochromatic palette with randomized lightness steps."""
+    count = max(1, int(count))
+    hls = _hex_to_hls(base_color)
+    if hls is None:
+        return [base_color]
+    h, l, s = hls
+
+    # Build a range around the base lightness.
+    spread = random.uniform(0.25, 0.5)
+    lo = max(0.05, l - spread)
+    hi = min(0.95, l + spread)
+    if count == 1:
+        return [_hls_to_hex(h, l, s)]
+
+    # Randomly choose whether we bias lighter or darker.
+    bias = random.uniform(-0.15, 0.15)
+    vals = [lo + (hi - lo) * (i / (count - 1)) for i in range(count)]
+    vals = [min(0.95, max(0.05, v + bias)) for v in vals]
+    return [_hls_to_hex(h, v, s) for v in vals]
+
+
 def _generate_by_method(method_label: str, base_color: str, count: int) -> list[str]:
     method = (method_label or "random").lower()
     base_color = base_color.lower()
@@ -377,17 +422,37 @@ def _generate_by_method(method_label: str, base_color: str, count: int) -> list[
     if method == "harmony":
         colors = [base_color]
         if count >= 2:
-            colors.append(generate_complementary(base_color))
+            # Add a slightly jittered complementary so rerolls change while staying "complementary-ish".
+            comp = generate_complementary(base_color)
+            comp = _rotate_hue(comp, random.uniform(-8.0, 8.0))
+            colors.append(comp)
         if count > 2:
-            colors.extend(generate_analogous(base_color, max(1, count - 2)))
+            colors.extend(_generate_analogous_random(base_color, max(1, count - 2)))
         return colors[:count]
 
     if method in {"complementary", "analogous", "triadic", "monochromatic"}:
-        colors = _build_palette_by_method(method, base_color, max(2, count))
-        if len(colors) < count:
+        if method == "analogous":
+            colors = [base_color]
+            colors.extend(_generate_analogous_random(base_color, count - 1))
+            return colors[:count]
+
+        if method == "complementary":
+            colors = [base_color, _rotate_hue(generate_complementary(base_color), random.uniform(-8.0, 8.0))]
+            if count > 2:
+                colors.extend(_generate_analogous_random(base_color, count - 2))
+            return colors[:count]
+
+        if method == "triadic":
+            # Slightly jitter the triad angles so rerolls change.
+            j1 = random.uniform(-10.0, 10.0)
+            j2 = random.uniform(-10.0, 10.0)
+            colors = [base_color, _rotate_hue(base_color, 120.0 + j1), _rotate_hue(base_color, 240.0 + j2)]
             while len(colors) < count:
                 colors.append(_vary_color_from_seed(colors[-1], None))
-        return colors[:count]
+            return colors[:count]
+
+        # monochromatic
+        return _generate_monochromatic_random(base_color, count)[:count]
 
     # random/hex fallback
     colors = [base_color]
