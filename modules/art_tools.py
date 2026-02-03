@@ -8,6 +8,7 @@ from __future__ import annotations
 import colorsys
 import io
 import logging
+import math
 import random
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -170,6 +171,84 @@ def _normalize_hex(token: str) -> Optional[str]:
     return None
 
 
+def _parse_hsl_color(token: str) -> Optional[str]:
+    """
+    Parse HSL into a hex color.
+    Supported forms:
+    - hsl(120, 50%, 40%)
+    - hsl:120,50,40
+    - hsl(120 50% 40%)
+    """
+    t = (token or "").strip().lower()
+    if not t:
+        return None
+
+    if t.startswith("hsl(") and t.endswith(")"):
+        inner = t[4:-1].strip()
+    elif t.startswith("hsl:"):
+        inner = t[4:].strip()
+    else:
+        return None
+
+    inner = inner.replace(",", " ")
+    parts = [p for p in inner.split() if p]
+    if len(parts) != 3:
+        return None
+
+    try:
+        h = float(parts[0])
+        s_raw = parts[1].rstrip("%")
+        l_raw = parts[2].rstrip("%")
+        s = float(s_raw)
+        l = float(l_raw)
+    except Exception:
+        return None
+
+    h = (h % 360.0) / 360.0
+    s = max(0.0, min(100.0, s)) / 100.0
+    l = max(0.0, min(100.0, l)) / 100.0
+    return _hls_to_hex(h, l, s)
+
+
+def _parse_color_tokens(tokens: list[str], start: int = 0) -> Tuple[Optional[str], int]:
+    """
+    Parse a color starting at tokens[start].
+    Returns (hex_color, consumed_token_count).
+    Supports:
+    - #rrggbb
+    - hsl(...) / hsl:...
+    - hsl <h> <s%> <l%>
+    """
+    if start < 0 or start >= len(tokens):
+        return None, 0
+
+    t0 = (tokens[start] or "").strip()
+    hex0 = _normalize_hex(t0)
+    if hex0:
+        return hex0, 1
+
+    hsl0 = _parse_hsl_color(t0)
+    if hsl0:
+        return hsl0, 1
+
+    if t0.lower() == "hsl" and (start + 3) < len(tokens):
+        h = (tokens[start + 1] or "").strip()
+        s = (tokens[start + 2] or "").strip().rstrip("%")
+        l = (tokens[start + 3] or "").strip().rstrip("%")
+        try:
+            hh = float(h)
+            ss = float(s)
+            ll = float(l)
+        except Exception:
+            return None, 0
+        hh = (hh % 360.0) / 360.0
+        ss = max(0.0, min(100.0, ss)) / 100.0
+        ll = max(0.0, min(100.0, ll)) / 100.0
+        return _hls_to_hex(hh, ll, ss), 4
+
+    return None, 0
+
+
 def _parse_hsl_constraint(tokens: list[str]) -> Tuple[Optional[Tuple[str, int]], Optional[str]]:
     """
     Parse tokens like %h120, %s40, %l10. Only one may be used.
@@ -237,6 +316,62 @@ def _vary_color_from_seed(seed_hex: str, constraint: Optional[Tuple[str, int]]) 
             l = val / 100.0
     return _hls_to_hex(h, l, s)
 
+
+def _blend_locked_base(locked_colors: list[str]) -> Optional[str]:
+    """Blend locked colors into a single base (circular mean hue + average lightness/saturation)."""
+    hls_list: list[Tuple[float, float, float]] = []
+    for c in locked_colors:
+        hls = _hex_to_hls(c)
+        if hls is not None:
+            hls_list.append(hls)
+    if not hls_list:
+        return None
+
+    # Circular mean for hue (on [0,1)).
+    x = 0.0
+    y = 0.0
+    l_sum = 0.0
+    s_sum = 0.0
+    for h, l, s in hls_list:
+        ang = h * 2.0 * math.pi
+        x += math.cos(ang)
+        y += math.sin(ang)
+        l_sum += l
+        s_sum += s
+
+    avg_l = l_sum / len(hls_list)
+    avg_s = s_sum / len(hls_list)
+    avg_h = 0.0
+    if abs(x) > 1e-9 or abs(y) > 1e-9:
+        avg_h = (math.atan2(y, x) / (2.0 * math.pi)) % 1.0
+    return _hls_to_hex(avg_h, avg_l, avg_s)
+
+
+def _generate_by_method(method_label: str, base_color: str, count: int) -> list[str]:
+    method = (method_label or "random").lower()
+    base_color = base_color.lower()
+    count = max(1, min(8, int(count)))
+
+    if method == "harmony":
+        colors = [base_color]
+        if count >= 2:
+            colors.append(generate_complementary(base_color))
+        if count > 2:
+            colors.extend(generate_analogous(base_color, max(1, count - 2)))
+        return colors[:count]
+
+    if method in {"complementary", "analogous", "triadic", "monochromatic"}:
+        colors = _build_palette_by_method(method, base_color, max(2, count))
+        if len(colors) < count:
+            while len(colors) < count:
+                colors.append(_vary_color_from_seed(colors[-1], None))
+        return colors[:count]
+
+    # random/hex fallback
+    colors = [base_color]
+    while len(colors) < count:
+        colors.append(_vary_color_from_seed(colors[-1], None))
+    return colors[:count]
 
 
 def generate_complementary(hex_color: str) -> str:
@@ -369,7 +504,7 @@ class _PaletteView(discord.ui.View):
         for b in self.lock_buttons:
             b._sync()
         try:
-            self.reroll.disabled = len(self.locked_indices) >= len(self.state.colors)
+            self.reroll.disabled = self.state.method_label == "hex" or len(self.locked_indices) >= len(self.state.colors)
         except Exception:
             pass
 
@@ -463,17 +598,44 @@ class _PaletteView(discord.ui.View):
 
     @discord.ui.button(label="Reroll", style=discord.ButtonStyle.secondary, row=1)
     async def reroll(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.state.method_label == "hex":
+            return
         colors = self.state.colors
         locked = self.locked_indices
-        seeds = [colors[i] for i in sorted(locked) if 0 <= i < len(colors)]
+        locked_colors = [colors[i] for i in sorted(locked) if 0 <= i < len(colors)]
 
+        # Determine a base to generate "in symphony" with.
+        if locked_colors:
+            base = _blend_locked_base(locked_colors) or locked_colors[0]
+        else:
+            base = _random_color_with_constraint(self.state.constraint)
+
+        generated = _generate_by_method(self.state.method_label, base, len(colors))
+
+        # Apply locked colors back onto their slots, regenerate the rest deterministically
+        # from the sequence (so color N is based on color N-1 / base).
         for i in range(len(colors)):
             if i in locked:
                 continue
-            if seeds:
-                colors[i] = _vary_color_from_seed(random.choice(seeds), self.state.constraint)
-            else:
-                colors[i] = _random_color_with_constraint(self.state.constraint)
+            colors[i] = generated[i]
+
+        # Enforce constraint after generation (if present).
+        if self.state.constraint:
+            comp, val = self.state.constraint
+            for i in range(len(colors)):
+                if i in locked:
+                    continue
+                hls = _hex_to_hls(colors[i])
+                if hls is None:
+                    continue
+                h, l, s = hls
+                if comp == "h":
+                    h = val / 360.0
+                elif comp == "s":
+                    s = val / 100.0
+                else:
+                    l = val / 100.0
+                colors[i] = _hls_to_hex(h, l, s)
 
         await self.update(interaction)
 
@@ -512,7 +674,9 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
 
     if not args_no_constraint:
         count = 5
-        colors = [_random_color_with_constraint(constraint) for _ in range(count)]
+        colors = [_random_color_with_constraint(constraint)]
+        while len(colors) < count:
+            colors.append(_vary_color_from_seed(colors[-1], constraint))
     elif args_no_constraint[0].lower() == "hex":
         if len(args_no_constraint) < 2:
             await message.reply(" Usage: `palette hex <#color1> <#color2>...`")
@@ -530,9 +694,9 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
         if len(args_no_constraint) < 2:
             await message.reply(" Usage: `palette harmony <#color>`")
             return
-        base_color = _normalize_hex(args_no_constraint[1])
+        base_color, consumed = _parse_color_tokens(args_no_constraint, 1)
         if not base_color:
-            await message.reply(" Invalid hex color")
+            await message.reply(" Invalid color. Use `#rrggbb` or `hsl(...)`.", allowed_mentions=discord.AllowedMentions.none())
             return
         colors = [base_color, generate_complementary(base_color)]
         colors.extend(generate_analogous(base_color, 2))
@@ -544,10 +708,11 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
 
         rest = args_no_constraint[1:]
         if rest:
-            if _normalize_hex(rest[0]):
-                base_color = _normalize_hex(rest[0])
-                if len(rest) > 1 and rest[1].isdigit():
-                    count = int(rest[1])
+            parsed_color, consumed = _parse_color_tokens(rest, 0)
+            if parsed_color:
+                base_color = parsed_color
+                if len(rest) > consumed and rest[consumed].isdigit():
+                    count = int(rest[consumed])
             elif rest[0].isdigit():
                 count = int(rest[0])
         count = max(2, min(8, count))
@@ -559,12 +724,26 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
             return
         method_label = method
     else:
-        if args_no_constraint[0].isdigit():
-            count = max(1, min(8, int(args_no_constraint[0])))
-        else:
+        # Random palette; optionally allow a seed color for all variants.
+        seed_color, consumed = _parse_color_tokens(args_no_constraint, 0)
+        if seed_color:
             count = 5
-        colors = [_random_color_with_constraint(constraint) for _ in range(count)]
-        method_label = "random"
+            if len(args_no_constraint) > consumed and args_no_constraint[consumed].isdigit():
+                count = int(args_no_constraint[consumed])
+            count = max(1, min(8, count))
+            colors = [seed_color]
+            while len(colors) < count:
+                colors.append(_vary_color_from_seed(colors[-1], constraint))
+            method_label = "random"
+        else:
+            if args_no_constraint[0].isdigit():
+                count = max(1, min(8, int(args_no_constraint[0])))
+            else:
+                count = 5
+            colors = [_random_color_with_constraint(constraint)]
+            while len(colors) < count:
+                colors.append(_vary_color_from_seed(colors[-1], constraint))
+            method_label = "random"
 
     colors = [apply_constraint(c) for c in colors]
 
@@ -585,13 +764,14 @@ async def _handle_palette_help(message: discord.Message) -> None:
     await message.reply(
         "Palette commands:\n"
         "- `palette [count]` (random, 1-8)\n"
+        "- `palette <#rrggbb|hsl(...)> [count]` (seeded random)\n"
         "- `palette [count] %h120` / `%s40` / `%l10` (only one)\n"
         "- `palette hex <#color1> <#color2>...`\n"
-        "- `palette harmony <#color>`\n"
-        "- `palette complementary <#color> [count]`\n"
-        "- `palette analogous <#color> [count]`\n"
-        "- `palette triadic <#color> [count]`\n"
-        "- `palette monochromatic <#color> [count]`"
+        "- `palette harmony <#rrggbb|hsl(...)>`\n"
+        "- `palette complementary <#rrggbb|hsl(...)> [count]`\n"
+        "- `palette analogous <#rrggbb|hsl(...)> [count]`\n"
+        "- `palette triadic <#rrggbb|hsl(...)> [count]`\n"
+        "- `palette monochromatic <#rrggbb|hsl(...)> [count]`"
     )
 
 
