@@ -74,6 +74,28 @@ def setup_art_tools() -> None:
         ],
     )
 
+    help_system.register_module(
+        name="Palette",
+        description="Generate color palettes and reroll with locks.",
+        help_command="palette help",
+        commands=[
+            ("palette [count]", "Random palette (1–8)"),
+            ("palette [count] %h120", "Fix hue (0–360) (only one of %h/%s/%l)"),
+            ("palette [count] %s40", "Fix saturation percent (0–100)"),
+            ("palette [count] %l10", "Fix lightness percent (0–100)"),
+            ("palette hex <#c1> <#c2> ...", "Palette from hex codes"),
+            ("palette harmony <#rrggbb|hsl(...)>", "Complementary + analogous"),
+            ("palette complementary <#rrggbb|hsl(...)> [count]", "Complementary palette"),
+            ("palette analogous <#rrggbb|hsl(...)> [count]", "Analogous palette"),
+            ("palette triadic <#rrggbb|hsl(...)> [count]", "Triadic palette"),
+            ("palette monochromatic <#rrggbb|hsl(...)> [count]", "Monochromatic palette"),
+            ("Reroll button", "Regenerate unlocked colors"),
+            ("Lock buttons", "Toggle lock per color"),
+        ],
+        group="Art Tools",
+        hidden=True,
+    )
+
 
 async def handle_art_tools_command(message: discord.Message, bot: discord.Client) -> bool:
     """
@@ -750,17 +772,11 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
 
 async def _handle_palette_help(message: discord.Message) -> None:
     """Show help for palette commands."""
-    await message.reply(
-        "Palette commands:\n"
-        "- `palette [count]` (random, 1-8)\n"
-        "- `palette [count] %h120` / `%s40` / `%l10` (only one)\n"
-        "- `palette hex <#color1> <#color2>...`\n"
-        "- `palette harmony <#rrggbb|hsl(...)>`\n"
-        "- `palette complementary <#rrggbb|hsl(...)> [count]`\n"
-        "- `palette analogous <#rrggbb|hsl(...)> [count]`\n"
-        "- `palette triadic <#rrggbb|hsl(...)> [count]`\n"
-        "- `palette monochromatic <#rrggbb|hsl(...)> [count]`"
-    )
+    embed = help_system.get_module_help("Palette")
+    if embed:
+        await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        return
+    await message.reply(" Usage: `palette [count]` (try `palette help`)", allowed_mentions=discord.AllowedMentions.none())
 
 
 # ─── Art Prompt Generator ─────────────────────────────────────────────────────
