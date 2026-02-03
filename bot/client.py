@@ -1143,8 +1143,9 @@ class DiscBot(discord.Client):
                 )
                 return
 
-            embed = discord.Embed(title="Question", description=sanitize_text(answer))
+            embed = discord.Embed(title="Question")
             embed.add_field(name="User asked", value=sanitize_text(question), inline=False)
+            embed.add_field(name="Answer", value=sanitize_text(answer), inline=False)
 
             await interaction.response.send_message(
                 embed=embed,
