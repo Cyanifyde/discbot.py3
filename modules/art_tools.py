@@ -976,6 +976,53 @@ def _generate_skintone_palette(base_color: str) -> list[str]:
     return colors
 
 
+def _generate_gradient_palette(start_color: str, end_color: str, count: int = 5) -> list[str]:
+    """
+    Generate gradient palette between two colors.
+
+    Interpolates smoothly from start to end color in HSL space.
+    Structure: start → intermediate colors → end (count colors total).
+    """
+    count = max(2, min(12, count))  # 2-12 colors
+
+    # Parse start and end colors
+    start_hls = _hex_to_hls(start_color)
+    end_hls = _hex_to_hls(end_color)
+
+    if start_hls is None or end_hls is None:
+        # Fallback to duplicates if parsing fails
+        return [start_color] * count
+
+    start_h, start_l, start_s = start_hls
+    end_h, end_l, end_s = end_hls
+
+    # Handle hue wrapping for shortest path interpolation
+    # If hue difference is >180°, wrap around
+    h_diff = end_h - start_h
+    if abs(h_diff) > 0.5:
+        if h_diff > 0:
+            start_h += 1.0
+        else:
+            end_h += 1.0
+
+    colors = []
+    for i in range(count):
+        # Linear interpolation factor (0.0 to 1.0)
+        t = i / (count - 1) if count > 1 else 0
+
+        # Interpolate H, L, S
+        interp_h = (start_h + t * (end_h - start_h)) % 1.0
+        interp_l = start_l + t * (end_l - start_l)
+        interp_s = start_s + t * (end_s - start_s)
+
+        # Apply perceptual adjustment
+        interp_l = _perceptual_lightness_adjust(interp_h, interp_l)
+
+        colors.append(_hls_to_hex(interp_h, interp_l, interp_s))
+
+    return colors
+
+
 def generate_complementary(hex_color: str) -> str:
     """Generate complementary color."""
     r, g, b = hex_to_rgb(hex_color)
