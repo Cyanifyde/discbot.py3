@@ -4,7 +4,8 @@
       "Bash(dir:*)",
       "Bash(ls:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(python:*)"
     ]
   }
 }

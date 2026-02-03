@@ -67,6 +67,11 @@ def setup_art_tools() -> None:
             ("palette harmony [%h/%s/%l]", "Generate complementary + analogous palette (optional constraint)"),
             ("palette <method> [%h/%s/%l] [count]", "Methods: complementary, analogous, triadic, monochromatic"),
             ("palette [count] %l10", "Constrain random palettes (only one of %h/%s/%l)"),
+            ("palette rule60 [%h]", "60-30-10 design rule palette (UI/design)"),
+            ("palette shading <#hex>", "Cel shading palette (shadows → highlights)"),
+            ("palette warmcool [%h]", "Warm + cool colors for temperature contrast"),
+            ("palette limited [3-5]", "Small harmonious palette (Zorn-style)"),
+            ("palette skintone [#hex]", "Portrait palette with realistic skin lighting"),
             ("prompt", "Generate random art prompt"),
             ("prompt custom <subject> <action> <setting>", "Create custom prompt"),
             ("artdice <sides>", "Roll art-themed dice"),
@@ -79,7 +84,7 @@ def setup_art_tools() -> None:
         description="Generate color palettes and reroll with locks.",
         help_command="palette help",
         commands=[
-            ("palette [count]", "Random palette (1–8)"),
+            ("palette [count]", "Random palette (1–8) with improved color generation"),
             ("palette [count] %h120", "Fix hue (0–360) (only one of %h/%s/%l)"),
             ("palette [count] %s40", "Fix saturation percent (0–100)"),
             ("palette [count] %l10", "Fix lightness percent (0–100)"),
@@ -89,9 +94,16 @@ def setup_art_tools() -> None:
             ("palette analogous [%h/%s/%l] [count]", "Analogous palette (optional constraint)"),
             ("palette triadic [%h/%s/%l] [count]", "Triadic palette (optional constraint)"),
             ("palette monochromatic [%h/%s/%l] [count]", "Monochromatic palette (optional constraint)"),
+            ("palette rule60 [%h]", "60-30-10 design rule (UI: dominant/secondary/accent)"),
+            ("palette shading <#hex>", "Cel shading with desaturated shadows"),
+            ("palette warmcool [%h]", "Temperature contrast (warm subjects + cool shadows)"),
+            ("palette limited [3-5]", "Small harmonious palette for color mixing"),
+            ("palette skintone [#hex]", "Portrait palette (warm light = cool shadows)"),
             ("Reroll button", "Regenerate unlocked colors"),
             ("Lock buttons", "Toggle lock per color"),
             ("Send to DM button", "DM yourself the current palette"),
+            ("Temperature indicators", "🔥 Warm / ❄️ Cool / ⚖️ Neutral shown on all colors"),
+            ("Value indicators", "✨ Highlight / 🎨 Midtone / 🌑 Shadow for shading guidance"),
         ],
         group="Art Tools",
         hidden=True,
@@ -301,23 +313,81 @@ def _parse_hsl_constraint(tokens: list[str]) -> Tuple[Optional[Tuple[str, int]],
     return found, None
 
 
-def _random_color_with_constraint(constraint: Optional[Tuple[str, int]]) -> str:
+def _random_color_with_constraint(
+    constraint: Optional[Tuple[str, int]],
+    *,
+    use_smart_ranges: bool = True,
+    perceptual_adjust: bool = True,
+) -> str:
+    """
+    Generate random color with optional constraint and smart ranges.
+
+    Args:
+        constraint: Optional (component, value) tuple for %h/%s/%l
+        use_smart_ranges: Use aesthetic lightness/saturation distributions (default True)
+        perceptual_adjust: Apply perceptual lightness corrections (default True)
+
+    Returns:
+        Hex color string
+    """
     if not constraint:
-        return generate_random_color()
+        if use_smart_ranges:
+            l_min, l_max = _smart_lightness_range()
+            s_min, s_max = _smart_saturation_range()
+        else:
+            l_min, l_max = (0.25, 0.8)
+            s_min, s_max = (0.35, 0.95)
+
+        h = random.random()
+        l = random.uniform(l_min, l_max)
+        s = random.uniform(s_min, s_max)
+
+        if perceptual_adjust:
+            l = _perceptual_lightness_adjust(h, l)
+
+        return _hls_to_hex(h, l, s)
+
     comp, val = constraint
     if comp == "h":
         h = val / 360.0
-        l = random.uniform(0.25, 0.8)
-        s = random.uniform(0.35, 0.95)
+        if use_smart_ranges:
+            l_min, l_max = _smart_lightness_range()
+            s_min, s_max = _smart_saturation_range()
+            l = random.uniform(l_min, l_max)
+            s = random.uniform(s_min, s_max)
+        else:
+            l = random.uniform(0.25, 0.8)
+            s = random.uniform(0.35, 0.95)
+
+        if perceptual_adjust:
+            l = _perceptual_lightness_adjust(h, l)
+
         return _hls_to_hex(h, l, s)
+
     if comp == "s":
         h = random.random()
-        l = random.uniform(0.25, 0.8)
         s = val / 100.0
+        if use_smart_ranges:
+            l_min, l_max = _smart_lightness_range()
+            l = random.uniform(l_min, l_max)
+        else:
+            l = random.uniform(0.25, 0.8)
+
+        if perceptual_adjust:
+            l = _perceptual_lightness_adjust(h, l)
+
         return _hls_to_hex(h, l, s)
+
+    # comp == "l"
     h = random.random()
     l = val / 100.0
-    s = random.uniform(0.35, 0.95)
+    if use_smart_ranges:
+        s_min, s_max = _smart_saturation_range()
+        s = random.uniform(s_min, s_max)
+    else:
+        s = random.uniform(0.35, 0.95)
+
+    # No perceptual adjustment when lightness is constrained
     return _hls_to_hex(h, l, s)
 
 
@@ -388,6 +458,206 @@ def _jitter_sl(base_h: float, base_l: float, base_s: float, *, max_dl: float, ma
     l = min(0.95, max(0.05, base_l + random.uniform(-max_dl, max_dl)))
     s = min(0.98, max(0.08, base_s + random.uniform(-max_ds, max_ds)))
     return l, s
+
+
+def _smart_lightness_range() -> Tuple[float, float]:
+    """
+    Generate lightness range with aesthetic biases for cohesive palettes.
+
+    Returns (min_l, max_l) tuple.
+
+    Distribution:
+    - 40% chance: vibrant range (0.45-0.75) - rich, saturated colors
+    - 30% chance: bright range (0.60-0.90) - light, airy palettes
+    - 20% chance: deep range (0.20-0.55) - dramatic, moody tones
+    - 10% chance: full spectrum (0.15-0.85) - maximum variety
+    """
+    roll = random.random()
+    if roll < 0.4:
+        return (0.45, 0.75)  # Vibrant
+    elif roll < 0.7:
+        return (0.60, 0.90)  # Bright
+    elif roll < 0.9:
+        return (0.20, 0.55)  # Deep
+    else:
+        return (0.15, 0.85)  # Full spectrum
+
+
+def _smart_saturation_range() -> Tuple[float, float]:
+    """
+    Generate saturation range with aesthetic biases.
+
+    Distribution:
+    - 50% chance: vivid range (0.50-0.95) - bold, punchy colors
+    - 30% chance: balanced range (0.30-0.70) - versatile, professional
+    - 15% chance: muted range (0.10-0.40) - subtle, sophisticated
+    - 5% chance: desaturated (0.05-0.25) - neutral, minimalist
+    """
+    roll = random.random()
+    if roll < 0.5:
+        return (0.50, 0.95)  # Vivid
+    elif roll < 0.8:
+        return (0.30, 0.70)  # Balanced
+    elif roll < 0.95:
+        return (0.10, 0.40)  # Muted
+    else:
+        return (0.05, 0.25)  # Desaturated
+
+
+def _perceptual_lightness_adjust(h: float, l: float) -> float:
+    """
+    Adjust HSL lightness for perceptual uniformity.
+
+    Yellow appears brightest, blue darkest at same L value.
+    This function applies hue-dependent corrections so colors
+    appear equally bright across the hue spectrum.
+
+    Based on research: yellows/greens need L reduction,
+    blues/purples need L boost for perceptual equivalence.
+    """
+    # Convert hue to degrees
+    h_deg = h * 360.0
+
+    # Define correction curve based on hue
+    if 40 <= h_deg < 80:  # Yellow-green range
+        correction = -0.05  # Reduce lightness
+    elif 80 <= h_deg < 140:  # Green range
+        correction = -0.03
+    elif 140 <= h_deg < 200:  # Cyan range
+        correction = 0.0
+    elif 200 <= h_deg < 280:  # Blue-purple range
+        correction = 0.08  # Increase lightness
+    elif 280 <= h_deg < 340:  # Magenta range
+        correction = 0.05
+    else:  # Red-orange range
+        correction = 0.0
+
+    return min(0.98, max(0.02, l + correction))
+
+
+def _calculate_contrast_ratio(hex1: str, hex2: str) -> float:
+    """
+    Calculate WCAG contrast ratio between two colors.
+
+    Returns ratio (1.0 to 21.0).
+    Formula: (L1 + 0.05) / (L2 + 0.05) where L1 > L2
+    """
+    def relative_luminance(hex_color: str) -> float:
+        hls = _hex_to_hls(hex_color)
+        if hls is None:
+            return 0.5
+        h, l, s = hls
+        # Convert to RGB
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+
+        # Apply sRGB gamma correction
+        def gamma(c):
+            if c <= 0.03928:
+                return c / 12.92
+            return ((c + 0.055) / 1.055) ** 2.4
+
+        r_lin = gamma(r)
+        g_lin = gamma(g)
+        b_lin = gamma(b)
+
+        # Calculate relative luminance
+        return 0.2126 * r_lin + 0.7152 * g_lin + 0.0722 * b_lin
+
+    L1 = relative_luminance(hex1)
+    L2 = relative_luminance(hex2)
+
+    lighter = max(L1, L2)
+    darker = min(L1, L2)
+
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _is_colorblind_safe(colors: list[str]) -> bool:
+    """
+    Check if palette avoids problematic red-green combinations.
+
+    Returns True if palette is colorblind-friendly.
+    """
+    for i, c1 in enumerate(colors):
+        for c2 in colors[i+1:]:
+            hls1 = _hex_to_hls(c1)
+            hls2 = _hex_to_hls(c2)
+
+            if hls1 is None or hls2 is None:
+                continue
+
+            h1_deg = hls1[0] * 360
+            h2_deg = hls2[0] * 360
+
+            # Check for problematic red-green pairs
+            is_red1 = (h1_deg < 30 or h1_deg > 330)
+            is_green1 = (80 <= h1_deg < 160)
+            is_red2 = (h2_deg < 30 or h2_deg > 330)
+            is_green2 = (80 <= h2_deg < 160)
+
+            # If both colors are similar in lightness and one is red, one is green
+            l_diff = abs(hls1[1] - hls2[1])
+            if l_diff < 0.2 and ((is_red1 and is_green2) or (is_green1 and is_red2)):
+                return False
+
+    return True
+
+
+def _ensure_accessible_contrast(colors: list[str], min_ratio: float = 3.0) -> list[str]:
+    """
+    Adjust palette to meet minimum contrast requirements.
+
+    Ensures adjacent colors have sufficient contrast.
+    """
+    adjusted = colors.copy()
+
+    for i in range(len(adjusted) - 1):
+        ratio = _calculate_contrast_ratio(adjusted[i], adjusted[i+1])
+
+        if ratio < min_ratio:
+            # Adjust lightness of second color
+            hls = _hex_to_hls(adjusted[i+1])
+            if hls is not None:
+                h, l, s = hls
+                # Increase or decrease lightness to improve contrast
+                hls_prev = _hex_to_hls(adjusted[i])
+                if hls_prev and hls_prev[1] > 0.5:
+                    l = max(0.1, l - 0.3)  # Darken
+                else:
+                    l = min(0.9, l + 0.3)  # Lighten
+
+                adjusted[i+1] = _hls_to_hex(h, l, s)
+
+    return adjusted
+
+
+def _get_color_temperature(hex_color: str) -> str:
+    """Return warm/cool/neutral indicator based on hue."""
+    hls = _hex_to_hls(hex_color)
+    if hls is None:
+        return "⚖️ Neutral"
+
+    h_deg = hls[0] * 360.0
+
+    # Warm: reds, oranges, yellows (330-360, 0-90)
+    if h_deg >= 330 or h_deg < 90:
+        return "🔥 Warm"
+    # Cool: cyans, blues, purples (150-270)
+    elif 150 <= h_deg < 270:
+        return "❄️ Cool"
+    # Neutral: greens, yellow-greens (90-150, 270-330)
+    else:
+        return "⚖️ Neutral"
+
+
+def _get_value_role(lightness: float) -> str:
+    """Suggest usage based on lightness value for shading."""
+    if lightness < 0.35:
+        return "🌑 Shadow"
+    elif lightness < 0.65:
+        return "🎨 Midtone"
+    else:
+        return "✨ Highlight"
 
 
 def _scheme_color(
@@ -489,6 +759,250 @@ def _generate_by_method(method_label: str, base_color: str, count: int) -> list[
     return colors[:count]
 
 
+def _generate_60_30_10_palette(base_color: str) -> Tuple[list[str], list[int]]:
+    """
+    Generate a 60-30-10 rule palette (UI/design focused).
+
+    The 60-30-10 rule:
+    - 60% Dominant color - main backgrounds, large areas
+    - 30% Secondary color - supporting elements
+    - 10% Accent color - calls-to-action, highlights
+
+    Returns:
+        (colors, proportions) where proportions = [60, 30, 10]
+    """
+    base_hls = _hex_to_hls(base_color)
+    if base_hls is None:
+        base_hls = _hex_to_hls(generate_random_color())
+    if base_hls is None:
+        return ([base_color] * 3, [60, 30, 10])
+
+    h, l, s = base_hls
+
+    # Dominant color (60%): Base, slightly desaturated for versatility
+    dominant_s = max(0.15, min(0.65, s * 0.85))
+    dominant_l = min(0.95, max(0.25, l))
+    dominant = _hls_to_hex(h, _perceptual_lightness_adjust(h, dominant_l), dominant_s)
+
+    # Secondary color (30%): Analogous or split-complementary
+    if random.random() < 0.6:
+        # Analogous: 30-45 degrees offset
+        secondary_offset = random.choice([30, 45, -30, -45])
+    else:
+        # Split-complementary: 150-180 degrees
+        secondary_offset = random.choice([150, 165, 180, -150, -165])
+
+    secondary_h = (h + (secondary_offset / 360.0)) % 1.0
+    secondary_l = min(0.95, max(0.20, l + random.uniform(-0.15, 0.15)))
+    secondary_s = max(0.25, min(0.85, s * random.uniform(0.9, 1.1)))
+    secondary = _hls_to_hex(secondary_h, _perceptual_lightness_adjust(secondary_h, secondary_l), secondary_s)
+
+    # Accent color (10%): High contrast complementary
+    accent_offset = 180  # True complementary
+    accent_h = (h + (accent_offset / 360.0)) % 1.0
+    accent_s = max(0.70, min(0.98, s * 1.3))
+
+    # Contrasting lightness
+    if dominant_l > 0.5:
+        accent_l = max(0.25, min(0.45, l - 0.3))  # Dark accent
+    else:
+        accent_l = max(0.60, min(0.85, l + 0.3))  # Light accent
+
+    accent = _hls_to_hex(accent_h, _perceptual_lightness_adjust(accent_h, accent_l), accent_s)
+
+    colors = [dominant, secondary, accent]
+    proportions = [60, 30, 10]
+
+    return (colors, proportions)
+
+
+def _generate_shading_palette(base_color: str) -> list[str]:
+    """
+    Generate shading palette from base color (shadows to highlights).
+
+    Based on cel shading research: light changes both value AND saturation.
+    Shadows are desaturated, highlights maintain or slightly decrease saturation.
+    """
+    hls = _hex_to_hls(base_color)
+    if hls is None:
+        hls = _hex_to_hls(generate_random_color())
+    if hls is None:
+        return [base_color] * 5
+
+    h, l, s = hls
+
+    # Generate 5 values: deep shadow, shadow, base, highlight, bright highlight
+    offsets = [-0.30, -0.15, 0.0, 0.15, 0.30]
+    # Saturation multipliers: shadows desaturated, highlights maintained
+    sat_multipliers = [0.70, 0.85, 1.0, 0.95, 0.90]
+    colors = []
+
+    for offset, sat_mult in zip(offsets, sat_multipliers):
+        new_l = min(0.95, max(0.05, l + offset))
+        # Apply saturation change based on research
+        new_s = min(0.98, max(0.05, s * sat_mult))
+        # Apply perceptual adjustment
+        new_l = _perceptual_lightness_adjust(h, new_l)
+        colors.append(_hls_to_hex(h, new_l, new_s))
+
+    return colors
+
+
+def _generate_warmcool_palette(base_color: str) -> list[str]:
+    """
+    Generate palette with warm/cool temperature contrast.
+
+    Based on color temperature principle: warm light = cool shadows, cool light = warm shadows.
+    Creates natural depth through temperature contrast (warm advances, cool recedes).
+    """
+    hls = _hex_to_hls(base_color)
+    if hls is None:
+        hls = _hex_to_hls(generate_random_color())
+    if hls is None:
+        return [base_color] * 6
+
+    h, l, s = hls
+    h_deg = h * 360.0
+
+    # Determine if base is warm or cool
+    is_warm = (h_deg >= 330 or h_deg < 90)
+
+    colors = []
+
+    if is_warm:
+        # 3 warm colors (base ± 20-30°)
+        for offset in [0, -25, 20]:
+            new_h = (h + (offset / 360.0)) % 1.0
+            l_min, l_max = _smart_lightness_range()
+            s_min, s_max = _smart_saturation_range()
+            l_val = random.uniform(l_min, l_max)
+            s_val = random.uniform(s_min, s_max)
+            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+
+        # 2-3 cool complements (base + 180° ± 30°)
+        for offset in [180, 160, 200]:
+            new_h = (h + (offset / 360.0)) % 1.0
+            l_min, l_max = _smart_lightness_range()
+            s_min, s_max = _smart_saturation_range()
+            l_val = random.uniform(l_min, l_max)
+            s_val = random.uniform(s_min, s_max) * 0.9  # Slightly less saturated
+            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+    else:
+        # 3 cool colors (base ± 20-30°)
+        for offset in [0, -25, 20]:
+            new_h = (h + (offset / 360.0)) % 1.0
+            l_min, l_max = _smart_lightness_range()
+            s_min, s_max = _smart_saturation_range()
+            l_val = random.uniform(l_min, l_max)
+            s_val = random.uniform(s_min, s_max)
+            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+
+        # 2-3 warm complements (base + 180° ± 30°)
+        for offset in [180, 160, 200]:
+            new_h = (h + (offset / 360.0)) % 1.0
+            l_min, l_max = _smart_lightness_range()
+            s_min, s_max = _smart_saturation_range()
+            l_val = random.uniform(l_min, l_max)
+            s_val = random.uniform(s_min, s_max) * 0.9  # Slightly less saturated
+            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+
+    return colors[:6]
+
+
+def _generate_limited_palette(count: int = 4) -> list[str]:
+    """
+    Generate small harmonious palette for mixing (traditional artist approach).
+
+    Based on classic limited palettes like Zorn palette.
+    Forces color mixing and creates natural harmony.
+    """
+    count = max(3, min(5, count))
+
+    # Choose random base hue
+    base_h = random.random()
+
+    colors = []
+
+    # 1. Base color (medium value, high saturation)
+    colors.append(_hls_to_hex(base_h, random.uniform(0.45, 0.65), random.uniform(0.60, 0.85)))
+
+    # 2. Analogous color (±30°)
+    analog_h = (base_h + (30 / 360.0)) % 1.0
+    colors.append(_hls_to_hex(analog_h, random.uniform(0.50, 0.70), random.uniform(0.55, 0.80)))
+
+    # 3. Complementary accent (180°)
+    comp_h = (base_h + 0.5) % 1.0
+    colors.append(_hls_to_hex(comp_h, random.uniform(0.40, 0.60), random.uniform(0.65, 0.90)))
+
+    # 4. Light neutral (if count >= 4)
+    if count >= 4:
+        colors.append(_hls_to_hex(random.random(), random.uniform(0.75, 0.90), random.uniform(0.05, 0.15)))
+
+    # 5. Dark neutral (if count >= 5)
+    if count >= 5:
+        colors.append(_hls_to_hex(random.random(), random.uniform(0.15, 0.30), random.uniform(0.10, 0.25)))
+
+    return colors[:count]
+
+
+def _generate_skintone_palette(base_color: str) -> list[str]:
+    """
+    Generate skin tone palette for portraits.
+
+    Uses warm light = cool shadow principle (traditional portrait lighting).
+    Mimics outdoor/sunlight conditions where skin is warm, shadows are cool (blue/purple).
+    """
+    hls = _hex_to_hls(base_color)
+    if hls is None:
+        # Generate random warm skin tone
+        h = random.uniform(15, 35) / 360.0
+        l = random.uniform(0.50, 0.70)
+        s = random.uniform(0.30, 0.50)
+        hls = (h, l, s)
+
+    h, l, s = hls
+
+    colors = []
+
+    # 1. Base skin (warm)
+    colors.append(_hls_to_hex(h, l, s))
+
+    # 2. Shadow (cooler - shift toward blue/purple for warm light scenario)
+    # Warm light = cool shadows (shift hue toward 240° blue range)
+    shadow_h = (h + 180/360.0) % 1.0  # Shift toward complementary (cooler)
+    # Adjust to ensure it's in cool range (blue/purple: 200-280°)
+    shadow_h_deg = shadow_h * 360.0
+    if shadow_h_deg < 200 or shadow_h_deg > 280:
+        shadow_h = 240 / 360.0  # Default to blue
+    shadow_l = max(0.10, l - 0.20)
+    shadow_s = max(0.15, s * 0.8)  # Reduce saturation in shadows
+    colors.append(_hls_to_hex(shadow_h, shadow_l, shadow_s))
+
+    # 3. Deep shadow (even cooler, more desaturated)
+    deep_l = max(0.08, l - 0.35)
+    deep_s = max(0.10, s * 0.6)
+    colors.append(_hls_to_hex(shadow_h, deep_l, deep_s))
+
+    # 4. Highlight (warmer - shift toward yellow/orange)
+    highlight_h = (h + 15/360.0) % 1.0  # Shift warmer (toward yellow)
+    highlight_l = min(0.95, l + 0.15)
+    highlight_s = max(0.15, s * 0.9)
+    colors.append(_hls_to_hex(highlight_h, highlight_l, highlight_s))
+
+    # 5. Bright highlight (very warm, desaturated)
+    bright_l = min(0.98, l + 0.30)
+    bright_s = max(0.05, s * 0.4)
+    colors.append(_hls_to_hex(highlight_h, bright_l, bright_s))
+
+    # 6. Blush (reddish - subsurface scattering effect)
+    blush_h = random.uniform(0, 15) / 360.0
+    blush_l = min(0.90, l + 0.05)
+    blush_s = min(0.70, s * 1.4)
+    colors.append(_hls_to_hex(blush_h, blush_l, blush_s))
+
+    return colors
+
+
 def generate_complementary(hex_color: str) -> str:
     """Generate complementary color."""
     r, g, b = hex_to_rgb(hex_color)
@@ -574,6 +1088,7 @@ class _PaletteState:
     method_label: str
     colors: list[str]
     constraint: Optional[Tuple[str, int]] = None
+    proportions: Optional[list[int]] = None  # For 60-30-10 rule and other weighted palettes
 
 
 class _PaletteLockButton(discord.ui.Button):
@@ -671,9 +1186,20 @@ class _PaletteView(discord.ui.View):
             if (idx - 1) in self.locked_indices:
                 title += " (locked)"
 
+            # Add art-focused indicators (temperature & value)
+            hls = _hex_to_hls(c)
+            art_info = ""
+            if hls:
+                h, l, s = hls
+                temperature = _get_color_temperature(c)
+                value_role = _get_value_role(l)
+                art_info = f"\n{temperature} • {value_role}"
+
+            description = f"Color {idx}/{len(colors)}{art_info}"
+
             e = discord.Embed(
                 title=title,
-                description=f"Color {idx}/{len(colors)}",
+                description=description,
                 color=embed_color,
             )
             if patch_name:
@@ -719,20 +1245,39 @@ class _PaletteView(discord.ui.View):
         locked = self.locked_indices
         locked_colors = [colors[i] for i in sorted(locked) if 0 <= i < len(colors)]
 
-        # Determine a base to generate "in symphony" with.
-        if locked_colors:
-            base = _blend_locked_base(locked_colors) or locked_colors[0]
+        # Special handling for 60-30-10 rule palette
+        if self.state.method_label == "60-30-10 Rule":
+            # If dominant (index 0) is locked, use it as base
+            if 0 in locked:
+                base = colors[0]
+            elif locked_colors:
+                base = locked_colors[0]
+            else:
+                base = _random_color_with_constraint(self.state.constraint)
+
+            new_colors, proportions = _generate_60_30_10_palette(base)
+
+            # Apply locked colors back
+            for i in range(len(colors)):
+                if i not in locked:
+                    colors[i] = new_colors[i]
+
+            self.state.proportions = proportions
         else:
-            base = _random_color_with_constraint(self.state.constraint)
+            # Determine a base to generate "in symphony" with.
+            if locked_colors:
+                base = _blend_locked_base(locked_colors) or locked_colors[0]
+            else:
+                base = _random_color_with_constraint(self.state.constraint)
 
-        generated = _generate_by_method(self.state.method_label, base, len(colors))
+            generated = _generate_by_method(self.state.method_label, base, len(colors))
 
-        # Apply locked colors back onto their slots, regenerate the rest deterministically
-        # from the sequence (so color N is based on color N-1 / base).
-        for i in range(len(colors)):
-            if i in locked:
-                continue
-            colors[i] = generated[i]
+            # Apply locked colors back onto their slots, regenerate the rest deterministically
+            # from the sequence (so color N is based on color N-1 / base).
+            for i in range(len(colors)):
+                if i in locked:
+                    continue
+                colors[i] = generated[i]
 
         # Enforce constraint after generation (if present).
         if self.state.constraint:
@@ -873,6 +1418,56 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
             await message.reply(" Unknown palette method")
             return
         method_label = method
+    elif args_no_constraint[0].lower() in {"rule60", "60-30-10"}:
+        # 60-30-10 design rule palette
+        base_color = _random_color_with_constraint(constraint)
+        colors_with_proportions = _generate_60_30_10_palette(base_color)
+        colors, proportions = colors_with_proportions
+        colors = [apply_constraint(c) for c in colors]
+        method_label = "60-30-10 Rule"
+        state = _PaletteState(method_label=method_label, colors=[c.lower() for c in colors], constraint=constraint, proportions=proportions)
+        view = _PaletteView(author_id=message.author.id, state=state)
+        files, embeds = await view.build_files_and_embeds()
+        view.message = await message.reply(files=files, embeds=embeds, view=view)
+        return
+    elif args_no_constraint[0].lower() == "shading":
+        # Shading palette (cel shading / value ramp)
+        if len(args_no_constraint) < 2:
+            await message.reply(" Usage: `palette shading <#hexcolor>`")
+            return
+        base_hex = args_no_constraint[1]
+        if not base_hex.startswith("#"):
+            await message.reply(" Please provide a hex color starting with #")
+            return
+        colors = _generate_shading_palette(base_hex)
+        colors = [apply_constraint(c) for c in colors]
+        method_label = "Shading"
+    elif args_no_constraint[0].lower() in {"warmcool", "warm-cool"}:
+        # Warm/cool split palette
+        base_color = _random_color_with_constraint(constraint)
+        colors = _generate_warmcool_palette(base_color)
+        colors = [apply_constraint(c) for c in colors]
+        method_label = "Warm/Cool Split"
+    elif args_no_constraint[0].lower() == "limited":
+        # Limited palette (3-5 colors, traditional artist style)
+        count = 4  # default
+        if len(args_no_constraint) >= 2 and args_no_constraint[1].isdigit():
+            count = max(3, min(5, int(args_no_constraint[1])))
+        colors = _generate_limited_palette(count)
+        colors = [apply_constraint(c) for c in colors]
+        method_label = "Limited Palette"
+    elif args_no_constraint[0].lower() in {"skintone", "skin"}:
+        # Skin tone palette for portraits
+        base_hex = None
+        if len(args_no_constraint) >= 2 and args_no_constraint[1].startswith("#"):
+            base_hex = args_no_constraint[1]
+        else:
+            # Generate random warm skin tone
+            h_val = random.randint(15, 35)
+            base_hex = _random_color_with_constraint(("h", h_val))
+        colors = _generate_skintone_palette(base_hex)
+        colors = [apply_constraint(c) for c in colors]
+        method_label = "Skin Tone"
     else:
         # Random palette with specified count
         if args_no_constraint[0].isdigit():
