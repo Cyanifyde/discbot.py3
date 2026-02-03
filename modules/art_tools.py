@@ -724,26 +724,15 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
             return
         method_label = method
     else:
-        # Random palette; optionally allow a seed color for all variants.
-        seed_color, consumed = _parse_color_tokens(args_no_constraint, 0)
-        if seed_color:
-            count = 5
-            if len(args_no_constraint) > consumed and args_no_constraint[consumed].isdigit():
-                count = int(args_no_constraint[consumed])
-            count = max(1, min(8, count))
-            colors = [seed_color]
-            while len(colors) < count:
-                colors.append(_vary_color_from_seed(colors[-1], constraint))
-            method_label = "random"
+        # Random palette with specified count
+        if args_no_constraint[0].isdigit():
+            count = max(1, min(8, int(args_no_constraint[0])))
         else:
-            if args_no_constraint[0].isdigit():
-                count = max(1, min(8, int(args_no_constraint[0])))
-            else:
-                count = 5
-            colors = [_random_color_with_constraint(constraint)]
-            while len(colors) < count:
-                colors.append(_vary_color_from_seed(colors[-1], constraint))
-            method_label = "random"
+            count = 5
+        colors = [_random_color_with_constraint(constraint)]
+        while len(colors) < count:
+            colors.append(_vary_color_from_seed(colors[-1], constraint))
+        method_label = "random"
 
     colors = [apply_constraint(c) for c in colors]
 
@@ -764,7 +753,6 @@ async def _handle_palette_help(message: discord.Message) -> None:
     await message.reply(
         "Palette commands:\n"
         "- `palette [count]` (random, 1-8)\n"
-        "- `palette <#rrggbb|hsl(...)> [count]` (seeded random)\n"
         "- `palette [count] %h120` / `%s40` / `%l10` (only one)\n"
         "- `palette hex <#color1> <#color2>...`\n"
         "- `palette harmony <#rrggbb|hsl(...)>`\n"
