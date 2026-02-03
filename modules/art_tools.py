@@ -763,6 +763,7 @@ def _generate_60_30_10_palette(base_color: str) -> Tuple[list[str], list[int]]:
     - 30% Secondary color - supporting elements
     - 10% Accent color - calls-to-action, highlights
 
+    Structure: dominant, secondary, accent (3 colors).
     Returns:
         (colors, proportions) where proportions = [60, 30, 10]
     """
@@ -774,40 +775,37 @@ def _generate_60_30_10_palette(base_color: str) -> Tuple[list[str], list[int]]:
 
     h, l, s = base_hls
 
-    # Dominant color (60%): Base, slightly desaturated for versatility
-    dominant_s = max(0.15, min(0.65, s * 0.85))
-    dominant_l = min(0.95, max(0.25, l))
-    dominant = _hls_to_hex(h, _perceptual_lightness_adjust(h, dominant_l), dominant_s)
+    # Choose secondary offset (60% analogous, 40% split-complementary)
+    secondary_offset = 37 if random.random() < 0.6 else 165
 
-    # Secondary color (30%): Analogous or split-complementary
-    if random.random() < 0.6:
-        # Analogous: 30-45 degrees offset
-        secondary_offset = random.choice([30, 45, -30, -45])
-    else:
-        # Split-complementary: 150-180 degrees
-        secondary_offset = random.choice([150, 165, 180, -150, -165])
-
+    # Calculate hues
+    dominant_h = h
     secondary_h = (h + (secondary_offset / 360.0)) % 1.0
-    secondary_l = min(0.95, max(0.20, l + random.uniform(-0.15, 0.15)))
-    secondary_s = max(0.25, min(0.85, s * random.uniform(0.9, 1.1)))
-    secondary = _hls_to_hex(secondary_h, _perceptual_lightness_adjust(secondary_h, secondary_l), secondary_s)
+    accent_h = (h + 0.5) % 1.0  # Complementary
 
-    # Accent color (10%): High contrast complementary
-    accent_offset = 180  # True complementary
-    accent_h = (h + (accent_offset / 360.0)) % 1.0
-    accent_s = max(0.70, min(0.98, s * 1.3))
+    # Structure lists
+    hues = [dominant_h, secondary_h, accent_h]
 
-    # Contrasting lightness
-    if dominant_l > 0.5:
-        accent_l = max(0.25, min(0.45, l - 0.3))  # Dark accent
+    # Lightness: dominant medium, secondary varied, accent contrasting
+    if l > 0.5:
+        lightness_vals = [l, l, max(0.25, l - 0.3)]  # Dark accent for light dominant
     else:
-        accent_l = max(0.60, min(0.85, l + 0.3))  # Light accent
+        lightness_vals = [l, l, min(0.85, l + 0.3)]  # Light accent for dark dominant
 
-    accent = _hls_to_hex(accent_h, _perceptual_lightness_adjust(accent_h, accent_l), accent_s)
+    # Saturation: dominant reduced, secondary moderate, accent high
+    saturation_vals = [
+        max(0.15, min(0.65, s * 0.85)),  # Dominant: desaturated
+        max(0.25, min(0.85, s)),  # Secondary: similar to base
+        max(0.70, min(0.98, s * 1.3))  # Accent: highly saturated
+    ]
 
-    colors = [dominant, secondary, accent]
+    colors = []
+    for hue, l_val, s_val in zip(hues, lightness_vals, saturation_vals):
+        new_l = min(0.95, max(0.20, l_val))
+        new_l = _perceptual_lightness_adjust(hue, new_l)
+        colors.append(_hls_to_hex(hue, new_l, s_val))
+
     proportions = [60, 30, 10]
-
     return (colors, proportions)
 
 
@@ -849,6 +847,7 @@ def _generate_warmcool_palette(base_color: str) -> list[str]:
 
     Based on color temperature principle: warm light = cool shadows, cool light = warm shadows.
     Creates natural depth through temperature contrast (warm advances, cool recedes).
+    Structure: 3 warm + 3 cool colors (6 colors total).
     """
     hls = _hex_to_hls(base_color)
     if hls is None:
@@ -862,44 +861,38 @@ def _generate_warmcool_palette(base_color: str) -> list[str]:
     # Determine if base is warm or cool
     is_warm = (h_deg >= 330 or h_deg < 90)
 
-    colors = []
+    # Get one set of smart ranges for consistency
+    l_min, l_max = _smart_lightness_range()
+    s_min, s_max = _smart_saturation_range()
 
     if is_warm:
-        # 3 warm colors (base ± 20-30°)
-        for offset in [0, -25, 20]:
-            new_h = (h + (offset / 360.0)) % 1.0
-            l_min, l_max = _smart_lightness_range()
-            s_min, s_max = _smart_saturation_range()
-            l_val = random.uniform(l_min, l_max)
-            s_val = random.uniform(s_min, s_max)
-            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
-
-        # 2-3 cool complements (base + 180° ± 30°)
-        for offset in [180, 160, 200]:
-            new_h = (h + (offset / 360.0)) % 1.0
-            l_min, l_max = _smart_lightness_range()
-            s_min, s_max = _smart_saturation_range()
-            l_val = random.uniform(l_min, l_max)
-            s_val = random.uniform(s_min, s_max) * 0.9  # Slightly less saturated
-            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+        # 3 warm colors (base ± variations)
+        hue_offsets_warm = [0, -25, 20]
+        # 3 cool complements (base + 180° ± variations)
+        hue_offsets_cool = [180, 160, 200]
     else:
-        # 3 cool colors (base ± 20-30°)
-        for offset in [0, -25, 20]:
-            new_h = (h + (offset / 360.0)) % 1.0
-            l_min, l_max = _smart_lightness_range()
-            s_min, s_max = _smart_saturation_range()
-            l_val = random.uniform(l_min, l_max)
-            s_val = random.uniform(s_min, s_max)
-            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+        # 3 cool colors (base ± variations)
+        hue_offsets_warm = [180, 160, 200]  # These become the warm ones
+        # 3 warm complements
+        hue_offsets_cool = [0, -25, 20]  # These become the cool ones
 
-        # 2-3 warm complements (base + 180° ± 30°)
-        for offset in [180, 160, 200]:
-            new_h = (h + (offset / 360.0)) % 1.0
-            l_min, l_max = _smart_lightness_range()
-            s_min, s_max = _smart_saturation_range()
-            l_val = random.uniform(l_min, l_max)
-            s_val = random.uniform(s_min, s_max) * 0.9  # Slightly less saturated
-            colors.append(_hls_to_hex(new_h, _perceptual_lightness_adjust(new_h, l_val), s_val))
+    # Lightness variation values (distributed across range)
+    lightness_vals = [l_min, (l_min + l_max) / 2, l_max] * 2
+
+    # Saturation values (cool slightly less saturated)
+    saturation_vals = [
+        s_min, (s_min + s_max) / 2, s_max,  # Warm colors
+        s_min * 0.9, ((s_min + s_max) / 2) * 0.9, s_max * 0.9  # Cool colors (reduced)
+    ]
+
+    # Combine hue offsets
+    all_hue_offsets = hue_offsets_warm + hue_offsets_cool
+
+    colors = []
+    for hue_offset, l_val, s_val in zip(all_hue_offsets, lightness_vals, saturation_vals):
+        new_h = (h + (hue_offset / 360.0)) % 1.0
+        new_l = _perceptual_lightness_adjust(new_h, l_val)
+        colors.append(_hls_to_hex(new_h, new_l, s_val))
 
     return colors[:6]
 
@@ -910,34 +903,30 @@ def _generate_limited_palette(count: int = 4) -> list[str]:
 
     Based on classic limited palettes like Zorn palette.
     Forces color mixing and creates natural harmony.
+    Structure: base + analogous + complementary + neutrals (3-5 colors).
     """
     count = max(3, min(5, count))
 
     # Choose random base hue
     base_h = random.random()
 
+    # Calculate related hues
+    analog_h = (base_h + (30 / 360.0)) % 1.0  # Analogous: +30°
+    comp_h = (base_h + 0.5) % 1.0  # Complementary: +180°
+    neutral_h1 = random.random()  # Light neutral (any hue, low sat)
+    neutral_h2 = random.random()  # Dark neutral (any hue, low sat)
+
+    # Structure lists (up to 5 colors)
+    hues = [base_h, analog_h, comp_h, neutral_h1, neutral_h2]
+    lightness_vals = [0.55, 0.60, 0.50, 0.82, 0.22]
+    saturation_vals = [0.72, 0.67, 0.77, 0.10, 0.17]
+
     colors = []
+    for h, l, s in zip(hues[:count], lightness_vals[:count], saturation_vals[:count]):
+        new_l = _perceptual_lightness_adjust(h, l)
+        colors.append(_hls_to_hex(h, new_l, s))
 
-    # 1. Base color (medium value, high saturation)
-    colors.append(_hls_to_hex(base_h, random.uniform(0.45, 0.65), random.uniform(0.60, 0.85)))
-
-    # 2. Analogous color (±30°)
-    analog_h = (base_h + (30 / 360.0)) % 1.0
-    colors.append(_hls_to_hex(analog_h, random.uniform(0.50, 0.70), random.uniform(0.55, 0.80)))
-
-    # 3. Complementary accent (180°)
-    comp_h = (base_h + 0.5) % 1.0
-    colors.append(_hls_to_hex(comp_h, random.uniform(0.40, 0.60), random.uniform(0.65, 0.90)))
-
-    # 4. Light neutral (if count >= 4)
-    if count >= 4:
-        colors.append(_hls_to_hex(random.random(), random.uniform(0.75, 0.90), random.uniform(0.05, 0.15)))
-
-    # 5. Dark neutral (if count >= 5)
-    if count >= 5:
-        colors.append(_hls_to_hex(random.random(), random.uniform(0.15, 0.30), random.uniform(0.10, 0.25)))
-
-    return colors[:count]
+    return colors
 
 
 def _generate_skintone_palette(base_color: str) -> list[str]:
@@ -946,6 +935,7 @@ def _generate_skintone_palette(base_color: str) -> list[str]:
 
     Uses warm light = cool shadow principle (traditional portrait lighting).
     Mimics outdoor/sunlight conditions where skin is warm, shadows are cool (blue/purple).
+    Structure: 2 shadows, 1 base, 2 highlights, 1 blush (6 colors total).
     """
     hls = _hex_to_hls(base_color)
     if hls is None:
@@ -957,43 +947,31 @@ def _generate_skintone_palette(base_color: str) -> list[str]:
 
     h, l, s = hls
 
-    colors = []
-
-    # 1. Base skin (warm)
-    colors.append(_hls_to_hex(h, l, s))
-
-    # 2. Shadow (cooler - shift toward blue/purple for warm light scenario)
+    # Calculate shadow hue (cool - shift toward blue/purple)
     # Warm light = cool shadows (shift hue toward 240° blue range)
     shadow_h = (h + 180/360.0) % 1.0  # Shift toward complementary (cooler)
-    # Adjust to ensure it's in cool range (blue/purple: 200-280°)
     shadow_h_deg = shadow_h * 360.0
     if shadow_h_deg < 200 or shadow_h_deg > 280:
         shadow_h = 240 / 360.0  # Default to blue
-    shadow_l = max(0.10, l - 0.20)
-    shadow_s = max(0.15, s * 0.8)  # Reduce saturation in shadows
-    colors.append(_hls_to_hex(shadow_h, shadow_l, shadow_s))
 
-    # 3. Deep shadow (even cooler, more desaturated)
-    deep_l = max(0.08, l - 0.35)
-    deep_s = max(0.10, s * 0.6)
-    colors.append(_hls_to_hex(shadow_h, deep_l, deep_s))
+    # Calculate highlight hue (warmer - shift toward yellow/orange)
+    highlight_h = (h + 15/360.0) % 1.0
 
-    # 4. Highlight (warmer - shift toward yellow/orange)
-    highlight_h = (h + 15/360.0) % 1.0  # Shift warmer (toward yellow)
-    highlight_l = min(0.95, l + 0.15)
-    highlight_s = max(0.15, s * 0.9)
-    colors.append(_hls_to_hex(highlight_h, highlight_l, highlight_s))
+    # Blush hue (reddish - subsurface scattering)
+    blush_h = 10 / 360.0  # Consistent red-orange
 
-    # 5. Bright highlight (very warm, desaturated)
-    bright_l = min(0.98, l + 0.30)
-    bright_s = max(0.05, s * 0.4)
-    colors.append(_hls_to_hex(highlight_h, bright_l, bright_s))
+    # Structure: deep shadow, shadow, base, highlight, bright highlight, blush
+    hues = [shadow_h, shadow_h, h, highlight_h, highlight_h, blush_h]
+    lightness_offsets = [-0.35, -0.20, 0.0, 0.15, 0.30, 0.05]
+    saturation_mults = [0.6, 0.8, 1.0, 0.9, 0.4, 1.4]
 
-    # 6. Blush (reddish - subsurface scattering effect)
-    blush_h = random.uniform(0, 15) / 360.0
-    blush_l = min(0.90, l + 0.05)
-    blush_s = min(0.70, s * 1.4)
-    colors.append(_hls_to_hex(blush_h, blush_l, blush_s))
+    colors = []
+    for hue, l_offset, s_mult in zip(hues, lightness_offsets, saturation_mults):
+        new_l = min(0.98, max(0.08, l + l_offset))
+        new_s = min(0.98, max(0.05, s * s_mult))
+        # Apply perceptual adjustment
+        new_l = _perceptual_lightness_adjust(hue, new_l)
+        colors.append(_hls_to_hex(hue, new_l, new_s))
 
     return colors
 
