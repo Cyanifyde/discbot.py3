@@ -1,0 +1,10 @@
+{
+  "allowed_user_ids": [
+    123456789012345678
+  ],
+  "questions": {
+    "how do i commission you?": "You can commission me by opening a ticket and sharing your reference images, budget, and deadline.",
+    "what are your prices?": "Pricing depends on complexity and usage. Ask in a ticket with what you want and I’ll quote it.",
+    "what is your turnaround time?": "Turnaround time varies by queue and complexity. Typical range is 3–14 days after payment."
+  }
+}

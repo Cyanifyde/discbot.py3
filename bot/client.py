@@ -25,7 +25,7 @@ from core.config import (
 from core.config_migration import migrate_all_guild_configs
 from core.constants import K
 from core.interactions import handle_interaction
-from core.io_utils import read_text
+from core.io_utils import read_json, read_text
 from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from core.help_system import help_system
@@ -152,6 +152,9 @@ class DiscBot(discord.Client):
         self._status_task: Optional[asyncio.Task] = None
         self._bookmark_task: Optional[asyncio.Task] = None
         self._last_status: Optional[str] = None
+        self._questions_cache: Optional[dict[str, str]] = None
+        self._questions_allowed_user_ids: Optional[set[int]] = None
+        self._questions_cache_mtime: Optional[float] = None
         self.started_at = utcnow()
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -987,7 +990,84 @@ class DiscBot(discord.Client):
 
     async def _register_commands(self) -> None:
         """Register slash commands."""
-        
+
+        async def _load_questions_data() -> tuple[dict[str, str], Optional[set[int]]]:
+            """
+            Load questions from a JSON file and normalize into:
+            - dict mapping normalized question -> answer
+            - optional allowed user id set (None means allow everyone)
+
+            Supported formats:
+            - Object: { "question": "answer", ... }
+            - Object with wrapper: { "allowed_user_ids": [...], "questions": { "question": "answer" } }
+            - List: [ { "question": "...", "answer": "..." }, { "q": "...", "a": "..." } ]
+            """
+            import os
+
+            path = resolve_repo_path(os.getenv("QUESTIONS_JSON_PATH", "templates/questions.json"))
+            try:
+                stat = await asyncio.to_thread(path.stat)
+                mtime = float(stat.st_mtime)
+            except FileNotFoundError:
+                self._questions_cache = {}
+                self._questions_allowed_user_ids = set()
+                self._questions_cache_mtime = None
+                return {}, set()
+            except Exception:
+                # Fall back to uncached load if stat fails for any reason
+                mtime = None
+
+            if (
+                self._questions_cache is not None
+                and self._questions_allowed_user_ids is not None
+                and self._questions_cache_mtime is not None
+                and mtime is not None
+                and self._questions_cache_mtime == mtime
+            ):
+                return self._questions_cache, self._questions_allowed_user_ids
+
+            raw = await read_json(path, default=None)
+            mapping: dict[str, str] = {}
+            allowed_ids: Optional[set[int]] = None
+
+            def _norm(text: str) -> str:
+                return " ".join(text.strip().lower().split())
+
+            if isinstance(raw, dict):
+                # Wrapper format: { allowed_user_ids: [...], questions: {...} }
+                raw_questions = raw
+                if "questions" in raw and isinstance(raw.get("questions"), dict):
+                    raw_questions = raw.get("questions")  # type: ignore[assignment]
+
+                if "allowed_user_ids" in raw and isinstance(raw.get("allowed_user_ids"), list):
+                    allowed_ids = set()
+                    for v in raw.get("allowed_user_ids") or []:
+                        if isinstance(v, int):
+                            allowed_ids.add(v)
+                        elif isinstance(v, str) and v.strip().isdigit():
+                            allowed_ids.add(int(v.strip()))
+
+                for q, a in raw_questions.items():
+                    if isinstance(q, str) and isinstance(a, str):
+                        nq = _norm(q)
+                        if nq:
+                            mapping[nq] = a
+            elif isinstance(raw, list):
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    q = item.get("question") or item.get("q")
+                    a = item.get("answer") or item.get("a")
+                    if isinstance(q, str) and isinstance(a, str):
+                        nq = _norm(q)
+                        if nq:
+                            mapping[nq] = a
+
+            self._questions_cache = mapping
+            self._questions_allowed_user_ids = allowed_ids
+            self._questions_cache_mtime = mtime
+            return mapping, allowed_ids
+
         @app_commands.command(name="commission", description="Show commission info")
         @app_commands.describe(user="User to view commission info for (optional)")
         async def commission_cmd(
@@ -1029,3 +1109,46 @@ class DiscBot(discord.Client):
             )
         
         self.tree.add_command(commission_cmd)
+
+        @app_commands.command(name="question", description="Ask a question and get a saved answer")
+        @app_commands.describe(question="Your question")
+        async def question_cmd(interaction: discord.Interaction, question: str) -> None:
+            def _norm(text: str) -> str:
+                return " ".join(text.strip().lower().split())
+
+            q_norm = _norm(question)
+            if not q_norm:
+                await interaction.response.send_message(
+                    "Please provide a question.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+
+            questions_map, allowed_ids = await _load_questions_data()
+            if allowed_ids is not None and interaction.user.id not in allowed_ids:
+                await interaction.response.send_message(
+                    "You are not allowed to use this command.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            answer = questions_map.get(q_norm)
+
+            if not answer:
+                await interaction.response.send_message(
+                    "No saved answer found for that question.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+
+            embed = discord.Embed(title="Question", description=sanitize_text(answer))
+            embed.add_field(name="User asked", value=sanitize_text(question), inline=False)
+
+            await interaction.response.send_message(
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+
+        self.tree.add_command(question_cmd)
