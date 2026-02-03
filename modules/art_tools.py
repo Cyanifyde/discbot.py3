@@ -64,8 +64,8 @@ def setup_art_tools() -> None:
         commands=[
             ("palette [count]", "Generate random color palette (1-8 colors)"),
             ("palette hex <#color1> <#color2>...", "Create palette from hex codes"),
-            ("palette harmony <#color>", "Generate complementary + analogous palette"),
-            ("palette <method> <#color> [count]", "Methods: complementary, analogous, triadic, monochromatic"),
+            ("palette harmony [%h/%s/%l]", "Generate complementary + analogous palette (optional constraint)"),
+            ("palette <method> [%h/%s/%l] [count]", "Methods: complementary, analogous, triadic, monochromatic"),
             ("palette [count] %l10", "Constrain random palettes (only one of %h/%s/%l)"),
             ("prompt", "Generate random art prompt"),
             ("prompt custom <subject> <action> <setting>", "Create custom prompt"),
@@ -84,11 +84,11 @@ def setup_art_tools() -> None:
             ("palette [count] %s40", "Fix saturation percent (0–100)"),
             ("palette [count] %l10", "Fix lightness percent (0–100)"),
             ("palette hex <#c1> <#c2> ...", "Palette from hex codes"),
-            ("palette harmony <#rrggbb|hsl(...)>", "Complementary + analogous"),
-            ("palette complementary <#rrggbb|hsl(...)> [count]", "Complementary palette"),
-            ("palette analogous <#rrggbb|hsl(...)> [count]", "Analogous palette"),
-            ("palette triadic <#rrggbb|hsl(...)> [count]", "Triadic palette"),
-            ("palette monochromatic <#rrggbb|hsl(...)> [count]", "Monochromatic palette"),
+            ("palette harmony [%h/%s/%l]", "Complementary + analogous (optional constraint)"),
+            ("palette complementary [%h/%s/%l] [count]", "Complementary palette (optional constraint)"),
+            ("palette analogous [%h/%s/%l] [count]", "Analogous palette (optional constraint)"),
+            ("palette triadic [%h/%s/%l] [count]", "Triadic palette (optional constraint)"),
+            ("palette monochromatic [%h/%s/%l] [count]", "Monochromatic palette (optional constraint)"),
             ("Reroll button", "Regenerate unlocked colors"),
             ("Lock buttons", "Toggle lock per color"),
         ],
@@ -713,13 +713,13 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
             colors = colors[:8]
         method_label = "hex"
     elif args_no_constraint[0].lower() == "harmony":
-        if len(args_no_constraint) < 2:
-            await message.reply(" Usage: `palette harmony <#color>`")
+        if len(args_no_constraint) > 1:
+            await message.reply(
+                " `palette harmony` only accepts constraints (e.g. `%h120`).",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             return
-        base_color, consumed = _parse_color_tokens(args_no_constraint, 1)
-        if not base_color:
-            await message.reply(" Invalid color. Use `#rrggbb` or `hsl(...)`.", allowed_mentions=discord.AllowedMentions.none())
-            return
+        base_color = _random_color_with_constraint(constraint)
         colors = [base_color, generate_complementary(base_color)]
         colors.extend(generate_analogous(base_color, 2))
         method_label = "harmony"
@@ -730,13 +730,14 @@ async def _handle_palette(message: discord.Message, parts: list[str]) -> None:
 
         rest = args_no_constraint[1:]
         if rest:
-            parsed_color, consumed = _parse_color_tokens(rest, 0)
-            if parsed_color:
-                base_color = parsed_color
-                if len(rest) > consumed and rest[consumed].isdigit():
-                    count = int(rest[consumed])
-            elif rest[0].isdigit():
+            if rest[0].isdigit():
                 count = int(rest[0])
+            else:
+                await message.reply(
+                    f" Usage: `palette {method} [%h/%s/%l] [count]`",
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
         count = max(2, min(8, count))
         if base_color is None:
             base_color = _random_color_with_constraint(constraint)
