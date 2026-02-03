@@ -370,6 +370,7 @@ def _blend_locked_base(locked_colors: list[str]) -> Optional[str]:
 
 
 def _rotate_hue(hex_color: str, degrees: float) -> str:
+    """Rotate hue by degrees, preserving saturation/lightness."""
     hls = _hex_to_hls(hex_color)
     if hls is None:
         return hex_color
@@ -378,40 +379,29 @@ def _rotate_hue(hex_color: str, degrees: float) -> str:
     return _hls_to_hex(h, l, s)
 
 
-def _generate_analogous_random(base_color: str, count: int) -> list[str]:
-    """Analogous colors with randomized step and direction, based on base_color."""
-    count = max(0, int(count))
-    if count <= 0:
-        return []
-
-    step_deg = random.uniform(18.0, 42.0)
-    direction = -1.0 if random.random() < 0.5 else 1.0
-    colors: list[str] = []
-    for i in range(1, count + 1):
-        colors.append(_rotate_hue(base_color, direction * step_deg * i))
-    return colors
+def _jitter_sl(base_h: float, base_l: float, base_s: float, *, max_dl: float, max_ds: float) -> Tuple[float, float]:
+    """
+    Small random variations in saturation/lightness while keeping hue fixed.
+    Helps rerolls change without breaking the hue-relationship rules.
+    """
+    l = min(0.95, max(0.05, base_l + random.uniform(-max_dl, max_dl)))
+    s = min(0.98, max(0.08, base_s + random.uniform(-max_ds, max_ds)))
+    return l, s
 
 
-def _generate_monochromatic_random(base_color: str, count: int) -> list[str]:
-    """Monochromatic palette with randomized lightness steps."""
-    count = max(1, int(count))
-    hls = _hex_to_hls(base_color)
-    if hls is None:
-        return [base_color]
-    h, l, s = hls
-
-    # Build a range around the base lightness.
-    spread = random.uniform(0.25, 0.5)
-    lo = max(0.05, l - spread)
-    hi = min(0.95, l + spread)
-    if count == 1:
-        return [_hls_to_hex(h, l, s)]
-
-    # Randomly choose whether we bias lighter or darker.
-    bias = random.uniform(-0.15, 0.15)
-    vals = [lo + (hi - lo) * (i / (count - 1)) for i in range(count)]
-    vals = [min(0.95, max(0.05, v + bias)) for v in vals]
-    return [_hls_to_hex(h, v, s) for v in vals]
+def _scheme_color(
+    base_hls: Tuple[float, float, float],
+    *,
+    hue_offset_deg: float,
+    sl_jitter: bool,
+    max_dl: float,
+    max_ds: float,
+) -> str:
+    h, l, s = base_hls
+    h = (h + (hue_offset_deg / 360.0)) % 1.0
+    if sl_jitter:
+        l, s = _jitter_sl(h, l, s, max_dl=max_dl, max_ds=max_ds)
+    return _hls_to_hex(h, l, s)
 
 
 def _generate_by_method(method_label: str, base_color: str, count: int) -> list[str]:
@@ -419,40 +409,77 @@ def _generate_by_method(method_label: str, base_color: str, count: int) -> list[
     base_color = base_color.lower()
     count = max(1, min(8, int(count)))
 
+    base_hls = _hex_to_hls(base_color)
+    if base_hls is None:
+        base_hls = _hex_to_hls(generate_random_color())
+    if base_hls is None:
+        return [base_color] * count
+
     if method == "harmony":
-        colors = [base_color]
+        # Color-theory "harmony": base + complementary + analogous around base.
+        colors = [_scheme_color(base_hls, hue_offset_deg=0.0, sl_jitter=False, max_dl=0.0, max_ds=0.0)]
         if count >= 2:
-            # Add a slightly jittered complementary so rerolls change while staying "complementary-ish".
-            comp = generate_complementary(base_color)
-            comp = _rotate_hue(comp, random.uniform(-8.0, 8.0))
-            colors.append(comp)
-        if count > 2:
-            colors.extend(_generate_analogous_random(base_color, max(1, count - 2)))
+            colors.append(_scheme_color(base_hls, hue_offset_deg=180.0, sl_jitter=True, max_dl=0.06, max_ds=0.08))
+        if count >= 3:
+            colors.append(_scheme_color(base_hls, hue_offset_deg=30.0, sl_jitter=True, max_dl=0.05, max_ds=0.08))
+        if count >= 4:
+            colors.append(_scheme_color(base_hls, hue_offset_deg=-30.0, sl_jitter=True, max_dl=0.05, max_ds=0.08))
+        # Fill remainder with additional analogous steps (±60, ±90...) keeping relationships.
+        step = 30.0
+        k = 2
+        while len(colors) < count:
+            colors.append(_scheme_color(base_hls, hue_offset_deg=step * k, sl_jitter=True, max_dl=0.05, max_ds=0.08))
+            if len(colors) >= count:
+                break
+            colors.append(_scheme_color(base_hls, hue_offset_deg=-step * k, sl_jitter=True, max_dl=0.05, max_ds=0.08))
+            k += 1
         return colors[:count]
 
     if method in {"complementary", "analogous", "triadic", "monochromatic"}:
-        if method == "analogous":
-            colors = [base_color]
-            colors.extend(_generate_analogous_random(base_color, count - 1))
+        if method == "complementary":
+            colors = [
+                _scheme_color(base_hls, hue_offset_deg=0.0, sl_jitter=False, max_dl=0.0, max_ds=0.0),
+                _scheme_color(base_hls, hue_offset_deg=180.0, sl_jitter=True, max_dl=0.06, max_ds=0.08),
+            ]
+            while len(colors) < count:
+                # Alternate analogous around the base to fill.
+                offset = 30.0 * (len(colors) - 1)
+                colors.append(_scheme_color(base_hls, hue_offset_deg=offset, sl_jitter=True, max_dl=0.05, max_ds=0.08))
             return colors[:count]
 
-        if method == "complementary":
-            colors = [base_color, _rotate_hue(generate_complementary(base_color), random.uniform(-8.0, 8.0))]
-            if count > 2:
-                colors.extend(_generate_analogous_random(base_color, count - 2))
+        if method == "analogous":
+            colors = [_scheme_color(base_hls, hue_offset_deg=0.0, sl_jitter=False, max_dl=0.0, max_ds=0.0)]
+            offsets = [30.0, -30.0, 60.0, -60.0, 90.0, -90.0, 120.0, -120.0]
+            for off in offsets:
+                if len(colors) >= count:
+                    break
+                colors.append(_scheme_color(base_hls, hue_offset_deg=off, sl_jitter=True, max_dl=0.05, max_ds=0.08))
             return colors[:count]
 
         if method == "triadic":
-            # Slightly jitter the triad angles so rerolls change.
-            j1 = random.uniform(-10.0, 10.0)
-            j2 = random.uniform(-10.0, 10.0)
-            colors = [base_color, _rotate_hue(base_color, 120.0 + j1), _rotate_hue(base_color, 240.0 + j2)]
+            colors = [
+                _scheme_color(base_hls, hue_offset_deg=0.0, sl_jitter=False, max_dl=0.0, max_ds=0.0),
+                _scheme_color(base_hls, hue_offset_deg=120.0, sl_jitter=True, max_dl=0.06, max_ds=0.08),
+                _scheme_color(base_hls, hue_offset_deg=240.0, sl_jitter=True, max_dl=0.06, max_ds=0.08),
+            ]
             while len(colors) < count:
-                colors.append(_vary_color_from_seed(colors[-1], None))
+                colors.append(_scheme_color(base_hls, hue_offset_deg=30.0 * (len(colors) - 2), sl_jitter=True, max_dl=0.04, max_ds=0.06))
             return colors[:count]
 
-        # monochromatic
-        return _generate_monochromatic_random(base_color, count)[:count]
+        # monochromatic: fixed hue, varied lightness, keep saturation similar.
+        h, l, s = base_hls
+        # Create a monotonic range around base lightness.
+        spread = 0.35
+        lo = max(0.05, l - spread)
+        hi = min(0.95, l + spread)
+        if count == 1:
+            return [_hls_to_hex(h, l, s)]
+        vals = [lo + (hi - lo) * (i / (count - 1)) for i in range(count)]
+        # Slight reroll variation: shift the whole ramp a little.
+        ramp_shift = random.uniform(-0.06, 0.06)
+        vals = [min(0.95, max(0.05, v + ramp_shift)) for v in vals]
+        colors = [_hls_to_hex(h, v, min(0.98, max(0.08, s + random.uniform(-0.06, 0.06)))) for v in vals]
+        return colors[:count]
 
     # random/hex fallback
     colors = [base_color]
