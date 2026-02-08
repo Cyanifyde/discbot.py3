@@ -12,6 +12,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
+import sys
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -36,7 +37,10 @@ VIEW_TIMEOUT = 300        # seconds before buttons are disabled
 # ── data model ───────────────────────────────────────────────────────────────
 
 
-@dataclass(slots=True)
+_dataclass_kwargs = {"slots": True} if sys.version_info >= (3, 10) else {}
+
+
+@dataclass(**_dataclass_kwargs)
 class _Hit:
     """One image attachment found during a scan."""
     channel_id: int

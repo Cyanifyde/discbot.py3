@@ -1068,14 +1068,16 @@ class DiscBot(discord.Client):
                     
                     # Wrap in thread to run with progress updates and timeout
                     try:
+                        loop = asyncio.get_running_loop()
                         ai_probability = await asyncio.wait_for(
                             asyncio.to_thread(
                                 self._run_detection_with_progress,
                                 pil_image,
                                 progress_callback,
-                                FAMILIES
+                                FAMILIES,
+                                loop,
                             ),
-                            timeout=self._ai_detection_timeout
+                            timeout=self._ai_detection_timeout,
                         )
                     except asyncio.TimeoutError:
                         raise TimeoutError(f"Detection exceeded {self._ai_detection_timeout}s timeout")
@@ -1165,7 +1167,13 @@ class DiscBot(discord.Client):
             if acquired:
                 self._ai_detection_semaphore.release()
     
-    def _run_detection_with_progress(self, pil_image, progress_callback, families):
+    def _run_detection_with_progress(
+        self,
+        pil_image,
+        progress_callback,
+        families,
+        loop: asyncio.AbstractEventLoop,
+    ):
         """Run detection in a thread with progress updates."""
         import sys
         from pathlib import Path
@@ -1179,10 +1187,9 @@ class DiscBot(discord.Client):
             def sync_progress(family_name, idx, total):
                 # Schedule async callback in event loop
                 try:
-                    loop = asyncio.get_event_loop()
                     asyncio.run_coroutine_threadsafe(
                         progress_callback(family_name, idx, total),
-                        loop
+                        loop,
                     )
                 except Exception:
                     pass

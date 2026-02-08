@@ -1,14 +1,11 @@
 # Discord Bot
 
-Modular Discord bot focused on moderation, commissions, portfolios, trust, automation, and utilities.
+Modular Discord bot focused on moderation, automation, utilities, and creative tools.
 
 ## Feature Overview
 
 - Moderation: warnings, mutes, bans, kicks, and mod notes, with optional cross-server sync.
 - Server Link and Sync: parent/child links, upstream approvals, and sync protection.
-- Trust and Vouching: trust scores, tiers, vouching, history, and permission checks.
-- Commissions: create and manage commissions with stages, waitlist, deadlines, tags, revisions, blacklist, invoices, contracts, payment confirmation, search, and summary.
-- Portfolio: add/remove entries, tags, categories, featured entries, privacy controls, reorder, before/after, batch add, and stats.
 - Reports: user reports with assignment, resolution, dismissal, and stats.
 - Roles: temporary roles, role requests and approvals, bundles, and reaction roles.
 - Communication: feedback box, announcements and subscriptions, acknowledgment tracking.
@@ -20,6 +17,10 @@ Modular Discord bot focused on moderation, commissions, portfolios, trust, autom
 - Automation: triggers, schedules, and vacation mode.
 - Server stats: server statistics views.
 - Owner utilities: DM sender and module management commands.
+
+## Runtime
+
+- Python: 3.12
 
 ## Project Structure
 
