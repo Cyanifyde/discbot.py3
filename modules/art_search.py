@@ -27,9 +27,9 @@ logger = logging.getLogger("discbot.art_search")
 
 MODULE_NAME = "artsearch"
 RESULTS_PER_PAGE = 5
-RESULT_BATCH_SIZE = 20
-SCAN_CHUNK_MESSAGES = 200
-MAX_MESSAGES_SCANNED_TOTAL = 50000
+RESULT_BATCH_SIZE = 10  # Lower batch size for less memory
+SCAN_CHUNK_MESSAGES = 50  # Lower chunk size for less CPU/API load
+MAX_MESSAGES_SCANNED_TOTAL = 5000  # Lower cap for resource-constrained hosting
 EMBED_THUMB_MAX = 100
 
 
@@ -447,12 +447,18 @@ class _ArtSearchView(discord.ui.View):
         return embeds
 
     async def bootstrap(self, guild: discord.Guild, *, desired_loaded: int, time_budget_seconds: float) -> None:
+        start_time = time.monotonic()
         await self._scan_until(
             guild,
             desired_loaded=desired_loaded,
             time_budget_seconds=time_budget_seconds,
             allow_sleep=False,
         )
+        duration = time.monotonic() - start_time
+        logger.info(f"ArtSearch scan completed in {duration:.2f}s, {len(self.hits)} hits found.")
+        # Explicitly free memory after scan
+        import gc
+        gc.collect()
 
     async def _scan_until(
         self,
@@ -531,6 +537,7 @@ class _ArtSearchView(discord.ui.View):
             except discord.RateLimited as e:
                 retry_after = float(getattr(e, "retry_after", 1.0) or 1.0)
                 retry_after = max(0.5, min(retry_after, 300.0))
+                logger.warning(f"ArtSearch rate limited: waiting {retry_after:.2f}s")
                 self.rate_limited_until = time.monotonic() + retry_after
                 try:
                     await asyncio.sleep(retry_after)
@@ -543,6 +550,7 @@ class _ArtSearchView(discord.ui.View):
                 if getattr(e, "status", None) == 429:
                     retry_after = float(getattr(e, "retry_after", 1.0) or 1.0)
                     retry_after = max(0.5, min(retry_after, 300.0))
+                    logger.warning(f"ArtSearch HTTP 429 rate limited: waiting {retry_after:.2f}s")
                     self.rate_limited_until = time.monotonic() + retry_after
                     try:
                         await asyncio.sleep(retry_after)

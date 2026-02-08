@@ -106,41 +106,7 @@ async def handle_analytics_command(message: discord.Message, bot: discord.Client
             embed.add_field(name="Total Completed", value=str(stats.get("total_completed", 0)), inline=True)
             embed.add_field(name="Total Value", value=f"${stats.get('total_value', 0):.2f}", inline=True)
             embed.add_field(
-                name="Avg Completion Time",
-                value=f"{stats.get('avg_completion_time_hours', 0):.1f} hours",
-                inline=True
-            )
-
-            # By type
-            if stats.get("by_type"):
-                type_text = "\n".join([
-                    f"**{type_name}**: {data['count']} (${data['value']:.2f})"
-                    for type_name, data in sorted(stats["by_type"].items(), key=lambda x: x[1]["count"], reverse=True)[:5]
-                ])
-                embed.add_field(name="Top Types", value=type_text or "No data", inline=False)
-
-            # Recent months
-            if stats.get("by_month"):
-                month_items = sorted(stats["by_month"].items(), reverse=True)[:6]
-                month_text = "\n".join([
-                    f"**{month}**: {data['count']} (${data['value']:.2f})"
-                    for month, data in month_items
-                ])
-                embed.add_field(name="Recent Months", value=month_text or "No data", inline=False)
-
-        await message.reply(embed=embed, mention_author=False)
-        return True
-
-    elif subcommand == "profile":
-        # Profile statistics
-        user_id = message.author.id
-        stats = analytics.get_profile_stats(user_id)
-
-        embed = discord.Embed(
-            title=f"Profile Statistics — {message.author.name}",
             color=0x3498db,
-            timestamp=datetime.now()
-        )
         embed.set_thumbnail(url=message.author.display_avatar.url)
 
         embed.add_field(name="Total Profile Views", value=str(stats.get("total_views", 0)), inline=True)
