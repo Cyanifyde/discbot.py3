@@ -52,13 +52,61 @@ MAX_DIMENSION = 512  # Model was trained with 512 max dimension
 
 
 def load_model():
-    """Load the trained model."""
+    """Load the trained model and patch it for single-threaded execution."""
     model_path = Path(__file__).parent / 'best.pkl'
     if not model_path.exists():
         print(f"ERROR: Model file not found: {model_path}", file=sys.stderr)
         sys.exit(1)
     
-    return joblib.load(model_path)
+    model_bundle = joblib.load(model_path)
+    
+    # Patch model to use single-threaded execution
+    # This prevents "can't start new thread" errors on resource-limited systems
+    model = model_bundle['model']
+    _patch_model_njobs(model)
+    
+    return model_bundle
+
+
+def _patch_model_njobs(estimator, n_jobs=1):
+    """
+    Recursively patch all n_jobs parameters in sklearn estimators to use single thread.
+    
+    This prevents thread creation failures on resource-constrained systems.
+    """
+    if estimator is None:
+        return
+    
+    # Set n_jobs on the estimator itself if it has the attribute
+    if hasattr(estimator, 'n_jobs'):
+        estimator.n_jobs = n_jobs
+    
+    # Handle meta-estimators (CalibratedClassifierCV, VotingClassifier, etc.)
+    if hasattr(estimator, 'estimator') and estimator.estimator is not None:
+        _patch_model_njobs(estimator.estimator, n_jobs)
+    
+    if hasattr(estimator, 'base_estimator') and estimator.base_estimator is not None:
+        _patch_model_njobs(estimator.base_estimator, n_jobs)
+    
+    # Handle ensemble estimators (list of estimators)
+    if hasattr(estimator, 'estimators_'):
+        for est in estimator.estimators_:
+            _patch_model_njobs(est, n_jobs)
+    
+    if hasattr(estimator, 'estimators'):
+        for est in estimator.estimators:
+            if isinstance(est, tuple):
+                # Named estimators like in VotingClassifier: (name, estimator)
+                _patch_model_njobs(est[1], n_jobs)
+            else:
+                _patch_model_njobs(est, n_jobs)
+    
+    # Handle calibrated classifiers
+    if hasattr(estimator, 'calibrated_classifiers_'):
+        for cal_clf in estimator.calibrated_classifiers_:
+            _patch_model_njobs(cal_clf, n_jobs)
+            if hasattr(cal_clf, 'estimator'):
+                _patch_model_njobs(cal_clf.estimator, n_jobs)
 
 
 def load_image(image_path):
