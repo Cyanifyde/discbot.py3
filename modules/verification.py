@@ -143,35 +143,58 @@ async def handle_verify_button(interaction: discord.Interaction) -> bool:
         return True
     
     # Perform verification
+    verified_successfully = False
+    unverified_removed = False
+    
+    # Add verified role
     try:
-        # Add verified role
         await member.add_roles(verified_role, reason="User clicked verify button")
-        
-        # Remove unverified role if it exists and member has it
-        if unverified_role and unverified_role in member.roles:
-            await member.remove_roles(unverified_role, reason="User verified")
-        
-        await interaction.response.send_message(
-            "You have been verified!",
-            ephemeral=True,
-        )
-        logger.info(
-            "User %s (%s) verified in guild %s",
-            member.name,
-            member.id,
-            interaction.guild.id,
-        )
+        verified_successfully = True
     except discord.Forbidden:
         await interaction.response.send_message(
             "I don't have permission to manage your roles. Please contact an admin.",
             ephemeral=True,
         )
+        return True
     except discord.HTTPException as e:
-        logger.error("Failed to verify user %s: %s", member.id, e)
+        logger.error("Failed to add verified role to user %s: %s", member.id, e)
         await interaction.response.send_message(
             "An error occurred while verifying. Please try again later.",
             ephemeral=True,
         )
+        return True
+    
+    # Remove unverified role if it exists and member has it
+    if unverified_role and unverified_role in member.roles:
+        try:
+            await member.remove_roles(unverified_role, reason="User verified")
+            unverified_removed = True
+        except discord.Forbidden:
+            logger.warning(
+                "Failed to remove unverified role from %s in guild %s: Missing permissions",
+                member.id,
+                interaction.guild.id,
+            )
+        except discord.HTTPException as e:
+            logger.error(
+                "Failed to remove unverified role from user %s: %s",
+                member.id,
+                e,
+            )
+    
+    # Send success message
+    await interaction.response.send_message(
+        "You have been verified!",
+        ephemeral=True,
+    )
+    
+    logger.info(
+        "User %s (%s) verified in guild %s (unverified_role_removed=%s)",
+        member.name,
+        member.id,
+        interaction.guild.id,
+        unverified_removed,
+    )
     
     return True
 

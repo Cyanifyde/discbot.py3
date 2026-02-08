@@ -5,7 +5,8 @@
       "Bash(ls:*)",
       "Bash(python -m py_compile:*)",
       "Bash(test:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(wc:*)"
     ]
   }
 }
