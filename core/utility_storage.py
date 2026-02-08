@@ -5,41 +5,32 @@ Provides per-user and per-guild storage for utility features with async-safe ope
 """
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 from .types import Bookmark
 
-# Storage directories
-UTILITY_DIR = BASE_DIR / "data" / "utility"
-GUILD_UTILITY_DIR = BASE_DIR / "data" / "guilds"
+MAX_AFK_MENTIONS = 200
 
 
-class UtilityStore:
+class UtilityStore(StorageBase):
     """Per-user storage for utility features (bookmarks, notes, AFK)."""
 
-    def __init__(self, user_id: int) -> None:
-        self.user_id = user_id
-        self.root = UTILITY_DIR / str(user_id)
-        self.bookmarks_path = self.root / "bookmarks.json"
-        self.notes_path = self.root / "notes.json"
-        self.afk_path = self.root / "afk.json"
-        self._lock = asyncio.Lock()
+    __slots__ = ("user_id", "_initialized")
 
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
+    def __init__(self, user_id: int) -> None:
+        # Uses StorageBase root: data/utility/<user_id>
+        super().__init__(user_id, "utility", cache_ttl=2.0)
+        self.user_id = int(user_id)
+        self._initialized = False
 
     # ─── Bookmarks ────────────────────────────────────────────────────────────
 
     async def _read_bookmarks(self) -> Dict[str, Any]:
         """Read bookmarks file."""
         default = {"bookmarks": [], "emoji_settings": {}}
-        data = await read_json(self.bookmarks_path, default=default)
+        data = await self._read_file("bookmarks.json", default=default)
         if not isinstance(data, dict):
             return default
         if "bookmarks" not in data or not isinstance(data.get("bookmarks"), list):
@@ -50,7 +41,7 @@ class UtilityStore:
 
     async def _write_bookmarks(self, data: Dict[str, Any]) -> None:
         """Write bookmarks file."""
-        await write_json_atomic(self.bookmarks_path, data)
+        await self._write_file("bookmarks.json", data)
 
     async def add_bookmark(self, bookmark: Bookmark) -> None:
         """Add a bookmark."""
@@ -64,6 +55,16 @@ class UtilityStore:
         async with self._lock:
             data = await self._read_bookmarks()
             return [Bookmark.from_dict(b) for b in data["bookmarks"]]
+
+    async def get_bookmark_by_id(self, bookmark_id: str) -> Optional[Bookmark]:
+        """Get a bookmark by ID."""
+        bid = str(bookmark_id)
+        async with self._lock:
+            data = await self._read_bookmarks()
+            for b in data.get("bookmarks", []):
+                if isinstance(b, dict) and b.get("id") == bid:
+                    return Bookmark.from_dict(b)
+        return None
 
     async def get_emoji_settings(self) -> Dict[str, Any]:
         """Get bookmark emoji settings."""
@@ -155,14 +156,14 @@ class UtilityStore:
     async def _read_notes(self) -> Dict[str, Any]:
         """Read notes file."""
         default = {"notes": []}
-        data = await read_json(self.notes_path, default=default)
+        data = await self._read_file("notes.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_notes(self, data: Dict[str, Any]) -> None:
         """Write notes file."""
-        await write_json_atomic(self.notes_path, data)
+        await self._write_file("notes.json", data)
 
     async def add_note(self, content: str) -> Dict[str, Any]:
         """Add a personal note."""
@@ -226,14 +227,14 @@ class UtilityStore:
             "set_at": None,
             "mentions": [],
         }
-        data = await read_json(self.afk_path, default=default)
+        data = await self._read_file("afk.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_afk(self, data: Dict[str, Any]) -> None:
         """Write AFK data."""
-        await write_json_atomic(self.afk_path, data)
+        await self._write_file("afk.json", data)
 
     async def set_afk(self, message: Optional[str] = None) -> None:
         """Set AFK status."""
@@ -273,36 +274,48 @@ class UtilityStore:
         async with self._lock:
             data = await self._read_afk()
             if data.get("active"):
-                data["mentions"].append(mention_data)
+                mentions = data.get("mentions")
+                if not isinstance(mentions, list):
+                    mentions = []
+                    data["mentions"] = mentions
+                mentions.append(mention_data)
+                # Cap list size to avoid unbounded file growth.
+                if len(mentions) > MAX_AFK_MENTIONS:
+                    data["mentions"] = mentions[-MAX_AFK_MENTIONS:]
                 await self._write_afk(data)
 
+    async def initialize(self) -> None:
+        """Ensure storage directory exists (idempotent, cached)."""
+        if self._initialized:
+            return
+        await super().initialize()
+        self._initialized = True
 
-class GuildUtilityStore:
+
+class GuildUtilityStore(StorageBase):
     """Per-guild storage for utility features (aliases)."""
 
-    def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = GUILD_UTILITY_DIR / str(guild_id)
-        self.aliases_path = self.root / "aliases.json"
-        self._lock = asyncio.Lock()
+    __slots__ = ("guild_id_real", "_initialized")
 
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
+    def __init__(self, guild_id: int) -> None:
+        # Uses StorageBase root: data/guilds/<guild_id>
+        super().__init__(guild_id, "guilds", cache_ttl=10.0)
+        self.guild_id_real = int(guild_id)
+        self._initialized = False
 
     # ─── Command Aliases ──────────────────────────────────────────────────────
 
     async def _read_aliases(self) -> Dict[str, Any]:
         """Read aliases file."""
         default = {"aliases": {}}
-        data = await read_json(self.aliases_path, default=default)
+        data = await self._read_file("aliases.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_aliases(self, data: Dict[str, Any]) -> None:
         """Write aliases file."""
-        await write_json_atomic(self.aliases_path, data)
+        await self._write_file("aliases.json", data)
 
     async def add_alias(self, shortcut: str, full_command: str) -> None:
         """Add a command alias."""
@@ -333,3 +346,10 @@ class GuildUtilityStore:
         async with self._lock:
             data = await self._read_aliases()
             return data["aliases"]
+
+    async def initialize(self) -> None:
+        """Ensure storage directory exists (idempotent, cached)."""
+        if self._initialized:
+            return
+        await super().initialize()
+        self._initialized = True

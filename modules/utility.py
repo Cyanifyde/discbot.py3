@@ -167,7 +167,7 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
         await _handle_bookmark(message, parts, bot)
         return True
     elif command == "afk":
-        await _handle_afk(message, parts)
+        await _handle_afk(message, parts, bot)
         return True
     elif command == "note":
         await _handle_note(message, parts)
@@ -570,7 +570,10 @@ async def handle_bookmark_reaction(
     await store.add_bookmark(bookmark)
 
     if deliver_at:
-        _schedule_delayed_bookmark(bot, bookmark, store=store)
+        # Register delayed delivery with the global scheduler (no per-bookmark task).
+        sched = getattr(bot, "bookmark_scheduler", None)
+        if sched is not None:
+            await sched.register_delayed(bookmark)
         return
 
     delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
@@ -672,59 +675,11 @@ def _format_bookmark_delivery_text(bookmark: Bookmark, message: Optional[discord
     return "\n".join([l for l in lines if l])
 
 
-def _schedule_delayed_bookmark(
-    bot: discord.Client,
-    bookmark: Bookmark,
-    *,
-    store: Optional[UtilityStore] = None,
-) -> None:
-    """Schedule one-shot delivery for a delayed bookmark (no polling)."""
-    deliver_at = iso_to_dt(bookmark.deliver_at)
-    if deliver_at is None:
-        return
-
-    scheduled: set[str] = getattr(bot, "_scheduled_bookmarks", set())
-    tasks: dict[str, asyncio.Task] = getattr(bot, "_scheduled_bookmark_tasks", {})
-    setattr(bot, "_scheduled_bookmarks", scheduled)
-    setattr(bot, "_scheduled_bookmark_tasks", tasks)
-
-    if bookmark.id in scheduled:
-        return
-    scheduled.add(bookmark.id)
-
-    async def _runner() -> None:
-        try:
-            now = utcnow()
-            delay = (deliver_at - now).total_seconds()
-            if delay > 0:
-                await asyncio.sleep(delay)
-            delivered, permanent_fail = await _deliver_bookmark_now(bot, bookmark)
-            user_store = store or UtilityStore(bookmark.user_id)
-            await user_store.initialize()
-            if delivered or permanent_fail:
-                await user_store.remove_bookmark(bookmark.id)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            # Best effort cleanup so stuck deliveries don't churn CPU.
-            try:
-                user_store = store or UtilityStore(bookmark.user_id)
-                await user_store.initialize()
-                await user_store.remove_bookmark(bookmark.id)
-            except Exception:
-                pass
-        finally:
-            scheduled.discard(bookmark.id)
-            tasks.pop(bookmark.id, None)
-
-    tasks[bookmark.id] = asyncio.create_task(_runner())
-
-
 async def schedule_existing_delayed_bookmarks(bot: discord.Client) -> int:
     """
-    One-time startup catchup: schedule future delayed bookmarks and deliver overdue ones.
+    Legacy helper: keep for manual use, but DiscBot now uses BookmarkScheduler.
 
-    Returns number of overdue bookmarks delivered.
+    Performs a filesystem scan and registers delayed bookmarks with the scheduler if present.
     """
     sent = 0
     from core.paths import BASE_DIR
@@ -759,7 +714,9 @@ async def schedule_existing_delayed_bookmarks(bot: discord.Client) -> int:
                     if delivered:
                         sent += 1
             else:
-                _schedule_delayed_bookmark(bot, bookmark, store=store)
+                sched = getattr(bot, "bookmark_scheduler", None)
+                if sched is not None:
+                    await sched.register_delayed(bookmark)
 
     return sent
 
@@ -767,14 +724,18 @@ async def schedule_existing_delayed_bookmarks(bot: discord.Client) -> int:
 # ─── AFK Handlers ─────────────────────────────────────────────────────────────
 
 
-async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
+async def _handle_afk(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
     """Handle AFK commands."""
     # Status lookup (self or mentioned user)
     if len(parts) > 1 and parts[1].lower() == "status":
         target = message.mentions[0] if message.mentions else message.author
-        target_store = UtilityStore(target.id)
-        await target_store.initialize()
-        is_afk, afk_message = await target_store.is_afk()
+        svc = getattr(bot, "user_utility", None)
+        if svc is not None:
+            is_afk, afk_message = await svc.is_afk(target.id)
+        else:
+            target_store = UtilityStore(target.id)
+            await target_store.initialize()
+            is_afk, afk_message = await target_store.is_afk()
         if not is_afk:
             await message.reply(f" {target.mention} is not AFK.")
             return
@@ -784,12 +745,15 @@ async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
         await message.reply(msg)
         return
 
-    store = UtilityStore(message.author.id)
-    await store.initialize()
+    svc = getattr(bot, "user_utility", None)
+    store = None
+    if svc is None:
+        store = UtilityStore(message.author.id)
+        await store.initialize()
 
     if len(parts) > 1 and parts[1].lower() == "off":
         # Clear AFK
-        result = await store.clear_afk()
+        result = await (svc.clear_afk(message.author.id) if svc is not None else store.clear_afk())
 
         if result["was_afk"]:
             mentions = result["mentions"]
@@ -829,7 +793,10 @@ async def _handle_afk(message: discord.Message, parts: list[str]) -> None:
 
     # Set AFK
     afk_message = " ".join(parts[1:]).strip() if len(parts) > 1 else None
-    await store.set_afk(afk_message)
+    if svc is not None:
+        await svc.set_afk(message.author.id, afk_message)
+    else:
+        await store.set_afk(afk_message)
 
     status_text = f" AFK set"
     if afk_message:

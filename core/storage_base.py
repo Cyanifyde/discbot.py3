@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from . import io_utils
+from . import paths
 
 
 class StorageBase:
@@ -49,7 +49,8 @@ class StorageBase:
             cache_ttl: Cache time-to-live in seconds (0 = caching disabled)
         """
         self.guild_id = guild_id
-        self.root = BASE_DIR / "data" / storage_dir / str(guild_id)
+        # Use core.paths module so tests can monkeypatch paths.BASE_DIR.
+        self.root = paths.BASE_DIR / "data" / storage_dir / str(guild_id)
         self._lock = asyncio.Lock()
         self._cache: Dict[str, Tuple[float, Any]] = {}  # filename -> (timestamp, data)
         self._cache_ttl = cache_ttl
@@ -86,7 +87,7 @@ class StorageBase:
 
         # Read from disk using existing io_utils
         path = self.root / filename
-        data = await read_json(path, default=default)
+        data = await io_utils.read_json(path, default=default)
 
         # Update cache
         if self._cache_ttl > 0:
@@ -107,7 +108,7 @@ class StorageBase:
             data: Data to serialize as JSON
         """
         path = self.root / filename
-        await write_json_atomic(path, data)
+        await io_utils.write_json_atomic(path, data)
 
         # Invalidate cache entry
         if self._cache_ttl > 0:

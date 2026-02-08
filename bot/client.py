@@ -30,7 +30,6 @@ from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from core.help_system import help_system
 from modules.auto_responder import (
-    handle_auto_responder,
     handle_add_response_command,
     handle_list_responses_command,
     handle_remove_response_command,
@@ -62,7 +61,6 @@ from modules.utility import (
     handle_utility_command,
     setup_utility,
     handle_bookmark_reaction,
-    schedule_existing_delayed_bookmarks,
 )
 from modules.communication import (
     handle_communication_command,
@@ -106,6 +104,10 @@ from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
 
 from .guild_state import GuildState
+from .auto_responder_dispatcher import AutoResponderDispatcher
+
+from services.user_utility_service import UserUtilityService
+from services.bookmark_scheduler import BookmarkScheduler
 
 logger = logging.getLogger("discbot")
 
@@ -134,16 +136,20 @@ class DiscBot(discord.Client):
         self.default_template: Optional[dict[str, Any]] = None
         self.ready_once = False
         self._status_task: Optional[asyncio.Task] = None
-        self._bookmark_task: Optional[asyncio.Task] = None
         self._last_status: Optional[str] = None
         self._questions_cache: Optional[dict[str, str]] = None
         self._questions_allowed_user_ids: Optional[set[int]] = None
         self._questions_cache_mtime: Optional[float] = None
         self.started_at = utcnow()
-        
+
         # AI Detection resource limits
         self._ai_detection_semaphore = asyncio.Semaphore(1)  # Only 1 concurrent detection
         self._ai_detection_timeout = 120  # 2 minutes max per detection
+
+        # Bounded dispatchers / schedulers for high throughput workloads
+        self.auto_responder = AutoResponderDispatcher(queue_max=5000, worker_count=4)
+        self.user_utility = UserUtilityService(max_stores=5000, afk_cache_ttl_seconds=5.0)
+        self.bookmark_scheduler = BookmarkScheduler()
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -222,23 +228,26 @@ class DiscBot(discord.Client):
             # Restore scanner state (also registers scanner help)
             await restore_scanner_state(self)
 
+            # Start bounded dispatchers/schedulers
+            await self.auto_responder.start(self)
+            await self.bookmark_scheduler.start(self)
+            await self.bookmark_scheduler.restore_from_index(self)
+
             self._status_task = asyncio.create_task(self._status_loop())
-            # One-time catchup: schedule existing delayed bookmarks (no polling loop).
-            self._bookmark_task = asyncio.create_task(schedule_existing_delayed_bookmarks(self))
 
     async def close(self) -> None:
         """Cleanup when shutting down."""
         for state in list(self.guild_states.values()):
             await state.stop()
+
+        await self.auto_responder.stop()
+        await self.bookmark_scheduler.stop()
         
         # Cancel and await background tasks
         tasks_to_cancel = []
         if self._status_task:
             self._status_task.cancel()
             tasks_to_cancel.append(self._status_task)
-        if self._bookmark_task:
-            self._bookmark_task.cancel()
-            tasks_to_cancel.append(self._bookmark_task)
         
         if tasks_to_cancel:
             await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
@@ -315,13 +324,9 @@ class DiscBot(discord.Client):
         try:
             content_l = (message.content or "").strip().lower()
             if not content_l.startswith("afk"):
-                from core.utility_storage import UtilityStore
-
-                store = UtilityStore(message.author.id)
-                await store.initialize()
-                is_afk, _afk_msg = await store.is_afk()
+                is_afk, _afk_msg = await self.user_utility.is_afk(message.author.id)
                 if is_afk:
-                    result = await store.clear_afk()
+                    result = await self.user_utility.clear_afk(message.author.id)
                     mentions = result.get("mentions") or []
                     if mentions:
                         lines: list[str] = []
@@ -484,17 +489,14 @@ class DiscBot(discord.Client):
 
         # Notify when mentioning AFK users
         if message.mentions:
-            from core.utility_storage import UtilityStore
             afk_lines: list[str] = []
             for user in message.mentions:
                 if user.bot:
                     continue
-                store = UtilityStore(user.id)
-                await store.initialize()
-                is_afk, afk_message = await store.is_afk()
+                is_afk, afk_message = await self.user_utility.is_afk(user.id)
                 if not is_afk:
                     continue
-                await store.add_mention({
+                await self.user_utility.add_mention(user.id, {
                     "author": message.author.display_name,
                     "author_id": message.author.id,
                     "channel_id": message.channel.id,
@@ -510,23 +512,14 @@ class DiscBot(discord.Client):
             if afk_lines:
                 await message.reply("\n".join(afk_lines))
 
-        # Run auto-responder with error handling
-        async def _safe_auto_responder():
-            try:
-                await handle_auto_responder(message)
-            except Exception as e:
-                logger.error("Auto-responder error for message %s: %s", message.id, e)
-        
-        asyncio.create_task(_safe_auto_responder())
+        # Bounded auto-responder processing (drops on overload).
+        self.auto_responder.submit(message)
 
-        # Record message for activity tracking with error handling
-        async def _safe_record_message():
-            try:
-                await state.storage.record_message(message.author.id, utcnow())
-            except Exception as e:
-                logger.error("Failed to record message for user %s: %s", message.author.id, e)
-        
-        asyncio.create_task(_safe_record_message())
+        # Record message for activity tracking inline (no per-message task spawning).
+        try:
+            await state.storage.record_message(message.author.id, utcnow())
+        except Exception as e:
+            logger.error("Failed to record message for user %s: %s", message.author.id, e)
 
         # Build and enqueue scan jobs if applicable (one per attachment)
         try:

@@ -5,6 +5,7 @@ Provides per-guild storage for moderation data with async-safe operations.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -27,14 +28,14 @@ class ModerationStore(StorageBase):
 
     async def _read_warnings(self) -> Dict[str, List[Dict[str, Any]]]:
         """Read warnings file."""
-        data = await self._read_file(self.warnings_path, default={})
+        data = await self._read_file("warnings.json", default={})
         if not isinstance(data, dict):
             return {}
         return data
 
     async def _write_warnings(self, data: Dict[str, List[Dict[str, Any]]]) -> None:
         """Write warnings file."""
-        await self._write_file(self.warnings_path, data)
+        await self._write_file("warnings.json", data)
 
     async def add_warning(
         self,
@@ -151,14 +152,14 @@ class ModerationStore(StorageBase):
 
     async def _read_notes(self) -> Dict[str, List[Dict[str, Any]]]:
         """Read notes file."""
-        data = await self._read_file(self.notes_path, default={})
+        data = await self._read_file("notes.json", default={})
         if not isinstance(data, dict):
             return {}
         return data
 
     async def _write_notes(self, data: Dict[str, List[Dict[str, Any]]]) -> None:
         """Write notes file."""
-        await self._write_file(self.notes_path, data)
+        await self._write_file("notes.json", data)
 
     async def add_note(
         self,
@@ -287,7 +288,6 @@ class ModerationStore(StorageBase):
 
     async def _read_escalation_config(self) -> Dict[str, Any]:
         """Read escalation configuration."""
-        escalation_path = self.root / "escalation_config.json"
         default = {
             "enabled": True,
             "thresholds": [
@@ -301,15 +301,14 @@ class ModerationStore(StorageBase):
             "dm_on_escalation": True,
             "appeal_info": None,
         }
-        data = await self._read_file(escalation_path, default=default)
+        data = await self._read_file("escalation_config.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_escalation_config(self, data: Dict[str, Any]) -> None:
         """Write escalation configuration."""
-        escalation_path = self.root / "escalation_config.json"
-        await self._write_file(escalation_path, data)
+        await self._write_file("escalation_config.json", data)
 
     async def get_escalation_config(self) -> Dict[str, Any]:
         """Get escalation configuration."""
@@ -357,21 +356,19 @@ class ModerationStore(StorageBase):
 
     async def _read_shadow_log(self) -> Dict[str, Any]:
         """Read shadow log."""
-        shadow_log_path = self.root / "shadow_log.json"
         default = {
             "entries": [],
             "next_case_number": 1,
             "channel_id": None,
         }
-        data = await self._read_file(shadow_log_path, default=default)
+        data = await self._read_file("shadow_log.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_shadow_log(self, data: Dict[str, Any]) -> None:
         """Write shadow log."""
-        shadow_log_path = self.root / "shadow_log.json"
-        await self._write_file(shadow_log_path, data)
+        await self._write_file("shadow_log.json", data)
 
     async def add_shadow_log_entry(
         self,
@@ -477,7 +474,6 @@ class ModerationStore(StorageBase):
 
     async def _read_probation(self) -> Dict[str, Any]:
         """Read probation data."""
-        probation_path = self.root / "probation.json"
         default = {
             "users": {},
             "auto_triggers": {
@@ -486,15 +482,14 @@ class ModerationStore(StorageBase):
                 "federation_flag": True,
             },
         }
-        data = await self._read_file(probation_path, default=default)
+        data = await self._read_file("probation.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_probation(self, data: Dict[str, Any]) -> None:
         """Write probation data."""
-        probation_path = self.root / "probation.json"
-        await self._write_file(probation_path, data)
+        await self._write_file("probation.json", data)
 
     async def add_to_probation(
         self,
@@ -593,17 +588,15 @@ class ModerationStore(StorageBase):
 
     async def _read_templates(self) -> Dict[str, Any]:
         """Read templates data."""
-        templates_path = self.root / "templates.json"
         default = {"templates": {}}
-        data = await self._read_file(templates_path, default=default)
+        data = await self._read_file("templates.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_templates(self, data: Dict[str, Any]) -> None:
         """Write templates data."""
-        templates_path = self.root / "templates.json"
-        await self._write_file(templates_path, data)
+        await self._write_file("templates.json", data)
 
     async def add_template(
         self,
@@ -666,20 +659,18 @@ class ModerationStore(StorageBase):
 
     async def _read_recent_actions(self) -> Dict[str, Any]:
         """Read recent actions data."""
-        actions_path = self.root / "recent_actions.json"
         default = {
             "actions": [],
             "grace_period_minutes": 5,
         }
-        data = await self._read_file(actions_path, default=default)
+        data = await self._read_file("recent_actions.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_recent_actions(self, data: Dict[str, Any]) -> None:
         """Write recent actions data."""
-        actions_path = self.root / "recent_actions.json"
-        await self._write_file(actions_path, data)
+        await self._write_file("recent_actions.json", data)
 
     async def record_action(
         self,

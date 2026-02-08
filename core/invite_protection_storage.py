@@ -5,31 +5,25 @@ Per-guild, JSON-backed storage with async-safe operations.
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import dt_to_iso, utcnow
 
-INVITE_PROTECTION_DIR = BASE_DIR / "data" / "invite_protection"
 
+class InviteProtectionStore(StorageBase):
+    __slots__ = ("data_path",)
 
-class InviteProtectionStore:
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = INVITE_PROTECTION_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since invite checks are frequent
+        super().__init__(guild_id, "invite_protection", cache_ttl=30.0)
         self.data_path = self.root / "invites.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     async def _read(self) -> Dict[str, Any]:
-        data = await read_json(
-            self.data_path,
+        data = await self._read_file(
+            "invites.json",
             default={"allowlist": {}, "pending": {}, "config": {"modlog_channel_id": None}},
         )
         if not isinstance(data, dict):
@@ -55,7 +49,7 @@ class InviteProtectionStore:
         return data
 
     async def _write(self, data: Dict[str, Any]) -> None:
-        await write_json_atomic(self.data_path, data)
+        await self._write_file("invites.json", data)
 
     async def is_allowlisted(self, code: str) -> bool:
         async with self._lock:
@@ -178,8 +172,9 @@ class InviteProtectionStore:
                 await self._write(data)
                 return code
 
-            # Pending by unique prefix
-            matches = [pid for pid in data["pending"].keys() if pid.startswith(token)]
+            # Pending by unique prefix (optimized by sorted keys)
+            pending_keys = sorted(data["pending"].keys())
+            matches = [pid for pid in pending_keys if pid.startswith(token)]
             if len(matches) == 1:
                 pid = matches[0]
                 entry2 = data["pending"].get(pid)
@@ -228,7 +223,9 @@ class InviteProtectionStore:
                 await self._write(data)
                 return token
 
-            matches = [pid for pid in data["pending"].keys() if pid.startswith(token)]
+            # Prefix matching (optimized by sorted keys)
+            pending_keys = sorted(data["pending"].keys())
+            matches = [pid for pid in pending_keys if pid.startswith(token)]
             if len(matches) == 1:
                 pid = matches[0]
                 del data["pending"][pid]

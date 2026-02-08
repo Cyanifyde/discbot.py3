@@ -11,27 +11,18 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from core.report_storage import ReportStore
 from core.types import UserReport
 from core.utils import utcnow, dt_to_iso
+from services.service_base import ServiceBase
 
 if TYPE_CHECKING:
     import discord
 
 
-class ReportService:
+class ReportService(ServiceBase[ReportStore]):
     """Business logic for report management."""
 
     def __init__(self) -> None:
-        self._stores: Dict[int, ReportStore] = {}
-
-    def _get_store(self, guild_id: int) -> ReportStore:
-        """Get or create a report store for a guild."""
-        if guild_id not in self._stores:
-            self._stores[guild_id] = ReportStore(guild_id)
-        return self._stores[guild_id]
-
-    async def initialize_store(self, guild_id: int) -> None:
-        """Initialize storage for a guild."""
-        store = self._get_store(guild_id)
-        await store.initialize()
+        super().__init__(ReportStore)
+        # _get_store() and initialize_store() now inherited from ServiceBase
 
     # ─── Report Management ────────────────────────────────────────────────────
 

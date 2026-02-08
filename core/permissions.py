@@ -5,6 +5,8 @@ Each guild has its own permission configuration with no data leaking.
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 import discord
@@ -69,7 +71,7 @@ async def get_guild_permissions(guild_id: int) -> Dict[str, Any]:
     
     Returns guild-specific permissions with no cross-guild data.
     """
-    data = await get_guild_module_data(guild_id, PERMISSIONS_MODULE)
+    data = await _get_guild_permissions_cached(guild_id)
     if not isinstance(data, dict):
         # Default: all modules enabled, no role restrictions (admin-only)
         data = {
@@ -93,6 +95,9 @@ async def get_guild_permissions(guild_id: int) -> Dict[str, Any]:
                 "enabled": DEFAULT_MODULE_ENABLED.get(module, True),
                 "allowed_roles": [],
             }
+
+    # Cache the normalized dict to avoid re-normalizing on every call.
+    _PERMS_CACHE[int(guild_id)] = (time.monotonic(), data)
     
     return data
 
@@ -100,6 +105,53 @@ async def get_guild_permissions(guild_id: int) -> Dict[str, Any]:
 async def save_guild_permissions(guild_id: int, data: Dict[str, Any]) -> None:
     """Save guild-specific permission configuration."""
     await update_guild_module_data(guild_id, PERMISSIONS_MODULE, data)
+    invalidate_guild_permissions_cache(guild_id)
+
+
+# ---------------------------------------------------------------------------
+# Cache layer
+# ---------------------------------------------------------------------------
+
+# guild_id -> (monotonic_ts, permissions_data)
+_PERMS_CACHE: Dict[int, tuple[float, Dict[str, Any]]] = {}
+_PERMS_LOCKS: Dict[int, asyncio.Lock] = {}
+CACHE_TTL_SECONDS = 5.0
+
+
+def invalidate_guild_permissions_cache(guild_id: int) -> None:
+    """Invalidate cached permissions for a guild."""
+    _PERMS_CACHE.pop(int(guild_id), None)
+
+
+async def _get_guild_permissions_cached(guild_id: int) -> Any:
+    gid = int(guild_id)
+    now = time.monotonic()
+    cached = _PERMS_CACHE.get(gid)
+    if cached:
+        ts, data = cached
+        if now - ts < CACHE_TTL_SECONDS:
+            return data
+
+    lock = _PERMS_LOCKS.get(gid)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PERMS_LOCKS[gid] = lock
+
+    async with lock:
+        now2 = time.monotonic()
+        cached2 = _PERMS_CACHE.get(gid)
+        if cached2:
+            ts2, data2 = cached2
+            if now2 - ts2 < CACHE_TTL_SECONDS:
+                return data2
+
+        data = await get_guild_module_data(gid, PERMISSIONS_MODULE)
+        if isinstance(data, dict):
+            _PERMS_CACHE[gid] = (time.monotonic(), data)
+        else:
+            # Cache non-dict values as-is for TTL to avoid repeated disk hits on corrupt data.
+            _PERMS_CACHE[gid] = (time.monotonic(), data)  # type: ignore[assignment]
+        return data
 
 
 async def is_module_enabled(guild_id: int, module: str) -> bool:

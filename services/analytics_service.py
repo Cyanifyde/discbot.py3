@@ -1,47 +1,46 @@
 """
 Analytics service for tracking and reporting bot statistics.
 """
-import json
-import os
+import asyncio
+import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
+
+from core.io_utils import read_json, write_json_atomic
 
 
 class AnalyticsService:
     """Service for tracking and analyzing bot usage and commission statistics."""
 
     def __init__(self, data_dir: str = "data/analytics"):
-        self.data_dir = data_dir
-        os.makedirs(data_dir, exist_ok=True)
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        # Add TTL cache like auto_responder pattern
+        self._stats_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+        self._cache_ttl = 30.0  # 30 seconds
 
-    def _get_guild_dir(self, guild_id: int) -> str:
+    async def _get_guild_dir(self, guild_id: int) -> Path:
         """Get the directory path for a specific guild's analytics."""
-        path = os.path.join(self.data_dir, str(guild_id))
-        os.makedirs(path, exist_ok=True)
-        os.makedirs(os.path.join(path, "timeseries"), exist_ok=True)
+        path = self.data_dir / str(guild_id)
+        await asyncio.to_thread(path.mkdir, parents=True, exist_ok=True)
+        timeseries_path = path / "timeseries"
+        await asyncio.to_thread(timeseries_path.mkdir, parents=True, exist_ok=True)
         return path
 
-    def _get_stats_file(self, guild_id: int) -> str:
-        """Get the stats file path for a guild."""
-        return os.path.join(self._get_guild_dir(guild_id), "stats.json")
+    async def _load_stats(self, guild_id: int) -> Dict[str, Any]:
+        """Load stats for a guild with caching."""
+        # Check cache first
+        now = time.monotonic()
+        if guild_id in self._stats_cache:
+            cache_time, data = self._stats_cache[guild_id]
+            if now - cache_time < self._cache_ttl:
+                return data
 
-    def _get_timeseries_file(self, guild_id: int, metric: str, period: str) -> str:
-        """Get the timeseries file path for a specific metric and period."""
-        return os.path.join(self._get_guild_dir(guild_id), "timeseries", f"{metric}_{period}.json")
-
-    def _load_stats(self, guild_id: int) -> Dict[str, Any]:
-        """Load stats for a guild."""
-        stats_file = self._get_stats_file(guild_id)
-        if os.path.exists(stats_file):
-            try:
-                with open(stats_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                # Log error and return default stats
-                import logging
-                logging.getLogger("discbot.analytics").error(f"Failed to load stats for guild {guild_id}: {e}")
-        return {
+        # Load from disk
+        guild_dir = await self._get_guild_dir(guild_id)
+        stats_file = guild_dir / "stats.json"
+        default = {
             "commission_stats": {
                 "total_completed": 0,
                 "total_value": 0.0,
@@ -57,33 +56,34 @@ class AnalyticsService:
             },
             "last_updated": datetime.now().isoformat()
         }
+        data = await read_json(stats_file, default=default)
 
-    def _save_stats(self, guild_id: int, stats: Dict[str, Any]):
+        # Update cache
+        self._stats_cache[guild_id] = (now, data)
+        return data
+
+    async def _save_stats(self, guild_id: int, stats: Dict[str, Any]):
         """Save stats for a guild."""
         stats["last_updated"] = datetime.now().isoformat()
-        stats_file = self._get_stats_file(guild_id)
-        with open(stats_file, 'w') as f:
-            json.dump(stats, f, indent=2)
+        guild_dir = await self._get_guild_dir(guild_id)
+        stats_file = guild_dir / "stats.json"
+        await write_json_atomic(stats_file, stats)
+        # Invalidate cache
+        self._stats_cache.pop(guild_id, None)
 
-    def _load_timeseries(self, guild_id: int, metric: str, period: str) -> List[Dict[str, Any]]:
+    async def _load_timeseries(self, guild_id: int, metric: str, period: str) -> List[Dict[str, Any]]:
         """Load timeseries data for a metric."""
-        ts_file = self._get_timeseries_file(guild_id, metric, period)
-        if os.path.exists(ts_file):
-            try:
-                with open(ts_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                import logging
-                logging.getLogger("discbot.analytics").error(f"Failed to load timeseries {metric}/{period} for guild {guild_id}: {e}")
-        return []
+        guild_dir = await self._get_guild_dir(guild_id)
+        ts_file = guild_dir / "timeseries" / f"{metric}_{period}.json"
+        return await read_json(ts_file, default=[])
 
-    def _save_timeseries(self, guild_id: int, metric: str, period: str, data: List[Dict[str, Any]]):
+    async def _save_timeseries(self, guild_id: int, metric: str, period: str, data: List[Dict[str, Any]]):
         """Save timeseries data for a metric."""
-        ts_file = self._get_timeseries_file(guild_id, metric, period)
-        with open(ts_file, 'w') as f:
-            json.dump(data, f, indent=2)
+        guild_dir = await self._get_guild_dir(guild_id)
+        ts_file = guild_dir / "timeseries" / f"{metric}_{period}.json"
+        await write_json_atomic(ts_file, data)
 
-    def record_event(self, guild_id: int, event_type: str, data: Dict[str, Any]):
+    async def record_event(self, guild_id: int, event_type: str, data: Dict[str, Any]):
         """
         Record an analytics event.
 
@@ -92,7 +92,7 @@ class AnalyticsService:
             event_type: Type of event (e.g., "commission_completed", "command_run")
             data: Event data
         """
-        stats = self._load_stats(guild_id)
+        stats = await self._load_stats(guild_id)
         now = datetime.now()
 
         if event_type == "commission_completed":
@@ -123,7 +123,7 @@ class AnalyticsService:
             commission_stats["by_type"][comm_type]["value"] += data.get("price", 0)
 
             # Record timeseries data
-            ts_data = self._load_timeseries(guild_id, "commissions", "daily")
+            ts_data = await self._load_timeseries(guild_id, "commissions", "daily")
             ts_data.append({
                 "timestamp": now.isoformat(),
                 "type": comm_type,
@@ -133,7 +133,7 @@ class AnalyticsService:
             # Keep only last 90 days
             cutoff = (now - timedelta(days=90)).isoformat()
             ts_data = [d for d in ts_data if d["timestamp"] > cutoff]
-            self._save_timeseries(guild_id, "commissions", "daily", ts_data)
+            await self._save_timeseries(guild_id, "commissions", "daily", ts_data)
 
         elif event_type == "profile_view":
             # Update profile stats
@@ -172,9 +172,9 @@ class AnalyticsService:
         elif event_type == "message_scanned":
             stats["bot_stats"]["messages_scanned"] += 1
 
-        self._save_stats(guild_id, stats)
+        await self._save_stats(guild_id, stats)
 
-    def get_commission_stats(self, guild_id: int, period: Optional[str] = None) -> Dict[str, Any]:
+    async def get_commission_stats(self, guild_id: int, period: Optional[str] = None) -> Dict[str, Any]:
         """
         Get commission statistics for a guild.
 
@@ -185,7 +185,7 @@ class AnalyticsService:
         Returns:
             Dictionary of commission statistics
         """
-        stats = self._load_stats(guild_id)
+        stats = await self._load_stats(guild_id)
         commission_stats = stats["commission_stats"]
 
         if period == "month":
@@ -204,7 +204,7 @@ class AnalyticsService:
         else:
             return commission_stats
 
-    def get_profile_stats(self, user_id: int) -> Dict[str, Any]:
+    async def get_profile_stats(self, user_id: int) -> Dict[str, Any]:
         """
         Get profile statistics for a user across all guilds.
 
@@ -228,7 +228,7 @@ class AnalyticsService:
 
             try:
                 guild_id = int(guild_dir)
-                stats = self._load_stats(guild_id)
+                stats = await self._load_stats(guild_id)
                 user_stats = stats["profile_stats"].get(str(user_id), {})
 
                 combined_stats["total_views"] += user_stats.get("total_views", 0)
@@ -245,7 +245,7 @@ class AnalyticsService:
 
         return combined_stats
 
-    def get_bot_stats(self) -> Dict[str, Any]:
+    async def get_bot_stats(self) -> Dict[str, Any]:
         """
         Get global bot statistics.
 
@@ -268,7 +268,7 @@ class AnalyticsService:
 
             try:
                 guild_id = int(guild_dir)
-                stats = self._load_stats(guild_id)
+                stats = await self._load_stats(guild_id)
                 bot_stats = stats.get("bot_stats", {})
 
                 combined_stats["total_commands_run"] += bot_stats.get("commands_run", 0)
@@ -290,7 +290,7 @@ class AnalyticsService:
 
         return combined_stats
 
-    def calculate_trends(self, guild_id: int, metric: str) -> List[Dict[str, Any]]:
+    async def calculate_trends(self, guild_id: int, metric: str) -> List[Dict[str, Any]]:
         """
         Calculate trends for a metric.
 
@@ -302,7 +302,7 @@ class AnalyticsService:
             List of trend data points
         """
         if metric == "commissions":
-            ts_data = self._load_timeseries(guild_id, "commissions", "daily")
+            ts_data = await self._load_timeseries(guild_id, "commissions", "daily")
 
             # Group by week for trending
             weekly_data = {}

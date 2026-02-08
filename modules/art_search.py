@@ -8,6 +8,7 @@ Paging forward lazily scans deeper history with no hard cap.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import logging
 import math
 import time
@@ -413,14 +414,18 @@ class _SearchView(discord.ui.View):
                         continue
 
                     for att in _image_attachments(msg):
-                        self.hits.append(_Hit(
+                        hit = _Hit(
                             channel_id=msg.channel.id,
                             message_id=msg.id,
                             author_id=msg.author.id,
                             timestamp=msg.created_at.timestamp(),
                             attachment_url=att.url,
                             filename=att.filename or "image",
-                        ))
+                        )
+                        # Insert in sorted position (newest-first, descending timestamp)
+                        # Use bisect to find insertion point for descending order
+                        pos = bisect.bisect_left([(-h.timestamp) for h in self.hits], -hit.timestamp)
+                        self.hits.insert(pos, hit)
                         found += 1
 
                     if len(self.hits) >= desired:
@@ -450,8 +455,7 @@ class _SearchView(discord.ui.View):
             else:
                 self._cursors[ch_id] = last_id
 
-        # Keep newest-first.
-        self.hits.sort(key=lambda h: h.timestamp, reverse=True)
+        # List is now kept sorted during insertion, no need to sort again
 
     def _next_channel(self) -> Optional[int]:
         """Return the next channel that hasn't been fully exhausted."""

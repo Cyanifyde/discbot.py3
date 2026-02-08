@@ -9,27 +9,18 @@ import uuid
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from core.communication_storage import CommunicationStore
+from services.service_base import ServiceBase
 
 if TYPE_CHECKING:
     import discord
 
 
-class CommunicationService:
+class CommunicationService(ServiceBase[CommunicationStore]):
     """Business logic for communication features."""
 
     def __init__(self) -> None:
-        self._stores: Dict[int, CommunicationStore] = {}
-
-    def _get_store(self, guild_id: int) -> CommunicationStore:
-        """Get or create a communication store for a guild."""
-        if guild_id not in self._stores:
-            self._stores[guild_id] = CommunicationStore(guild_id)
-        return self._stores[guild_id]
-
-    async def initialize_store(self, guild_id: int) -> None:
-        """Initialize storage for a guild."""
-        store = self._get_store(guild_id)
-        await store.initialize()
+        super().__init__(CommunicationStore)
+        # _get_store() and initialize_store() now inherited from ServiceBase
 
     # ─── Feedback Box ─────────────────────────────────────────────────────────
 
