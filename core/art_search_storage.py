@@ -3,14 +3,10 @@ Art search storage -- per-guild channel allowlist for image search.
 """
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import Any, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
-
-ART_SEARCH_DIR = BASE_DIR / "data" / "art_search"
+from .storage_base import StorageBase
 
 # Matches <#123456789012345678> channel mentions.
 _CHANNEL_MENTION_RE = re.compile(r"<#(\d+)>")
@@ -27,24 +23,20 @@ def parse_channel_id(raw: str) -> Optional[int]:
     return None
 
 
-class ArtSearchStore:
+class ArtSearchStore(StorageBase):
     """Stores the per-guild list of channels that Art Search is allowed to scan."""
 
-    __slots__ = ("guild_id", "root", "data_path", "_lock")
+    __slots__ = ("data_path",)
 
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = ART_SEARCH_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since channel lists are read frequently but rarely change
+        super().__init__(guild_id, "art_search", cache_ttl=30.0)
         self.data_path = self.root / "settings.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     # -- internal I/O --------------------------------------------------------
 
     async def _read(self) -> dict[str, Any]:
-        data = await read_json(self.data_path, default={"channels": []})
+        data = await self._read_file("settings.json", default={"channels": []})
         if not isinstance(data, dict):
             return {"channels": []}
         raw = data.get("channels")
@@ -57,7 +49,7 @@ class ArtSearchStore:
         return data
 
     async def _write(self, data: dict[str, Any]) -> None:
-        await write_json_atomic(self.data_path, data)
+        await self._write_file("settings.json", data)
 
     # -- public API ----------------------------------------------------------
 

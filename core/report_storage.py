@@ -5,31 +5,23 @@ Provides per-guild storage for report data with async-safe operations.
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 from .types import UserReport
 
-# Storage directory
-REPORT_DIR = BASE_DIR / "data" / "moderation"
 
-
-class ReportStore:
+class ReportStore(StorageBase):
     """Per-guild storage for user reports."""
 
-    def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = REPORT_DIR / str(guild_id)
-        self.reports_path = self.root / "reports.json"
-        self._lock = asyncio.Lock()
+    __slots__ = ("reports_path",)
 
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
+    def __init__(self, guild_id: int) -> None:
+        # Initialize with 30s cache TTL since reports are accessed frequently
+        super().__init__(guild_id, "moderation", cache_ttl=30.0)
+        self.reports_path = self.root / "reports.json"
 
     # ─── Reports ──────────────────────────────────────────────────────────────
 
@@ -50,7 +42,7 @@ class ReportStore:
                 ],
             },
         }
-        data = await read_json(self.reports_path, default=default)
+        data = await self._read_file("reports.json", default=default)
         if not isinstance(data, dict):
             return default
         # Ensure all keys exist
@@ -61,7 +53,7 @@ class ReportStore:
 
     async def _write_reports(self, data: Dict[str, Any]) -> None:
         """Write reports file."""
-        await write_json_atomic(self.reports_path, data)
+        await self._write_file("reports.json", data)
 
     async def add_report(self, report: UserReport) -> None:
         """Add a new report."""

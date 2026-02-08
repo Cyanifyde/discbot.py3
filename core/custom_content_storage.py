@@ -5,45 +5,37 @@ Provides storage for guild-specific custom commands, form templates, and enhance
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 
-# Storage directory
-CUSTOM_CONTENT_DIR = BASE_DIR / "data" / "custom_content"
 
-
-class CustomContentStore:
+class CustomContentStore(StorageBase):
     """Storage for custom content features."""
 
+    __slots__ = ("commands_path", "forms_path")
+
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = CUSTOM_CONTENT_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since custom commands are read frequently
+        super().__init__(guild_id, "custom_content", cache_ttl=30.0)
         self.commands_path = self.root / "commands.json"
         self.forms_path = self.root / "forms.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     # ─── Custom Commands ──────────────────────────────────────────────────────
 
     async def _read_commands(self) -> Dict[str, Any]:
         """Read custom commands file."""
         default = {"commands": {}}
-        data = await read_json(self.commands_path, default=default)
+        data = await self._read_file("commands.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_commands(self, data: Dict[str, Any]) -> None:
         """Write custom commands file."""
-        await write_json_atomic(self.commands_path, data)
+        await self._write_file("commands.json", data)
 
     async def add_custom_command(
         self,
@@ -131,14 +123,14 @@ class CustomContentStore:
     async def _read_forms(self) -> Dict[str, Any]:
         """Read forms file."""
         default = {"forms": {}, "submissions": []}
-        data = await read_json(self.forms_path, default=default)
+        data = await self._read_file("forms.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_forms(self, data: Dict[str, Any]) -> None:
         """Write forms file."""
-        await write_json_atomic(self.forms_path, data)
+        await self._write_file("forms.json", data)
 
     async def add_form(
         self,

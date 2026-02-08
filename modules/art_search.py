@@ -352,12 +352,35 @@ class _SearchView(discord.ui.View):
         *,
         desired: int,
         budget: float,
+        progress_message: Optional[discord.Message] = None,
     ) -> None:
         """Scan channel history until *desired* hits are collected or *budget* seconds elapse."""
         if self.all_exhausted or len(self.hits) >= desired:
             return
 
         deadline = time.monotonic() + budget
+        last_progress = 0.0
+
+        async def _maybe_update_progress(extra: str = "") -> None:
+            nonlocal last_progress
+            if not progress_message:
+                return
+            now = time.monotonic()
+            if now - last_progress < 2.0:
+                return
+            last_progress = now
+            desc = f"Scanning more history...\nChecked **{self.scanned:,}** messages so far."
+            if extra:
+                desc += f"\n{extra}"
+            e = discord.Embed(
+                title=f"Art Search: {self.target_name}",
+                description=desc,
+                color=discord.Color.dark_grey(),
+            )
+            try:
+                await progress_message.edit(embeds=[e], view=self)
+            except Exception:
+                pass
 
         while len(self.hits) < desired and not self.all_exhausted:
             if time.monotonic() >= deadline:
@@ -384,6 +407,7 @@ class _SearchView(discord.ui.View):
                 ):
                     self.scanned += 1
                     last_id = msg.id
+                    await _maybe_update_progress(f"Currently scanning <#{ch_id}>")
 
                     if msg.author.id != self.target_id:
                         continue
@@ -407,6 +431,7 @@ class _SearchView(discord.ui.View):
                 if status == 429:
                     retry = max(0.5, min(float(getattr(exc, "retry_after", 1) or 1), 60))
                     logger.warning("ArtSearch rate-limited, sleeping %.1fs", retry)
+                    await _maybe_update_progress(f"Rate limited. Retrying in **{retry:.1f}s**…")
                     await asyncio.sleep(retry)
                     # Don't count this against the budget.
                     deadline += retry
@@ -581,7 +606,12 @@ class _SearchView(discord.ui.View):
                 except Exception:
                     pass
 
-                await self.scan(guild, desired=needed, budget=PAGE_BUDGET)
+                await self.scan(
+                    guild,
+                    desired=needed,
+                    budget=PAGE_BUDGET,
+                    progress_message=interaction.message,
+                )
 
         # Clamp if we couldn't load enough.
         if self.page >= self.page_count:

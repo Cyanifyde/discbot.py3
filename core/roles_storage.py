@@ -5,48 +5,40 @@ Provides storage for temporary roles, role requests, bundles, and reaction roles
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 
-# Storage directory
-ROLES_DIR = BASE_DIR / "data" / "roles"
 
-
-class RolesStore:
+class RolesStore(StorageBase):
     """Storage for role management features."""
 
+    __slots__ = ("temp_roles_path", "requests_path", "bundles_path", "reaction_roles_path")
+
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = ROLES_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since roles are read frequently
+        super().__init__(guild_id, "roles", cache_ttl=30.0)
         self.temp_roles_path = self.root / "temp_roles.json"
         self.requests_path = self.root / "requests.json"
         self.bundles_path = self.root / "bundles.json"
         self.reaction_roles_path = self.root / "reaction_roles.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     # ─── Temporary Roles ──────────────────────────────────────────────────────
 
     async def _read_temp_roles(self) -> Dict[str, Any]:
         """Read temporary roles file."""
         default = {"temp_roles": []}
-        data = await read_json(self.temp_roles_path, default=default)
+        data = await self._read_file("temp_roles.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_temp_roles(self, data: Dict[str, Any]) -> None:
         """Write temporary roles file."""
-        await write_json_atomic(self.temp_roles_path, data)
+        await self._write_file("temp_roles.json", data)
 
     async def add_temp_role(
         self,
@@ -185,14 +177,14 @@ class RolesStore:
     async def _read_requests(self) -> Dict[str, Any]:
         """Read role requests file."""
         default = {"requests": [], "config": {"requestable_roles": []}}
-        data = await read_json(self.requests_path, default=default)
+        data = await self._read_file("requests.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_requests(self, data: Dict[str, Any]) -> None:
         """Write role requests file."""
-        await write_json_atomic(self.requests_path, data)
+        await self._write_file("requests.json", data)
 
     async def add_role_request(
         self,
@@ -249,14 +241,14 @@ class RolesStore:
     async def _read_bundles(self) -> Dict[str, Any]:
         """Read role bundles file."""
         default = {"bundles": []}
-        data = await read_json(self.bundles_path, default=default)
+        data = await self._read_file("bundles.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_bundles(self, data: Dict[str, Any]) -> None:
         """Write role bundles file."""
-        await write_json_atomic(self.bundles_path, data)
+        await self._write_file("bundles.json", data)
 
     async def add_bundle(
         self,
@@ -330,14 +322,14 @@ class RolesStore:
     async def _read_reaction_roles(self) -> Dict[str, Any]:
         """Read reaction roles file."""
         default = {"reaction_roles": {}}
-        data = await read_json(self.reaction_roles_path, default=default)
+        data = await self._read_file("reaction_roles.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_reaction_roles(self, data: Dict[str, Any]) -> None:
         """Write reaction roles file."""
-        await write_json_atomic(self.reaction_roles_path, data)
+        await self._write_file("reaction_roles.json", data)
 
     async def add_reaction_role(
         self,
