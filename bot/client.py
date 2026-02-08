@@ -988,6 +988,193 @@ class DiscBot(discord.Client):
         
     # ─── Commands ─────────────────────────────────────────────────────────────
 
+    async def _run_ai_detection(
+        self,
+        interaction: discord.Interaction,
+        image: discord.Attachment,
+        initial_embed: discord.Embed,
+        version: int,
+    ) -> None:
+        """Run AI detection on an image with progress updates."""
+        import sys
+        import io
+        import time
+        from pathlib import Path
+        from PIL import Image as PILImage
+        
+        # Feature families in model v1 (12 total)
+        FAMILIES = [
+            'color', 'frequency', 'spectral_diffusion', 'noise',
+            'texture', 'gradient', 'forensic', 'model_specific',
+            'nss', 'cfa', 'self_similarity', 'residual'
+        ]
+        
+        last_update_time = 0
+        current_family_idx = 0
+        
+        async def progress_callback(family_name: str, family_idx: int, total_families: int):
+            """Update progress embed - rate limited to avoid Discord API limits."""
+            nonlocal last_update_time, current_family_idx
+            current_family_idx = family_idx
+            
+            # Rate limit: Update at most once per 2 seconds (Discord allows ~5 per 5 seconds)
+            current_time = time.time()
+            if current_time - last_update_time < 2.0:
+                return
+            
+            try:
+                last_update_time = current_time
+                initial_embed.description = (
+                    "**Early Test Model - Use with caution**\\n"
+                    "This is an experimental model that may produce incorrect results. "
+                    "It analyzes pixel-level features but cannot detect tracing or heavily edited images.\\n\\n"
+                    f"Status: Analyzing features... ({family_name})"
+                )
+                initial_embed.color = discord.Color.orange()
+                initial_embed.set_field_at(
+                    0, 
+                    name="Progress", 
+                    value=f"Running features {family_idx + 1}/{total_families}",
+                    inline=False
+                )
+                await interaction.edit_original_response(embed=initial_embed)
+            except discord.errors.NotFound:
+                # Interaction expired or message deleted
+                pass
+            except Exception as e:
+                logger.debug(f"Failed to update progress: {e}")
+        
+        try:
+            # Download image first
+            image_data = await image.read()
+            pil_image = PILImage.open(io.BytesIO(image_data))
+            
+            # Convert to RGB if needed
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+            
+            # Import detection module
+            sys.path.insert(0, str(Path(__file__).parent.parent / "for_discord"))
+            try:
+                # Model versioning - load different models based on version
+                if version == 1:
+                    from detect import predict_image_with_progress
+                    
+                    # Wrap in thread to run with progress updates
+                    ai_probability = await asyncio.to_thread(
+                        self._run_detection_with_progress,
+                        pil_image,
+                        progress_callback,
+                        FAMILIES
+                    )
+                else:
+                    # Future versions would go here
+                    raise ValueError(f"Model version {version} not implemented")
+                
+            finally:
+                sys.path.pop(0)
+            
+            # Determine verdict
+            if ai_probability > 0.9:
+                verdict = "AI Generated"
+                confidence = "High Confidence"
+                color = discord.Color.red()
+                interpretation = "This image appears to be AI-generated with high certainty."
+            elif ai_probability > 0.7:
+                verdict = "Likely AI"
+                confidence = "Medium Confidence"
+                color = discord.Color.orange()
+                interpretation = "This image likely contains AI-generated content."
+            elif ai_probability < 0.3:
+                verdict = "Real Image"
+                confidence = "High Confidence"
+                color = discord.Color.green()
+                interpretation = "This image appears to be real/human-made with high certainty."
+            elif ai_probability < 0.5:
+                verdict = "Likely Real"
+                confidence = "Medium Confidence"
+                color = discord.Color.blue()
+                interpretation = "This image likely contains real/human-made content."
+            else:
+                verdict = "Uncertain"
+                confidence = "Low Confidence"
+                color = discord.Color.greyple()
+                interpretation = "Unable to determine with confidence. Manual review recommended."
+            
+            # Create result embed with disclaimer
+            result_embed = discord.Embed(
+                title=f"AI Detection Analysis - Complete (Model v{version})",
+                description=interpretation,
+                color=color,
+            )
+            result_embed.add_field(name="Verdict", value=verdict, inline=True)
+            result_embed.add_field(name="Confidence", value=confidence, inline=True)
+            result_embed.add_field(
+                name="AI Probability",
+                value=f"{ai_probability:.1%} (Score: {ai_probability:.3f})",
+                inline=False
+            )
+            result_embed.add_field(
+                name="Real Probability",
+                value=f"{(1-ai_probability):.1%} (Score: {(1-ai_probability):.3f})",
+                inline=False
+            )
+            result_embed.add_field(
+                name="Limitations",
+                value=(
+                    "This model cannot detect:\n"
+                    "• Tracing over real images\n"
+                    "• Heavy manual edits\n"
+                    "• Hybrid AI+human work\n"
+                    "• Very new AI models\n\n"
+                    "*This is an early test model and may produce false results.*"
+                ),
+                inline=False
+            )
+            result_embed.set_footer(text=f"Analyzed: {image.filename} | Model v{version}")
+            
+            await interaction.edit_original_response(embed=result_embed)
+            
+        except Exception as e:
+            logger.error("AI detection failed: %s", e, exc_info=True)
+            error_embed = discord.Embed(
+                title=f"AI Detection Analysis - Error (Model v{version})",
+                description=f"Failed to analyze image: {str(e)}",
+                color=discord.Color.red(),
+            )
+            error_embed.set_footer(text=f"Error analyzing: {image.filename}")
+            try:
+                await interaction.edit_original_response(embed=error_embed)
+            except Exception:
+                # If we can't edit the message, log the error
+                logger.error("Failed to send error message for AI detection")
+    
+    def _run_detection_with_progress(self, pil_image, progress_callback, families):
+        """Run detection in a thread with progress updates."""
+        import sys
+        from pathlib import Path
+        
+        # Re-import in thread context
+        sys.path.insert(0, str(Path(__file__).parent.parent / "for_discord"))
+        try:
+            from detect import predict_image_with_progress
+            
+            # Synchronous callback adapter
+            def sync_progress(family_name, idx, total):
+                # Schedule async callback in event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    asyncio.run_coroutine_threadsafe(
+                        progress_callback(family_name, idx, total),
+                        loop
+                    )
+                except Exception:
+                    pass
+            
+            return predict_image_with_progress(pil_image, sync_progress)
+        finally:
+            sys.path.pop(0)
+    
     async def _register_commands(self) -> None:
         """Register slash commands."""
 
@@ -1153,3 +1340,60 @@ class DiscBot(discord.Client):
             )
 
         self.tree.add_command(question_cmd)
+        @app_commands.command(name="check_ai", description="Check if an image is AI-generated")
+        @app_commands.describe(
+            image="Image to analyze",
+            version="Model version to use (default: 1)"
+        )
+        async def check_ai_cmd(
+            interaction: discord.Interaction,
+            image: discord.Attachment,
+            version: int = 1,
+        ) -> None:
+            # Validate version
+            if version not in [1]:
+                await interaction.response.send_message(
+                    "Invalid model version. Available versions: 1",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            
+            # Validate that it's an image
+            if not image.content_type or not image.content_type.startswith("image/"):
+                await interaction.response.send_message(
+                    "Please provide a valid image file.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            
+            # Check file size (max 10MB)
+            if image.size > 10 * 1024 * 1024:
+                await interaction.response.send_message(
+                    "Image is too large. Maximum size is 10MB.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            
+            # Send initial embed with disclaimer
+            embed = discord.Embed(
+                title=f"AI Detection Analysis (Model v{version})",
+                description=(
+                    "**Early Test Model - Use with caution**\n"
+                    "This is an experimental model that may produce incorrect results. "
+                    "It analyzes pixel-level features but cannot detect tracing or heavily edited images.\n\n"
+                    "Status: Queued..."
+                ),
+                color=discord.Color.blue(),
+            )
+            embed.add_field(name="Progress", value="Queued 1/1", inline=False)
+            embed.set_footer(text=f"Analyzing: {image.filename} | Model v{version}")
+            
+            await interaction.response.send_message(embed=embed)
+            
+            # Run analysis in background
+            asyncio.create_task(self._run_ai_detection(interaction, image, embed, version))
+        
+        self.tree.add_command(check_ai_cmd)

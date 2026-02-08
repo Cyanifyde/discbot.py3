@@ -1,0 +1,88 @@
+{
+  "train": {
+    "accuracy": 0.9461317741324238,
+    "precision": 0.93955349620893,
+    "recall": 0.9549395269185487,
+    "f1": 0.9471840331227772,
+    "roc_auc": 0.989646776099463,
+    "confusion_matrix": [
+      [
+        8554,
+        574
+      ],
+      [
+        421,
+        8922
+      ]
+    ],
+    "true_negatives": 8554,
+    "false_positives": 574,
+    "false_negatives": 421,
+    "true_positives": 8922
+  },
+  "val": {
+    "accuracy": 0.9388734528921445,
+    "precision": 0.9275996112730807,
+    "recall": 0.9535464535464535,
+    "f1": 0.9403940886699508,
+    "roc_auc": 0.9726978438015741,
+    "confusion_matrix": [
+      [
+        1808,
+        149
+      ],
+      [
+        93,
+        1909
+      ]
+    ],
+    "true_negatives": 1808,
+    "false_positives": 149,
+    "false_negatives": 93,
+    "true_positives": 1909
+  },
+  "test": {
+    "accuracy": 0.9333164940641576,
+    "precision": 0.9202127659574468,
+    "recall": 0.9505494505494505,
+    "f1": 0.9351351351351351,
+    "roc_auc": 0.970110369957074,
+    "confusion_matrix": [
+      [
+        1792,
+        165
+      ],
+      [
+        99,
+        1903
+      ]
+    ],
+    "true_negatives": 1792,
+    "false_positives": 165,
+    "false_negatives": 99,
+    "true_positives": 1903
+  },
+  "cv": {
+    "accuracy_mean": 0.9351761034329025,
+    "accuracy_std": 0.0026125876636618234,
+    "f1_mean": 0.9367758120840015,
+    "f1_std": 0.002576788383556938,
+    "roc_auc_mean": 0.9735644652990942,
+    "roc_auc_std": 0.0009550712572592989
+  },
+  "overfit": {
+    "is_overfit": false,
+    "overfit_gap": 0.012815280068266155,
+    "cv_gap": 0.010955670699521303,
+    "warnings": [],
+    "summary": "Gap=0.0128, CV=0.9352\u00b10.0026"
+  },
+  "n_images": 26389,
+  "n_features": 751,
+  "iteration": 0,
+  "final_fit": {
+    "refit_on_all_data": true,
+    "n_samples": 26389,
+    "note": "Evaluation metrics were computed before refit using held-out splits."
+  }
+}
