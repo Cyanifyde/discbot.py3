@@ -5,46 +5,38 @@ Provides storage for feedback submissions, commission announcements, and message
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 
-# Storage directory
-COMMUNICATION_DIR = BASE_DIR / "data" / "communication"
 
-
-class CommunicationStore:
+class CommunicationStore(StorageBase):
     """Storage for communication features."""
 
+    __slots__ = ("feedback_path", "announcements_path", "acknowledgments_path")
+
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = COMMUNICATION_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since communication data is accessed frequently
+        super().__init__(guild_id, "communication", cache_ttl=30.0)
         self.feedback_path = self.root / "feedback.json"
         self.announcements_path = self.root / "announcements.json"
         self.acknowledgments_path = self.root / "acknowledgments.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     # ─── Feedback Box ─────────────────────────────────────────────────────────
 
     async def _read_feedback(self) -> Dict[str, Any]:
         """Read feedback file."""
         default = {"submissions": [], "config": {"enabled": True, "channel_id": None}}
-        data = await read_json(self.feedback_path, default=default)
+        data = await self._read_file("feedback.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_feedback(self, data: Dict[str, Any]) -> None:
         """Write feedback file."""
-        await write_json_atomic(self.feedback_path, data)
+        await self._write_file("feedback.json", data)
 
     async def add_feedback(
         self,
@@ -149,14 +141,14 @@ class CommunicationStore:
     async def _read_announcements(self) -> Dict[str, Any]:
         """Read announcements file."""
         default = {"subscribers": {}, "config": {"channel_id": None}}
-        data = await read_json(self.announcements_path, default=default)
+        data = await self._read_file("announcements.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_announcements(self, data: Dict[str, Any]) -> None:
         """Write announcements file."""
-        await write_json_atomic(self.announcements_path, data)
+        await self._write_file("announcements.json", data)
 
     async def subscribe_to_artist(
         self,
@@ -235,14 +227,14 @@ class CommunicationStore:
     async def _read_acknowledgments(self) -> Dict[str, Any]:
         """Read acknowledgments file."""
         default = {"messages": {}}
-        data = await read_json(self.acknowledgments_path, default=default)
+        data = await self._read_file("acknowledgments.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_acknowledgments(self, data: Dict[str, Any]) -> None:
         """Write acknowledgments file."""
-        await write_json_atomic(self.acknowledgments_path, data)
+        await self._write_file("acknowledgments.json", data)
 
     async def create_acknowledgment(
         self,

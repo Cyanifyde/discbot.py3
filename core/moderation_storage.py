@@ -5,44 +5,36 @@ Provides per-guild storage for moderation data with async-safe operations.
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 
-# Storage directory
-MODERATION_DIR = BASE_DIR / "data" / "moderation"
 
-
-class ModerationStore:
+class ModerationStore(StorageBase):
     """Per-guild storage for moderation data (warnings, notes)."""
 
+    __slots__ = ("warnings_path", "notes_path")
+
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = MODERATION_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since moderation data is accessed frequently
+        super().__init__(guild_id, "moderation", cache_ttl=30.0)
         self.warnings_path = self.root / "warnings.json"
         self.notes_path = self.root / "notes.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     # ─── Warnings ─────────────────────────────────────────────────────────────
 
     async def _read_warnings(self) -> Dict[str, List[Dict[str, Any]]]:
         """Read warnings file."""
-        data = await read_json(self.warnings_path, default={})
+        data = await self._read_file(self.warnings_path, default={})
         if not isinstance(data, dict):
             return {}
         return data
 
     async def _write_warnings(self, data: Dict[str, List[Dict[str, Any]]]) -> None:
         """Write warnings file."""
-        await write_json_atomic(self.warnings_path, data)
+        await self._write_file(self.warnings_path, data)
 
     async def add_warning(
         self,
@@ -159,14 +151,14 @@ class ModerationStore:
 
     async def _read_notes(self) -> Dict[str, List[Dict[str, Any]]]:
         """Read notes file."""
-        data = await read_json(self.notes_path, default={})
+        data = await self._read_file(self.notes_path, default={})
         if not isinstance(data, dict):
             return {}
         return data
 
     async def _write_notes(self, data: Dict[str, List[Dict[str, Any]]]) -> None:
         """Write notes file."""
-        await write_json_atomic(self.notes_path, data)
+        await self._write_file(self.notes_path, data)
 
     async def add_note(
         self,
@@ -309,7 +301,7 @@ class ModerationStore:
             "dm_on_escalation": True,
             "appeal_info": None,
         }
-        data = await read_json(escalation_path, default=default)
+        data = await self._read_file(escalation_path, default=default)
         if not isinstance(data, dict):
             return default
         return data
@@ -317,7 +309,7 @@ class ModerationStore:
     async def _write_escalation_config(self, data: Dict[str, Any]) -> None:
         """Write escalation configuration."""
         escalation_path = self.root / "escalation_config.json"
-        await write_json_atomic(escalation_path, data)
+        await self._write_file(escalation_path, data)
 
     async def get_escalation_config(self) -> Dict[str, Any]:
         """Get escalation configuration."""
@@ -371,7 +363,7 @@ class ModerationStore:
             "next_case_number": 1,
             "channel_id": None,
         }
-        data = await read_json(shadow_log_path, default=default)
+        data = await self._read_file(shadow_log_path, default=default)
         if not isinstance(data, dict):
             return default
         return data
@@ -379,7 +371,7 @@ class ModerationStore:
     async def _write_shadow_log(self, data: Dict[str, Any]) -> None:
         """Write shadow log."""
         shadow_log_path = self.root / "shadow_log.json"
-        await write_json_atomic(shadow_log_path, data)
+        await self._write_file(shadow_log_path, data)
 
     async def add_shadow_log_entry(
         self,
@@ -494,7 +486,7 @@ class ModerationStore:
                 "federation_flag": True,
             },
         }
-        data = await read_json(probation_path, default=default)
+        data = await self._read_file(probation_path, default=default)
         if not isinstance(data, dict):
             return default
         return data
@@ -502,7 +494,7 @@ class ModerationStore:
     async def _write_probation(self, data: Dict[str, Any]) -> None:
         """Write probation data."""
         probation_path = self.root / "probation.json"
-        await write_json_atomic(probation_path, data)
+        await self._write_file(probation_path, data)
 
     async def add_to_probation(
         self,
@@ -603,7 +595,7 @@ class ModerationStore:
         """Read templates data."""
         templates_path = self.root / "templates.json"
         default = {"templates": {}}
-        data = await read_json(templates_path, default=default)
+        data = await self._read_file(templates_path, default=default)
         if not isinstance(data, dict):
             return default
         return data
@@ -611,7 +603,7 @@ class ModerationStore:
     async def _write_templates(self, data: Dict[str, Any]) -> None:
         """Write templates data."""
         templates_path = self.root / "templates.json"
-        await write_json_atomic(templates_path, data)
+        await self._write_file(templates_path, data)
 
     async def add_template(
         self,
@@ -679,7 +671,7 @@ class ModerationStore:
             "actions": [],
             "grace_period_minutes": 5,
         }
-        data = await read_json(actions_path, default=default)
+        data = await self._read_file(actions_path, default=default)
         if not isinstance(data, dict):
             return default
         return data
@@ -687,7 +679,7 @@ class ModerationStore:
     async def _write_recent_actions(self, data: Dict[str, Any]) -> None:
         """Write recent actions data."""
         actions_path = self.root / "recent_actions.json"
-        await write_json_atomic(actions_path, data)
+        await self._write_file(actions_path, data)
 
     async def record_action(
         self,

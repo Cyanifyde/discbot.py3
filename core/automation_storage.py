@@ -5,46 +5,38 @@ Provides storage for automated actions, triggers, schedules, and vacation mode.
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .io_utils import read_json, write_json_atomic
-from .paths import BASE_DIR
+from .storage_base import StorageBase
 from .utils import utcnow, dt_to_iso
 
-# Storage directory
-AUTOMATION_DIR = BASE_DIR / "data" / "automation"
 
-
-class AutomationStore:
+class AutomationStore(StorageBase):
     """Storage for automation features."""
 
+    __slots__ = ("triggers_path", "schedules_path", "vacation_path")
+
     def __init__(self, guild_id: int) -> None:
-        self.guild_id = guild_id
-        self.root = AUTOMATION_DIR / str(guild_id)
+        # Initialize with 30s cache TTL since automation rules are accessed frequently
+        super().__init__(guild_id, "automation", cache_ttl=30.0)
         self.triggers_path = self.root / "triggers.json"
         self.schedules_path = self.root / "schedules.json"
         self.vacation_path = self.root / "vacation.json"
-        self._lock = asyncio.Lock()
-
-    async def initialize(self) -> None:
-        """Ensure storage directory exists."""
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
 
     # ─── Triggers & Chains ────────────────────────────────────────────────────
 
     async def _read_triggers(self) -> Dict[str, Any]:
         """Read triggers file."""
         default = {"triggers": [], "chains": []}
-        data = await read_json(self.triggers_path, default=default)
+        data = await self._read_file("triggers.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_triggers(self, data: Dict[str, Any]) -> None:
         """Write triggers file."""
-        await write_json_atomic(self.triggers_path, data)
+        await self._write_file("triggers.json", data)
 
     async def add_trigger(
         self,
@@ -199,14 +191,14 @@ class AutomationStore:
     async def _read_schedules(self) -> Dict[str, Any]:
         """Read schedules file."""
         default = {"schedules": []}
-        data = await read_json(self.schedules_path, default=default)
+        data = await self._read_file("schedules.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_schedules(self, data: Dict[str, Any]) -> None:
         """Write schedules file."""
-        await write_json_atomic(self.schedules_path, data)
+        await self._write_file("schedules.json", data)
 
     async def add_schedule(
         self,
@@ -333,14 +325,14 @@ class AutomationStore:
     async def _read_vacation(self) -> Dict[str, Any]:
         """Read vacation file."""
         default = {"users": {}}
-        data = await read_json(self.vacation_path, default=default)
+        data = await self._read_file("vacation.json", default=default)
         if not isinstance(data, dict):
             return default
         return data
 
     async def _write_vacation(self, data: Dict[str, Any]) -> None:
         """Write vacation file."""
-        await write_json_atomic(self.vacation_path, data)
+        await self._write_file("vacation.json", data)
 
     async def set_vacation_mode(
         self,
