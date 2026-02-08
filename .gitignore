@@ -33,3 +33,4 @@ Thumbs.db
 .vscode
 .github
 .claude
+.claude/settings.local.json
