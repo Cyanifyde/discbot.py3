@@ -66,7 +66,42 @@ def load_model():
     _patch_model_njobs(model)
     _patch_sklearn_compatibility(model)
     
+    # Verify and store class labels for correct probability interpretation
+    try:
+        classes = _get_model_classes(model)
+        model_bundle['classes'] = classes
+        # Debug: print class order on first load
+        if 'classes_printed' not in model_bundle:
+            print(f"Model classes: {classes}", file=sys.stderr)
+            model_bundle['classes_printed'] = True
+    except Exception as e:
+        print(f"Warning: Could not determine model classes: {e}", file=sys.stderr)
+        model_bundle['classes'] = None
+    
     return model_bundle
+
+
+def _get_model_classes(estimator):
+    """Extract class labels from model to verify class order."""
+    # Try to find classes_ attribute in the model hierarchy
+    if hasattr(estimator, 'classes_'):
+        return list(estimator.classes_)
+    
+    # For CalibratedClassifierCV
+    if hasattr(estimator, 'calibrated_classifiers_') and len(estimator.calibrated_classifiers_) > 0:
+        cal_clf = estimator.calibrated_classifiers_[0]
+        if hasattr(cal_clf, 'classes_'):
+            return list(cal_clf.classes_)
+        if hasattr(cal_clf, 'estimator') and hasattr(cal_clf.estimator, 'classes_'):
+            return list(cal_clf.estimator.classes_)
+    
+    # For VotingClassifier or other meta-estimators
+    if hasattr(estimator, 'estimators_') and len(estimator.estimators_) > 0:
+        est = estimator.estimators_[0]
+        if hasattr(est, 'classes_'):
+            return list(est.classes_)
+    
+    return None
 
 
 def _patch_sklearn_compatibility(estimator):
@@ -240,8 +275,27 @@ def predict(image_path, verbose=False):
     X_sc = scaler.transform(X)
     proba = model.predict_proba(X_sc)[0]
     
-    # Return AI probability (class 1)
-    ai_probability = float(proba[1])
+    # Determine which class index is AI (1 = AI, 0 = Real)
+    # Check if we have class labels to verify order
+    classes = model_bundle.get('classes', None)
+    if classes is not None and len(classes) == 2:
+        # Find the index of class 1 (AI)
+        try:
+            ai_class_idx = classes.index(1)
+            ai_probability = float(proba[ai_class_idx])
+        except (ValueError, IndexError):
+            # Fallback: assume second class (index 1) is AI
+            ai_probability = float(proba[1])
+            if verbose:
+                print(f"Warning: Could not find class 1 in {classes}, using proba[1]", file=sys.stderr)
+    else:
+        # Default: assume second probability is AI (class 1)
+        ai_probability = float(proba[1])
+    
+    if verbose:
+        print(f"  Probabilities: Real={proba[0]:.6f}, AI={proba[1]:.6f}", file=sys.stderr)
+        if classes:
+            print(f"  Class labels: {classes}", file=sys.stderr)
     
     return ai_probability
 
@@ -290,8 +344,21 @@ def predict_image(image, verbose=False):
     X_sc = scaler.transform(X)
     proba = model.predict_proba(X_sc)[0]
     
-    # Return AI probability (class 1)
-    ai_probability = float(proba[1])
+    # Determine which class index is AI (1 = AI, 0 = Real)
+    classes = model_bundle.get('classes', None)
+    if classes is not None and len(classes) == 2:
+        try:
+            ai_class_idx = classes.index(1)
+            ai_probability = float(proba[ai_class_idx])
+        except (ValueError, IndexError):
+            ai_probability = float(proba[1])
+    else:
+        ai_probability = float(proba[1])
+    
+    if verbose:
+        print(f"  Probabilities: Real={proba[0]:.6f}, AI={proba[1]:.6f}", file=sys.stderr)
+        if classes:
+            print(f"  Class labels: {classes}", file=sys.stderr)
     
     return ai_probability
 
@@ -407,8 +474,16 @@ def predict_image_with_progress(image, progress_callback=None):
     X_sc = scaler.transform(X)
     proba = model.predict_proba(X_sc)[0]
     
-    # Return AI probability (class 1)
-    ai_probability = float(proba[1])
+    # Determine which class index is AI (1 = AI, 0 = Real)
+    classes = model_bundle.get('classes', None)
+    if classes is not None and len(classes) == 2:
+        try:
+            ai_class_idx = classes.index(1)
+            ai_probability = float(proba[ai_class_idx])
+        except (ValueError, IndexError):
+            ai_probability = float(proba[1])
+    else:
+        ai_probability = float(proba[1])
     
     return ai_probability
 
