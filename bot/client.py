@@ -156,6 +156,10 @@ class DiscBot(discord.Client):
         self._questions_allowed_user_ids: Optional[set[int]] = None
         self._questions_cache_mtime: Optional[float] = None
         self.started_at = utcnow()
+        
+        # AI Detection resource limits
+        self._ai_detection_semaphore = asyncio.Semaphore(1)  # Only 1 concurrent detection
+        self._ai_detection_timeout = 120  # 2 minutes max per detection
 
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -1009,6 +1013,39 @@ class DiscBot(discord.Client):
             'nss', 'cfa', 'self_similarity', 'residual'
         ]
         
+        # Try to acquire semaphore (only allow 1 concurrent detection)
+        if not self._ai_detection_semaphore.locked():
+            acquired = True
+        else:
+            # Already running, notify user
+            initial_embed.description = (
+                "**Queue Full**\n"
+                "Another AI detection is currently running. "
+                "Please wait and try again in a moment.\n\n"
+                "*Only 1 detection can run at a time to prevent server overload.*"
+            )
+            initial_embed.color = discord.Color.yellow()
+            initial_embed.set_field_at(0, name="Status", value="Queued (waiting for slot)", inline=False)
+            await interaction.edit_original_response(embed=initial_embed)
+            
+            # Wait for semaphore with timeout
+            try:
+                async with asyncio.timeout(300):  # 5 minute max queue wait
+                    await self._ai_detection_semaphore.acquire()
+                acquired = True
+            except asyncio.TimeoutError:
+                error_embed = discord.Embed(
+                    title=f"AI Detection Analysis - Queue Timeout (Model v{version})",
+                    description="Queue wait time exceeded. Please try again later.",
+                    color=discord.Color.red(),
+                )
+                error_embed.set_footer(text=f"Timeout: {image.filename}")
+                await interaction.edit_original_response(embed=error_embed)
+                return
+        
+        if not acquired:
+            return
+        
         last_update_time = 0
         current_family_idx = 0
         
@@ -1045,6 +1082,9 @@ class DiscBot(discord.Client):
                 logger.debug(f"Failed to update progress: {e}")
         
         try:
+            # Set resource limits for the detection process
+            self._set_process_limits()
+            
             # Download image first
             image_data = await image.read()
             pil_image = PILImage.open(io.BytesIO(image_data))
@@ -1060,13 +1100,19 @@ class DiscBot(discord.Client):
                 if version == 1:
                     from detect import predict_image_with_progress
                     
-                    # Wrap in thread to run with progress updates
-                    ai_probability = await asyncio.to_thread(
-                        self._run_detection_with_progress,
-                        pil_image,
-                        progress_callback,
-                        FAMILIES
-                    )
+                    # Wrap in thread to run with progress updates and timeout
+                    try:
+                        ai_probability = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                self._run_detection_with_progress,
+                                pil_image,
+                                progress_callback,
+                                FAMILIES
+                            ),
+                            timeout=self._ai_detection_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        raise TimeoutError(f"Detection exceeded {self._ai_detection_timeout}s timeout")
                 else:
                     # Future versions would go here
                     raise ValueError(f"Model version {version} not implemented")
@@ -1148,6 +1194,10 @@ class DiscBot(discord.Client):
             except Exception:
                 # If we can't edit the message, log the error
                 logger.error("Failed to send error message for AI detection")
+        finally:
+            # Always release the semaphore
+            if acquired:
+                self._ai_detection_semaphore.release()
     
     def _run_detection_with_progress(self, pil_image, progress_callback, families):
         """Run detection in a thread with progress updates."""
@@ -1174,6 +1224,44 @@ class DiscBot(discord.Client):
             return predict_image_with_progress(pil_image, sync_progress)
         finally:
             sys.path.pop(0)
+    
+    def _set_process_limits(self) -> None:
+        """Set resource limits for AI detection process."""
+        try:
+            import os
+            import sys
+            
+            # Lower process priority (nice value)
+            if sys.platform != 'win32':
+                try:
+                    import os
+                    current_nice = os.nice(0)
+                    if current_nice < 10:
+                        os.nice(10)  # Lower priority
+                except (OSError, AttributeError):
+                    pass
+            else:
+                # Windows priority
+                try:
+                    import psutil
+                    p = psutil.Process()
+                    p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                except (ImportError, Exception):
+                    pass
+            
+            # Set memory limit (if on Linux/Unix)
+            if sys.platform != 'win32':
+                try:
+                    import resource
+                    # Limit virtual memory to 2GB
+                    resource.setrlimit(
+                        resource.RLIMIT_AS,
+                        (2 * 1024 * 1024 * 1024, 2 * 1024 * 1024 * 1024)
+                    )
+                except (ImportError, OSError):
+                    pass
+        except Exception as e:
+            logger.debug(f"Failed to set process limits: {e}")
     
     async def _register_commands(self) -> None:
         """Register slash commands."""
