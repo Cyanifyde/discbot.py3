@@ -18,6 +18,8 @@ from .utils import dt_to_iso, iso_to_dt, safe_int, utcnow
 
 class SuspicionStore:
     def __init__(self, guild_id: int, cache_size: int = 3) -> None:
+        import logging
+        self._logger = logging.getLogger("discbot.storage")
         self.guild_id = guild_id
         self.root = BASE_DIR / ".suspicion" / str(guild_id)
         self.lock_path = self.root / "lock.json"
@@ -33,6 +35,10 @@ class SuspicionStore:
         self.state_lock = asyncio.Lock()
         self.state_data: Dict[str, Any] = {}
         self.lock_data: Dict[str, Any] = {}
+        # When dirty shards exist, schedule a one-shot delayed flush. This avoids
+        # an always-running periodic flush loop per guild.
+        self.flush_delay_seconds = 30.0
+        self._flush_task: Optional[asyncio.Task] = None
 
     @staticmethod
     def shard_for(user_id: str) -> str:
@@ -134,6 +140,34 @@ class SuspicionStore:
         async with self.cache_lock:
             meta = self.cache_meta.setdefault(shard, {})
             meta["dirty"] = True
+        self._schedule_flush()
+
+    def _schedule_flush(self) -> None:
+        # Avoid spawning repeated tasks under high write frequency: at most one
+        # pending delayed flush runs at a time.
+        if self._flush_task is not None and not self._flush_task.done():
+            return
+        self._flush_task = asyncio.create_task(self._delayed_flush(), name=f"suspicion-flush-{self.guild_id}")
+
+    async def _delayed_flush(self) -> None:
+        try:
+            delay = max(1.0, float(self.flush_delay_seconds))
+            await asyncio.sleep(delay)
+            await self.flush_dirty_shards()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._logger.error("Delayed flush failed for guild %s: %s", self.guild_id, e)
+        finally:
+            self._flush_task = None
+            # If something became dirty during/after flush, schedule another flush.
+            try:
+                async with self.cache_lock:
+                    any_dirty = any(meta.get("dirty") for meta in self.cache_meta.values())
+                if any_dirty:
+                    self._schedule_flush()
+            except Exception:
+                pass
 
     async def flush_dirty_shards(self) -> None:
         async with self.cache_lock:
@@ -145,6 +179,11 @@ class SuspicionStore:
                 meta["dirty"] = False
 
     async def flush_all(self) -> None:
+        # Ensure any pending delayed flush doesn't race shutdown.
+        if self._flush_task is not None:
+            self._flush_task.cancel()
+            await asyncio.gather(self._flush_task, return_exceptions=True)
+            self._flush_task = None
         await self.flush_dirty_shards()
         async with self.state_lock:
             await write_json_atomic(self.state_path, self.state_data)

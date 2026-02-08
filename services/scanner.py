@@ -269,6 +269,10 @@ async def _cmd_enable(
 
     if state.queue_processor.stop_event.is_set() or state.queue_processor.reader_task is None:
         await state.queue_processor.start()
+        try:
+            state.on_scanner_started()
+        except Exception:
+            pass
         logger.info(
             "Started scanner for guild %s by user %s",
             guild_id,
@@ -305,6 +309,16 @@ async def _cmd_disable(
         guild_id,
         message.author.id,
     )
+
+    # Stop the processor to avoid background CPU when disabled.
+    if state and (state.queue_processor.reader_task is not None and not state.queue_processor.stop_event.is_set()):
+        try:
+            await state.queue_processor.stop()
+        finally:
+            try:
+                state.on_scanner_stopped()
+            except Exception:
+                pass
 
     await message.reply(
         "**Image scanner disabled.**\n"
@@ -919,6 +933,10 @@ async def restore_state(bot: "DiscBot") -> None:
                     or state.queue_processor.reader_task is None
                 ):
                     await state.queue_processor.start()
+                    try:
+                        state.on_scanner_started()
+                    except Exception:
+                        pass
                     logger.info(
                         "Restored scanner for guild %s (was enabled)",
                         guild_id,

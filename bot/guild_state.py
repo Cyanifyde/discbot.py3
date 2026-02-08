@@ -59,7 +59,6 @@ class GuildState:
         
         # Runtime state
         self.start_time = utcnow()
-        self.flush_task: Optional[asyncio.Task] = None
         self.queue_state_task: Optional[asyncio.Task] = None
         self.enforcement_task: Optional[asyncio.Task] = None
         self.action_count = 0
@@ -99,15 +98,21 @@ class GuildState:
         await self.storage.initialize()
         await self.queue_store.initialize()
         self.hashes = await load_hashes(self.config)
+        # Configure delayed shard flush without a periodic loop.
+        try:
+            interval = float(self.config.get(K.QUEUE_FLUSH_INTERVAL_SECONDS, 30))
+        except Exception:
+            interval = 30.0
+        self.storage.flush_delay_seconds = max(5.0, interval)
         
         # Only start queue processor if explicitly requested
         # The sus scanner module handles starting this based on saved state
         if start_scanner:
             await self.queue_processor.start()
+            self._ensure_queue_state_task()
         
-        # Start periodic tasks
-        self.flush_task = asyncio.create_task(self._periodic_flush())
-        self.queue_state_task = asyncio.create_task(self._periodic_queue_state_flush())
+        # Start periodic tasks (only those that are still needed)
+        # queue_state_task only runs while the scanner is running.
         self.enforcement_task = asyncio.create_task(self._periodic_enforcement())
         
         logger.info("Guild %s state started (scanner=%s)", self.guild_id, start_scanner)
@@ -115,15 +120,13 @@ class GuildState:
     async def stop(self) -> None:
         """Stop background tasks and flush state."""
         # Cancel background tasks
-        if self.flush_task:
-            self.flush_task.cancel()
         if self.queue_state_task:
             self.queue_state_task.cancel()
         if self.enforcement_task:
             self.enforcement_task.cancel()
         
         await asyncio.gather(
-            *(t for t in [self.flush_task, self.queue_state_task, self.enforcement_task] if t),
+            *(t for t in [self.queue_state_task, self.enforcement_task] if t),
             return_exceptions=True,
         )
         
@@ -137,45 +140,46 @@ class GuildState:
         
         logger.info("Guild %s state stopped", self.guild_id)
 
-    async def _periodic_flush(self) -> None:
-        """Periodically flush dirty shards to disk."""
-        import random
-        interval = float(self.config.get(K.QUEUE_FLUSH_INTERVAL_SECONDS, 30))
-        # Add jitter to prevent thundering herd
-        jitter = random.uniform(0, interval * 0.1)
-        await asyncio.sleep(jitter)
-        
-        while True:
-            try:
-                await asyncio.sleep(interval)
-                await self.storage.flush_dirty_shards()
-            except Exception as e:
-                logger.error("Error in periodic flush for guild %s: %s", self.guild_id, e, exc_info=True)
-                await asyncio.sleep(min(interval, 60))
+    def _ensure_queue_state_task(self) -> None:
+        """
+        Ensure queue state flushing runs while the scanner is running.
 
-    async def _periodic_queue_state_flush(self) -> None:
-        """Periodically save queue state."""
+        This avoids an always-on periodic loop when the scanner is disabled.
+        """
+        if self.queue_state_task and not self.queue_state_task.done():
+            return
+        self.queue_state_task = asyncio.create_task(self._queue_state_flush_loop())
+
+    async def _queue_state_flush_loop(self) -> None:
         import random
         base_interval = float(self.config.get(K.QUEUE_STATE_FLUSH_INTERVAL_SECONDS, 15))
-        # Add jitter to prevent thundering herd
         jitter = random.uniform(0, base_interval * 0.1)
         await asyncio.sleep(jitter)
-         
+
         while True:
             try:
-                # If scanner isn't running, there's no queue state churn; flush rarely.
-                scanner_running = (
-                    self.queue_processor.reader_task is not None
-                    and not self.queue_processor.stop_event.is_set()
-                )
-                interval = base_interval if scanner_running else max(base_interval, 300.0)
-                await asyncio.sleep(interval)
+                # Exit when scanner stops.
+                if self.queue_processor.stop_event.is_set():
+                    return
+                try:
+                    await asyncio.wait_for(self.queue_processor.stop_event.wait(), timeout=base_interval)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+
                 await self.queue_store.update_state(
                     self.queue_processor.read_offset_bytes,
                     self.queue_processor.queued_jobs,
                 )
+            except asyncio.CancelledError:
+                return
             except Exception as e:
-                logger.error("Error in periodic queue state flush for guild %s: %s", self.guild_id, e, exc_info=True)
+                logger.error(
+                    "Error in queue state flush for guild %s: %s",
+                    self.guild_id,
+                    e,
+                    exc_info=True,
+                )
                 await asyncio.sleep(min(base_interval, 60))
 
     async def _periodic_enforcement(self) -> None:
@@ -260,6 +264,15 @@ class GuildState:
             self.queue_processor.reader_task is not None and
             not self.queue_processor.stop_event.is_set()
         )
+
+    def on_scanner_started(self) -> None:
+        """Hook for scanner enable to start queue state persistence."""
+        self._ensure_queue_state_task()
+
+    def on_scanner_stopped(self) -> None:
+        """Hook for scanner disable to stop queue state persistence."""
+        if self.queue_state_task:
+            self.queue_state_task.cancel()
 
     async def enqueue_job(self, job: dict[str, Any]) -> bool:
         """
