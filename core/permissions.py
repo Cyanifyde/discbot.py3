@@ -31,6 +31,7 @@ AVAILABLE_MODULES = {
     "inviteprotection": "Detect and gate Discord invite links with allowlist/approval workflow",
     "artsearch": "Search images posted in approved channels",
     "analytics": "View statistics and trends",
+    "ptc": "Pass-the-Canvas turn management for collaborative art threads",
 }
 
 # Default enable/disable state for modules when first added to a guild.
@@ -38,6 +39,7 @@ AVAILABLE_MODULES = {
 DEFAULT_MODULE_ENABLED = {
     "inviteprotection": False,
     "artsearch": True,
+    "ptc": False,
 }
 
 # Available commands that can have role restrictions
@@ -62,6 +64,10 @@ AVAILABLE_COMMANDS = {
         "invite status",
     ],
     "artsearch": ["art search", "art channels", "art help"],
+    "ptc": [
+        "ptc setforum", "ptc bind", "ptc unbind", "ptc status",
+        "ptc clear", "ptc force_clear", "ptc debug", "ptc help",
+    ],
 }
 
 

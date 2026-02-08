@@ -99,6 +99,12 @@ from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
 from services.scanner import handle_command as handle_scanner_command
 from services.scanner import restore_state as restore_scanner_state
+from services.ptc_service import (
+    handle_ptc_message,
+    restore_ptc_state,
+    setup_ptc,
+    cleanup_ptc,
+)
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
@@ -173,6 +179,7 @@ class DiscBot(discord.Client):
         setup_custom_content()
         setup_analytics()
         setup_invite_protection()
+        setup_ptc()
 
         # Register help for the modules management command early so it appears in @bot help.
         register_modules_help()
@@ -196,6 +203,7 @@ class DiscBot(discord.Client):
             "Server Stats",
             "Utility",
             "Verification",
+            "Pass the Canvas",
         }
         missing = sorted(expected_help - set(help_system.get_module_names()))
         if missing:
@@ -228,6 +236,9 @@ class DiscBot(discord.Client):
             # Restore scanner state (also registers scanner help)
             await restore_scanner_state(self)
 
+            # Restore PTC state (timers, etc.)
+            await restore_ptc_state(self)
+
             # Start bounded dispatchers/schedulers
             await self.auto_responder.start(self)
             await self.bookmark_scheduler.start(self)
@@ -242,6 +253,7 @@ class DiscBot(discord.Client):
 
         await self.auto_responder.stop()
         await self.bookmark_scheduler.stop()
+        await cleanup_ptc()
         
         # Cancel and await background tasks
         tasks_to_cancel = []
@@ -365,6 +377,10 @@ class DiscBot(discord.Client):
 
         # Invite protection runs before other handlers (can delete messages)
         if await handle_invite_protection(message, self):
+            return
+
+        # PTC enforcement: intercepts ALL messages in bound threads + ptc commands
+        if await handle_ptc_message(message, self):
             return
 
         # Check for help command first (before other handlers)
