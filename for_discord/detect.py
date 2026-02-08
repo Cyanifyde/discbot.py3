@@ -64,8 +64,53 @@ def load_model():
     # This prevents "can't start new thread" errors on resource-limited systems
     model = model_bundle['model']
     _patch_model_njobs(model)
+    _patch_sklearn_compatibility(model)
     
     return model_bundle
+
+
+def _patch_sklearn_compatibility(estimator):
+    """
+    Patch sklearn models for version compatibility issues.
+    
+    Handles missing attributes when models are loaded in different sklearn versions.
+    """
+    if estimator is None:
+        return
+    
+    # Patch LogisticRegression for sklearn version compatibility
+    if hasattr(estimator, '__class__') and estimator.__class__.__name__ == 'LogisticRegression':
+        if not hasattr(estimator, 'multi_class'):
+            # Default to 'auto' for sklearn 0.22+
+            estimator.multi_class = 'auto'
+        if not hasattr(estimator, 'l1_ratio'):
+            estimator.l1_ratio = None
+    
+    # Handle meta-estimators
+    if hasattr(estimator, 'estimator') and estimator.estimator is not None:
+        _patch_sklearn_compatibility(estimator.estimator)
+    
+    if hasattr(estimator, 'base_estimator') and estimator.base_estimator is not None:
+        _patch_sklearn_compatibility(estimator.base_estimator)
+    
+    # Handle ensemble estimators
+    if hasattr(estimator, 'estimators_'):
+        for est in estimator.estimators_:
+            _patch_sklearn_compatibility(est)
+    
+    if hasattr(estimator, 'estimators'):
+        for est in estimator.estimators:
+            if isinstance(est, tuple):
+                _patch_sklearn_compatibility(est[1])
+            else:
+                _patch_sklearn_compatibility(est)
+    
+    # Handle calibrated classifiers
+    if hasattr(estimator, 'calibrated_classifiers_'):
+        for cal_clf in estimator.calibrated_classifiers_:
+            _patch_sklearn_compatibility(cal_clf)
+            if hasattr(cal_clf, 'estimator'):
+                _patch_sklearn_compatibility(cal_clf.estimator)
 
 
 def _patch_model_njobs(estimator, n_jobs=1):
