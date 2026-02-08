@@ -1093,8 +1093,6 @@ async def _handle_alias_list(message: discord.Message) -> None:
 async def _handle_export(message: discord.Message) -> None:
     """Export all user data as JSON."""
     from classes.profile import get_profile
-    from services.portfolio_service import portfolio_service
-    from services.commission_service import commission_service
 
     user_id = message.author.id
     guild_id = message.guild.id
@@ -1110,20 +1108,6 @@ async def _handle_export(message: discord.Message) -> None:
     try:
         profile = await get_profile(user_id, guild_id)
         export_data["data"]["profile"] = profile
-    except Exception:
-        pass
-
-    # Portfolio
-    try:
-        portfolio = await portfolio_service.get_portfolio(user_id)
-        export_data["data"]["portfolio"] = [e.to_dict() for e in portfolio]
-    except Exception:
-        pass
-
-    # Commissions
-    try:
-        commissions = await commission_service.get_active_commissions(user_id, guild_id)
-        export_data["data"]["commissions"] = [c.to_dict() for c in commissions]
     except Exception:
         pass
 

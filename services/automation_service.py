@@ -50,7 +50,7 @@ class AutomationService:
 
         Args:
             guild_id: Guild ID
-            event: Event type (e.g., "commission_filled", "slots_available")
+            event: Event type (module-defined)
             condition: Condition to check
             action: Action to execute
 
@@ -156,10 +156,6 @@ class AutomationService:
 
         if condition_type == "always":
             return True
-        elif condition_type == "slots_empty":
-            return context.get("available_slots", 0) == 0
-        elif condition_type == "slots_available":
-            return context.get("available_slots", 0) > 0
         elif condition_type == "user_equals":
             return context.get("user_id") == condition.get("user_id")
         elif condition_type == "count_greater_than":
@@ -181,12 +177,6 @@ class AutomationService:
 
         if action_type == "send_message":
             await self._send_message_action(guild_id, action, context, bot)
-        elif action_type == "auto_close_commissions":
-            await self._auto_close_commissions(guild_id, context)
-        elif action_type == "auto_open_commissions":
-            await self._auto_open_commissions(guild_id, context)
-        elif action_type == "promote_waitlist":
-            await self._promote_waitlist(guild_id, context)
 
     async def _send_message_action(
         self,
@@ -209,75 +199,6 @@ class AutomationService:
                 await channel.send(message)
         except Exception:
             pass
-
-    async def _auto_close_commissions(
-        self,
-        guild_id: int,
-        context: Dict[str, Any],
-    ) -> None:
-        """Auto-close commissions."""
-        logger.info(f"Auto-close commissions triggered for guild {guild_id}")
-        # Integrate with commission_service to close open commission slots
-        artist_id = context.get("artist_id")
-        if not artist_id:
-            logger.warning("auto_close_commissions: No artist_id in context")
-            return
-        
-        try:
-            from services.commission_service import CommissionService
-            commission_service = CommissionService()
-            await commission_service.set_slots_open(guild_id, artist_id, False)
-            logger.info(f"Closed commission slots for artist {artist_id} in guild {guild_id}")
-        except Exception as e:
-            logger.error(f"Failed to auto-close commissions: {e}")
-
-    async def _auto_open_commissions(
-        self,
-        guild_id: int,
-        context: Dict[str, Any],
-    ) -> None:
-        """Auto-open commissions."""
-        logger.info(f"Auto-open commissions triggered for guild {guild_id}")
-        # Integrate with commission_service to open commission slots
-        artist_id = context.get("artist_id")
-        if not artist_id:
-            logger.warning("auto_open_commissions: No artist_id in context")
-            return
-        
-        try:
-            from services.commission_service import CommissionService
-            commission_service = CommissionService()
-            await commission_service.set_slots_open(guild_id, artist_id, True)
-            logger.info(f"Opened commission slots for artist {artist_id} in guild {guild_id}")
-        except Exception as e:
-            logger.error(f"Failed to auto-open commissions: {e}")
-
-    async def _promote_waitlist(
-        self,
-        guild_id: int,
-        context: Dict[str, Any],
-    ) -> None:
-        """Promote from waitlist."""
-        logger.info(f"Promote waitlist triggered for guild {guild_id}")
-        # Integrate with commission_service to promote users from waitlist
-        artist_id = context.get("artist_id")
-        if not artist_id:
-            logger.warning("promote_waitlist: No artist_id in context")
-            return
-        
-        try:
-            from services.commission_service import CommissionService
-            commission_service = CommissionService()
-            # Get number of slots to promote (default 1)
-            count = context.get("count", 1)
-            for _ in range(count):
-                entry = await commission_service.promote_from_waitlist(guild_id, artist_id)
-                if entry:
-                    logger.info(f"Promoted waitlist entry for user {entry.user_id}")
-                else:
-                    break  # No more waitlist entries
-        except Exception as e:
-            logger.error(f"Failed to promote waitlist: {e}")
 
     # ─── Trigger Chains ───────────────────────────────────────────────────────
 

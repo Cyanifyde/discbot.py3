@@ -169,8 +169,8 @@ async def _handle_trigger_create(message: discord.Message, parts: list[str]) -> 
     if len(parts) < 3:
         await message.reply(
             " Usage: `trigger create <event> <action>`\n"
-            "Events: commission_filled, slots_available\n"
-            "Actions: notify, auto_close, auto_open"
+            "Events: (module-defined)\n"
+            "Actions: send_message"
         )
         return
 
