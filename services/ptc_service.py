@@ -35,6 +35,7 @@ import discord
 from core.config_migration import get_guild_module_data, update_guild_module_data
 from core.help_system import help_system
 from core.permissions import can_use_module, is_module_enabled
+from core.storage_base import StorageBase
 from core.utils import iso_to_dt, safe_int, utcnow
 
 if TYPE_CHECKING:
@@ -104,6 +105,46 @@ class PTCState:
 
 
 _guild_states: Dict[int, PTCState] = {}
+
+# ---------------------------------------------------------------------------
+# Rules acceptance storage
+# ---------------------------------------------------------------------------
+
+
+class RulesAcceptanceStore(StorageBase):
+    """Store rules acceptances per guild (never removed)."""
+
+    def __init__(self, guild_id: int) -> None:
+        super().__init__(guild_id, "ptc_rules", cache_ttl=60.0)
+
+    async def has_accepted(self, user_id: int) -> bool:
+        """Check if a user has accepted the rules."""
+        async with self._lock:
+            data = await self._read_file("acceptances.json", default={"accepted_users": []})
+            accepted_users = data.get("accepted_users", [])
+            return user_id in accepted_users
+
+    async def add_acceptance(self, user_id: int) -> None:
+        """Record that a user has accepted the rules."""
+        async with self._lock:
+            data = await self._read_file("acceptances.json", default={"accepted_users": []})
+            accepted_users = data.get("accepted_users", [])
+            if user_id not in accepted_users:
+                accepted_users.append(user_id)
+                data["accepted_users"] = accepted_users
+                await self._write_file("acceptances.json", data)
+                logger.info("PTC rules acceptance recorded for user %s", user_id)
+
+
+_rules_stores: Dict[int, RulesAcceptanceStore] = {}
+
+
+def _get_rules_store(guild_id: int) -> RulesAcceptanceStore:
+    """Get or create rules acceptance store for a guild."""
+    if guild_id not in _rules_stores:
+        _rules_stores[guild_id] = RulesAcceptanceStore(guild_id)
+    return _rules_stores[guild_id]
+
 
 # ---------------------------------------------------------------------------
 # Persistence helpers
@@ -708,27 +749,18 @@ async def _cmd_start(message: discord.Message, bot: DiscBot) -> None:
 
 
 async def _check_rules_read(message: discord.Message, rules_channel_id: int, bot: DiscBot) -> bool:
-    """Check if the user has posted in the rules channel."""
-    try:
-        rules_channel = bot.get_channel(rules_channel_id)
-        if rules_channel is None:
-            rules_channel = await bot.fetch_channel(rules_channel_id)
-        
-        # Check last 100 messages to see if user has posted there.
-        async for msg in rules_channel.history(limit=100):  # type: ignore[union-attr]
-            if msg.author.id == message.author.id:
-                return True
-        return False
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-        # If we can't access the channel, allow the take (don't block).
-        return True
+    """Check if the user has accepted the rules (stored in JSON)."""
+    guild_id = message.guild.id  # type: ignore[union-attr]
+    store = _get_rules_store(guild_id)
+    await store.initialize()
+    return await store.has_accepted(message.author.id)
 
 
 async def _cmd_setrules(message: discord.Message, args: str) -> None:
-    """Set the rules channel for PTC."""
+    """Set the rules channel/thread for PTC."""
     if not args:
         await message.reply(
-            "Provide a rules channel ID or mention.\n"
+            "Provide a rules channel/thread ID or mention.\n"
             "Usage: `ptc setrules <channel_id>` or `ptc setrules #channel`\n"
             "Use `ptc setrules clear` to remove the requirement.",
             mention_author=False,
@@ -753,13 +785,17 @@ async def _cmd_setrules(message: discord.Message, args: str) -> None:
         if raw.isdigit():
             channel_id = int(raw)
         else:
-            await message.reply("Invalid channel ID.", mention_author=False)
+            await message.reply("Invalid channel or thread ID.", mention_author=False)
             return
 
-    channel = message.guild.get_channel(channel_id)  # type: ignore[union-attr]
+    # Try to get channel or thread.
+    channel = message.guild.get_channel(channel_id) or message.guild.get_thread(channel_id)  # type: ignore[union-attr]
     if channel is None:
-        await message.reply("Channel not found in this server.", mention_author=False)
-        return
+        try:
+            channel = await message.guild._state.http.get_channel(channel_id)  # type: ignore[union-attr]
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            await message.reply("Channel or thread not found in this server.", mention_author=False)
+            return
 
     guild_id = message.guild.id  # type: ignore[union-attr]
     state = _get_or_create_state(guild_id)
@@ -767,8 +803,9 @@ async def _cmd_setrules(message: discord.Message, args: str) -> None:
     await _persist_state(guild_id)
 
     await message.reply(
-        f"PTC rules channel set to <#{channel_id}>. "
-        f"Users must have posted in that channel or react to confirm before claiming.",
+        f"PTC rules channel/thread set to <#{channel_id}>. "
+        f"Users must react to confirm they've read the rules before claiming. "
+        f"Acceptances are stored permanently.",
         mention_author=False,
     )
     logger.info("PTC guild=%s rules channel set to %s by %s", guild_id, channel_id, message.author.id)
@@ -1137,9 +1174,16 @@ async def handle_ptc_reaction(payload: discord.RawReactionActionEvent, bot: Disc
     user_id = state.pending_rules_confirmations.get(payload.message_id)
     if user_id != payload.user_id:
         return
+    if user_id is None:
+        return
 
     # User confirmed they've read the rules. Remove from pending.
     state.pending_rules_confirmations.pop(payload.message_id, None)
+
+    # Store acceptance permanently.
+    store = _get_rules_store(payload.guild_id)
+    await store.initialize()
+    await store.add_acceptance(user_id)
 
     # Delete the confirmation message.
     try:
