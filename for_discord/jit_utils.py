@@ -11,7 +11,7 @@ OPTIMIZATIONS:
 """
 
 import numpy as np
-from numba import jit, prange
+from numba import jit
 from typing import Tuple
 
 
@@ -156,14 +156,14 @@ def fast_sobel_magnitude(gray: np.ndarray) -> np.ndarray:
     return result
 
 
-@jit(nopython=True, cache=True, parallel=True, fastmath=True)
+@jit(nopython=True, cache=True, parallel=False, fastmath=True)
 def fast_local_std_2d(gray: np.ndarray, size: int) -> np.ndarray:
-    """Fast local standard deviation with parallelization."""
+    """Fast local standard deviation (single-threaded)."""
     h, w = gray.shape
     half = size // 2
     result = np.zeros((h, w), dtype=np.float64)
     
-    for i in prange(half, h - half):
+    for i in range(half, h - half):
         for j in range(half, w - half):
             # Compute local mean and std
             s = 0.0
@@ -505,7 +505,7 @@ def safe_corrcoef(a: np.ndarray, b: np.ndarray) -> float:
 # Additional JIT-compiled functions for performance
 # ============================================================================
 
-@jit(nopython=True, cache=True, parallel=True, fastmath=True)
+@jit(nopython=True, cache=True, parallel=False, fastmath=True)
 def fast_radial_profile(autocorr: np.ndarray, max_r: int, center_size: int) -> np.ndarray:
     """
     Compute radial average profile of a 2D autocorrelation map.
@@ -519,7 +519,7 @@ def fast_radial_profile(autocorr: np.ndarray, max_r: int, center_size: int) -> n
     radial_sum = np.zeros(max_r, dtype=np.float64)
     radial_count = np.zeros(max_r, dtype=np.float64)
     
-    for i in prange(h):
+    for i in range(h):
         for j in range(w):
             dx = j - cx
             dy = i - cy
@@ -541,7 +541,7 @@ def fast_radial_profile(autocorr: np.ndarray, max_r: int, center_size: int) -> n
     return result
 
 
-@jit(nopython=True, cache=True, parallel=True, fastmath=True)
+@jit(nopython=True, cache=True, parallel=False, fastmath=True)
 def fast_patch_nn_distances(
     sample_patches: np.ndarray,
     all_patches: np.ndarray,
@@ -567,7 +567,7 @@ def fast_patch_nn_distances(
             s += all_patches[j, d] * all_patches[j, d]
         b2[j] = s
     
-    for i in prange(n_samples):
+    for i in range(n_samples):
         # Compute ||a||^2
         a2 = 0.0
         for d in range(dim):
@@ -594,7 +594,7 @@ def fast_patch_nn_distances(
     return nn_dists
 
 
-@jit(nopython=True, cache=True, parallel=True, fastmath=True)
+@jit(nopython=True, cache=True, parallel=False, fastmath=True)
 def fast_window_stats(data: np.ndarray, window_size: int) -> np.ndarray:
     """
     Compute sliding window mean, std, min, max over a 1D array.
@@ -615,7 +615,7 @@ def fast_window_stats(data: np.ndarray, window_size: int) -> np.ndarray:
     n_windows = n - window_size + 1
     result = np.zeros((n_windows, 4), dtype=np.float64)
     
-    for w in prange(n_windows):
+    for w in range(n_windows):
         s = 0.0
         s2 = 0.0
         mn = data[w]

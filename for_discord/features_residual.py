@@ -34,12 +34,12 @@ except ImportError:
 
 from utils import fast_skew, fast_kurt, fast_entropy_hist
 
-# Fast FFT using scipy.fft with multi-threading (3-4x faster than numpy.fft)
+# Fast FFT using scipy.fft (single-threaded to limit resource usage)
 try:
     from scipy.fft import fft2 as _sp_fft2, ifft2 as _sp_ifft2, fftshift as _sp_fftshift, ifftshift as _sp_ifftshift, fft as _sp_fft
-    def _fast_fft2(x, **kw): return _sp_fft2(x, workers=-1, **kw)
-    def _fast_ifft2(x, **kw): return _sp_ifft2(x, workers=-1, **kw)
-    def _fast_fft(x, **kw): return _sp_fft(x, workers=-1, **kw)
+    def _fast_fft2(x, **kw): return _sp_fft2(x, workers=1, **kw)
+    def _fast_ifft2(x, **kw): return _sp_ifft2(x, workers=1, **kw)
+    def _fast_fft(x, **kw): return _sp_fft(x, workers=1, **kw)
     _fast_fftshift = _sp_fftshift
     _fast_ifftshift = _sp_ifftshift
 except ImportError:

@@ -38,12 +38,12 @@ def _entropy(hist):
         return float(fast_entropy(hist))
     return float(-np.sum(hist * np.log2(hist + 1e-10)))
 
-# Fast IFFT/ifftshift using scipy.fft with multi-threading
+# Fast IFFT/ifftshift using scipy.fft (single-threaded to limit resource usage)
 try:
     from scipy.fft import ifft2 as _sp_ifft2, ifftshift as _sp_ifftshift
     def _ifft2(arr):
-        """Inverse 2D FFT with scipy.fft multi-threading."""
-        return _sp_ifft2(arr, workers=-1)
+        """Inverse 2D FFT with scipy.fft (single-threaded)."""
+        return _sp_ifft2(arr, workers=1)
     _ifftshift = _sp_ifftshift
 except ImportError:
     def _ifft2(arr):

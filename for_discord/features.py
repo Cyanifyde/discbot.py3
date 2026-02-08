@@ -5,6 +5,17 @@ This module provides the unified interface for extracting all pixel-level
 features used for AI vs Real image classification.
 """
 
+import os
+
+# Force single-threaded execution for all numerical libraries
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+os.environ['NUMBA_NUM_THREADS'] = '1'
+os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
+
 import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
@@ -12,13 +23,20 @@ warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
 import hashlib
 import json
 import numpy as np
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 from PIL import Image
 import time
 import logging
 import threading
+
+# Limit OpenCV threads
+try:
+    import cv2
+    cv2.setNumThreads(1)
+    cv2.ocl.setUseOpenCL(False)
+except ImportError:
+    pass
 
 from features_color import extract_color_features
 from features_frequency import extract_frequency_features
@@ -38,53 +56,6 @@ from features_cfa import extract_cfa_features
 from features_self_similarity import extract_self_similarity_features
 from features_residual import extract_residual_features
 
-# Try to import optional modules (not needed for basic detection)
-try:
-    from features_advanced import extract_advanced_features
-    from features_upscaler_artifacts import extract_upscaler_artifacts_features
-    from features_physics import extract_physics_features
-    from features_anatomical import extract_anatomical_features
-    from features_phase import extract_phase_features
-    from features_optics import extract_optics_features
-    from features_blur_motion import extract_blur_motion_features
-    from features_crf import extract_crf_features
-    from features_codec import extract_codec_features
-    from features_lineart import extract_lineart_features
-    from features_hair_strand_logic import extract_hair_strand_logic_features
-    from features_brush import extract_brush_features
-    from features_shading import extract_shading_features
-    from features_palette import extract_palette_features
-    from features_text_graphic import extract_text_graphic_features
-    from features_screenshot import extract_screenshot_features
-    from features_ocr import extract_ocr_features
-    from features_cnn import extract_cnn_features
-except ImportError as e:
-    # Some feature modules may not be included in the Discord deployment package
-    logger = logging.getLogger(__name__)
-    logger.debug(f"Optional feature module not available: {e}")
-    # Create stub functions for missing modules
-    extract_advanced_features = lambda *args, **kwargs: {}
-    extract_upscaler_artifacts_features = lambda *args, **kwargs: {}
-    extract_physics_features = lambda *args, **kwargs: {}
-    extract_anatomical_features = lambda *args, **kwargs: {}
-    extract_phase_features = lambda *args, **kwargs: {}
-    extract_optics_features = lambda *args, **kwargs: {}
-    extract_blur_motion_features = lambda *args, **kwargs: {}
-    extract_crf_features = lambda *args, **kwargs: {}
-    extract_codec_features = lambda *args, **kwargs: {}
-    extract_lineart_features = lambda *args, **kwargs: {}
-    extract_hair_strand_logic_features = lambda *args, **kwargs: {}
-    extract_brush_features = lambda *args, **kwargs: {}
-    extract_shading_features = lambda *args, **kwargs: {}
-    extract_palette_features = lambda *args, **kwargs: {}
-    extract_text_graphic_features = lambda *args, **kwargs: {}
-    extract_screenshot_features = lambda *args, **kwargs: {}
-    extract_ocr_features = lambda *args, **kwargs: {}
-    extract_cnn_features = lambda *args, **kwargs: {}
-
-# GPU acceleration utilities
-import gpu_utils
-
 logger = logging.getLogger(__name__)
 
 
@@ -96,31 +67,13 @@ _FAMILY_DISPATCH = [
     ('spectral_diffusion', extract_spectral_diffusion_features, 'spectral_diffusion'),
     ('noise', extract_noise_features, 'noise'),
     ('texture', extract_texture_features, 'texture'),
-    ('advanced', extract_advanced_features, 'advanced'),
-    ('upscaler_artifacts', extract_upscaler_artifacts_features, 'upscaler_artifacts'),
     ('gradient', extract_gradient_features, 'gradient'),
     ('forensic', extract_forensic_features, 'forensic'),
-    ('physics', extract_physics_features, 'physics'),
-    ('anatomical', extract_anatomical_features, 'anatomical'),
     ('model_specific', extract_model_specific_features, 'model_specific'),
     ('nss', extract_nss_features, 'nss'),
-    ('phase', extract_phase_features, 'phase'),
-    ('optics', extract_optics_features, 'optics'),
     ('cfa', extract_cfa_features, 'cfa'),
-    ('blur_motion', extract_blur_motion_features, 'blur_motion'),
-    ('crf', extract_crf_features, 'crf'),
     ('self_similarity', extract_self_similarity_features, 'self_similarity'),
-    ('codec', extract_codec_features, 'codec'),
-    ('lineart', extract_lineart_features, 'lineart'),
-    ('hair_strand_logic', extract_hair_strand_logic_features, 'hair_strand_logic'),
-    ('brush', extract_brush_features, 'brush'),
-    ('shading', extract_shading_features, 'shading'),
-    ('palette', extract_palette_features, 'palette'),
-    ('text_graphic', extract_text_graphic_features, 'text_graphic'),
     ('residual', extract_residual_features, 'residual'),
-    ('screenshot', extract_screenshot_features, 'screenshot'),
-    ('ocr', extract_ocr_features, 'ocr'),
-    ('cnn', extract_cnn_features, 'cnn'),
 ]
 
 
@@ -327,36 +280,16 @@ class FeatureExtractor:
     FEATURE_FAMILIES = [
         'color',
         'frequency',
-        'spectral_diffusion',  # 1D power spectrum tail + grid/ringing cues
+        'spectral_diffusion',
         'noise',
         'texture',
-        'advanced',
-        'upscaler_artifacts',  # refiner/upscaler microtexture cues
-        # Advanced detection families
-        'gradient',      # Differential convolutions & artifact analysis
-        'forensic',      # DCT, PRNU, recompression analysis
-        'physics',       # Shadow/lighting/perspective consistency
-        'anatomical',    # Face/hand/body anomaly detection
-        'model_specific', # GAN vs Diffusion fingerprints
-        # Extended feature families (spec 11-26)
-        'nss',           # Natural Scene Statistics (MSCN, GGD, AGGD)
-        'phase',         # Phase & cepstrum analysis
-        'optics',        # Real camera optics signatures
-        'cfa',           # Color filter array / demosaic
-        'blur_motion',   # Blur & motion consistency
-        'crf',           # Camera response / tone curve
-        'self_similarity', # Patch distance / repetition
-        'codec',         # Compression artifact analysis
-        'lineart',       # Illustration line/stroke features
-        'hair_strand_logic',  # hair strand endpoints / topology cues
-        'brush',         # Brush/paint texture features
-        'shading',       # Shading / cel-shading detection
-        'palette',       # Color palette analysis
-        'text_graphic',  # Text/graphic detection
-        'residual',      # Diffusion residual signatures
-        'screenshot',    # Screenshot pipeline detection
-        'ocr',           # OCR confidence / garbled text
-        'cnn',           # Tiny CNN-like features
+        'gradient',
+        'forensic',
+        'model_specific',
+        'nss',
+        'cfa',
+        'self_similarity',
+        'residual',
     ]
     
     def __init__(
@@ -365,10 +298,10 @@ class FeatureExtractor:
         resize_for_speed: bool = True,
         max_dimension: int = 1024,  # Maximum dimension for feature extraction
         normalize_features: bool = False,
-        n_jobs: int = 4,  # Number of parallel workers
+        n_jobs: int = 1,  # Number of workers (kept at 1 for resource-limited hosting)
         use_cache: bool = True,  # Enable feature caching
         cache_dir: Optional[Union[str, Path]] = None,  # Cache directory
-        use_gpu: bool = False,  # Enable GPU acceleration (slower for typical images due to transfer overhead)
+        use_gpu: bool = False,  # Ignored, kept for API compatibility
     ):
         """
         Initialize the feature extractor.
@@ -378,42 +311,20 @@ class FeatureExtractor:
             resize_for_speed: Whether to resize large images for faster processing.
             max_dimension: Maximum dimension when resizing (default 1024).
             normalize_features: Whether to normalize features (requires fitted scaler).
-            n_jobs: Number of parallel workers for batch extraction.
+            n_jobs: Number of workers (always 1 on constrained hosting).
             use_cache: Whether to use feature caching for faster re-extraction.
             cache_dir: Directory for feature cache. None = default location.
-            use_gpu: Whether to use GPU acceleration if available (default False).
-                GPU is slower than CPU for typical 512-1024px images due to transfer overhead.
-                Only enable for very large images (>2048px) or modified pipeline that keeps
-                data on GPU between operations.
+            use_gpu: Ignored. Kept for API compatibility only.
         """
         self.families = families or self.FEATURE_FAMILIES
         self.resize_for_speed = resize_for_speed
         self.max_dimension = max_dimension
         self.normalize_features = normalize_features
-        self.n_jobs = n_jobs
+        self.n_jobs = 1  # Always single-threaded
         self.scaler = None
         self.feature_names = None
         self.use_cache = use_cache
         self.cache = get_feature_cache(cache_dir) if use_cache else None
-
-        # Configure GPU acceleration (default: CPU, GPU has high transfer overhead)
-        self.use_gpu = use_gpu
-        # We use GPU only for a single precompute bundle per image (see
-        # ImagePrecomputedData.preload_gpu_common). Keep gpu_utils wrappers
-        # disabled to avoid per-operation CPU<->GPU transfers in feature modules.
-        gpu_utils.set_use_gpu(False)
-        self.gpu_status = gpu_utils.get_gpu_status()
-        self._last_gpu_preload_used = False
-        self._last_gpu_preload_s = 0.0
-
-        # Log GPU status on initialization
-        if use_gpu and self.gpu_status.get('gpu_usable'):
-            logger.info(f"GPU precompute enabled: {self.gpu_status.get('gpu_name')}")
-            logger.info("GPU mode: precomputes shared transforms on GPU once per image; feature families run on CPU (no per-op transfers).")
-        elif use_gpu and self.gpu_status.get('gpu_available') and not self.gpu_status.get('gpu_usable'):
-            logger.info("GPU requested but CuPy kernels are not usable, using CPU")
-        elif use_gpu and not self.gpu_status.get('gpu_available'):
-            logger.info("GPU requested but not available, using CPU")
     
     def _preprocess_image(self, image: Image.Image) -> np.ndarray:
         """
@@ -485,19 +396,6 @@ class FeatureExtractor:
         do_profile = return_timings or env_profile
         timings: Optional[Dict[str, float]] = {} if do_profile else None
 
-        # Optional: GPU "bundle" precompute to avoid per-operation CPU<->GPU transfers.
-        gpu_preload_used = False
-        if self.use_gpu and self.gpu_status.get("gpu_usable"):
-            t_pre = time.perf_counter()
-            gpu_preload_used = bool(precomputed.preload_gpu_common())
-            self._last_gpu_preload_s = time.perf_counter() - t_pre
-            self._last_gpu_preload_used = gpu_preload_used
-            if timings is not None:
-                timings["_gpu_preload"] = float(self._last_gpu_preload_s)
-        else:
-            self._last_gpu_preload_s = 0.0
-            self._last_gpu_preload_used = False
-
         # Build list of families to run
         active_families = [
             (family_name, extract_func, label)
@@ -560,6 +458,8 @@ class FeatureExtractor:
         # Clear precomputed dict-caches to free memory after feature extraction
         if precomputed is not None:
             precomputed.clear_caches()
+        del precomputed
+        import gc; gc.collect()
 
         if return_timings:
             return features, (timings or {})
@@ -684,28 +584,14 @@ class FeatureExtractor:
             List of feature dictionaries
         """
         from tqdm import tqdm
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        if self.n_jobs == 1:
-            # Sequential processing
-            results = []
-            iterator = tqdm(images, desc="Extracting features") if show_progress else images
-            
-            for image in iterator:
-                features = self.extract(image)
-                results.append(features)
-        else:
-            # Parallel processing with threads
-            results = []
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
-                futures = {executor.submit(self.extract, img): i for i, img in enumerate(images)}
-                
-                if show_progress:
-                    for future in tqdm(as_completed(futures), total=len(futures), desc="Extracting features"):
-                        results.append(future.result())
-                else:
-                    for future in as_completed(futures):
-                        results.append(future.result())
+        # Always process sequentially to limit resource usage
+        results = []
+        iterator = tqdm(images, desc="Extracting features") if show_progress else images
+        
+        for image in iterator:
+            features = self.extract(image)
+            results.append(features)
         
         return results
     
@@ -791,16 +677,25 @@ _worker_params = None
 
 
 def _init_worker(families, resize_for_speed, max_dimension):
-    """Initialize worker with reusable extractor."""
+    """Initialize worker with reusable extractor (single-threaded)."""
     global _worker_extractor, _worker_params
     
-    # Limit thread usage in worker processes to avoid over-subscription
+    # Force single-threaded execution in worker processes
     import os
     os.environ['OMP_NUM_THREADS'] = '1'
     os.environ['MKL_NUM_THREADS'] = '1'
     os.environ['OPENBLAS_NUM_THREADS'] = '1'
     os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
     os.environ['NUMEXPR_NUM_THREADS'] = '1'
+    os.environ['NUMBA_NUM_THREADS'] = '1'
+    os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
+    
+    try:
+        import cv2
+        cv2.setNumThreads(1)
+        cv2.ocl.setUseOpenCL(False)
+    except ImportError:
+        pass
     
     _worker_params = (families, resize_for_speed, max_dimension)
     _worker_extractor = FeatureExtractor(

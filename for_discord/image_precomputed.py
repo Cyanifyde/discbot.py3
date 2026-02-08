@@ -20,7 +20,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# GPU-accelerated operations (with automatic CPU fallback)
+# CPU image processing utilities (gpu_utils is CPU-only, same API names)
 try:
     from gpu_utils import (
         gpu_fft2 as _fft2, gpu_fftshift as _fftshift, gpu_fft2_shift as _fft2_shift,
@@ -29,17 +29,15 @@ try:
         gpu_laplacian, gpu_uniform_filter, gpu_local_variance,
         gpu_binary_dilation,
     )
-    _USING_GPU_UTILS = True
 except ImportError:
-    # Fallback to scipy/numpy
+    # Fallback to scipy/numpy if gpu_utils is not available
     try:
         from scipy.fft import fft2 as _scipy_fft2, ifft2 as _scipy_ifft2, fftshift as _scipy_fftshift
-        _fft2 = lambda arr: _scipy_fft2(arr, workers=-1)
-        _ifft2 = lambda arr: _scipy_ifft2(arr, workers=-1)
+        _fft2 = lambda arr: _scipy_fft2(arr, workers=1)
+        _ifft2 = lambda arr: _scipy_ifft2(arr, workers=1)
         _fftshift = _scipy_fftshift
     except ImportError:
         from numpy.fft import fft2 as _fft2, ifft2 as _ifft2, fftshift as _fftshift
-    _USING_GPU_UTILS = False
     _fft2_shift = lambda arr: _fftshift(_fft2(arr))
 
 # Optional OpenCV acceleration
@@ -119,7 +117,6 @@ class ImagePrecomputedData:
         """
         self._img_array = img_array
         self._is_color = img_array.ndim == 3 and img_array.shape[2] >= 3
-        self._gpu_preloaded = False
 
         # Cached values (initialized to None, computed on first access)
         # Basic
@@ -239,123 +236,6 @@ class ImagePrecomputedData:
         # Canny edges + HoughLinesP cache (used by physics perspective + horizon)
         self._canny_edges_50_150 = None
         self._hough_lines_sensitive = None  # threshold=50, minLen=30
-
-    def preload_gpu_common(self) -> bool:
-        """
-        Precompute commonly reused transforms on GPU once per image.
-
-        The goal is to avoid repeated CPU->GPU transfers for each operation:
-        transfer grayscale once, run shared transforms on GPU, then populate the
-        existing CPU caches so feature families can reuse them.
-
-        Returns:
-            True if GPU preloading ran (or was already done), else False.
-        """
-        if self._gpu_preloaded:
-            return True
-
-        # Only run when GPU is explicitly enabled and verified usable.
-        try:
-            import gpu_utils as _gpu_utils
-        except Exception:
-            return False
-
-        status = _gpu_utils.get_gpu_status()
-        if not (status.get("gpu_usable") and status.get("cupy_installed")):
-            return False
-
-        try:
-            import cupy as cp
-            from cupyx.scipy import ndimage as cp_ndimage
-        except Exception:
-            return False
-
-        gray = self.gray  # float64 numpy
-
-        try:
-            gray_gpu = cp.asarray(gray)
-
-            # Sobel gradients + edge magnitude — batch transfer
-            gx = cp_ndimage.sobel(gray_gpu, axis=1)  # X derivative
-            gy = cp_ndimage.sobel(gray_gpu, axis=0)  # Y derivative
-            edges_gpu = cp.sqrt(gx * gx + gy * gy)
-
-            # Batch transfer: stack Sobel results and download once
-            sobel_stack = cp.stack([gx, gy, edges_gpu])
-            sobel_np = cp.asnumpy(sobel_stack)
-            self._sobel_v = sobel_np[0]
-            self._sobel_h = sobel_np[1]
-            self._edges = sobel_np[2]
-
-            # Gaussian filters (shared across many families)
-            #
-            # Include a small superset of sigmas used across feature families
-            # so GPU mode avoids CPU-side gaussian_filter calls later.
-            sigma_mscn = 7.0 / 6.0  # MSSN/MSCN default sigma
-            for sigma in (0.5, 1.0, sigma_mscn, 1.2, 1.5, 2.0, 3.0, 4.0, 5.0):
-                out_gpu = cp_ndimage.gaussian_filter(gray_gpu, sigma=float(sigma), mode="reflect")
-                out = cp.asnumpy(out_gpu)
-                key = (float(sigma), "reflect")
-                self._gaussian_cache[key] = out
-                if sigma == 0.5:
-                    self._gaussian_0_5 = out
-                elif sigma == 1.0:
-                    self._gaussian_1 = out
-                elif sigma == 1.5:
-                    self._gaussian_1p5 = out
-                elif sigma == 2.0:
-                    self._gaussian_2 = out
-                elif sigma == 3.0:
-                    self._gaussian_3 = out
-                elif sigma == 5.0:
-                    self._gaussian_5 = out
-
-                # Cache Sobel of Gaussian-blurred versions used by brush multiscale anisotropy.
-                if sigma in (0.5, 1.0, 2.0):
-                    gx_g = cp_ndimage.sobel(out_gpu, axis=1)
-                    gy_g = cp_ndimage.sobel(out_gpu, axis=0)
-                    self._sobel_gaussian_cache[(float(sigma), "reflect")] = (cp.asnumpy(gx_g), cp.asnumpy(gy_g))
-
-            # Laplacian
-            lap_gpu = cp_ndimage.laplace(gray_gpu)
-            self._laplacian = cp.asnumpy(lap_gpu)
-
-            # Local mean/variance (5x5 reflect) — batch transfer
-            size = 5
-            mean_gpu = cp_ndimage.uniform_filter(gray_gpu, size=size, mode="reflect")
-            mean_sq_gpu = cp_ndimage.uniform_filter(gray_gpu * gray_gpu, size=size, mode="reflect")
-            var_gpu = cp.maximum(mean_sq_gpu - mean_gpu * mean_gpu, 0)
-
-            local_stack = cp.stack([mean_gpu, var_gpu])
-            local_np = cp.asnumpy(local_stack)
-            self._uniform_cache[(size, "reflect")] = local_np[0]
-            self._local_variance_cache[(size, "reflect")] = local_np[1]
-
-            # NSS/MSCN needs gaussian(gray**2) at sigma=7/6.
-            mu_sq_gpu = cp_ndimage.gaussian_filter(gray_gpu * gray_gpu, sigma=float(sigma_mscn), mode="reflect")
-            self._gaussian_sq_cache[(float(sigma_mscn), "reflect")] = cp.asnumpy(mu_sq_gpu)
-
-            # FFT bundle (shifted) — batch transfer
-            fft_shift_gpu = cp.fft.fftshift(cp.fft.fft2(gray_gpu))
-            mag_gpu = cp.abs(fft_shift_gpu)
-            power_gpu = mag_gpu * mag_gpu
-            log_mag_gpu = cp.log1p(mag_gpu)
-
-            # Batch transfer: stack real-valued FFT results and download once
-            fft_real_stack = cp.stack([mag_gpu, power_gpu, log_mag_gpu])
-            fft_real_np = cp.asnumpy(fft_real_stack)
-            self._fft_magnitude = fft_real_np[0]
-            self._fft_power = fft_real_np[1]
-            self._fft_log_magnitude = fft_real_np[2]
-            self._fft_complex = cp.asnumpy(fft_shift_gpu)
-
-            self._gpu_preloaded = True
-            return True
-        except Exception as e:
-            # Keep this debug-level: failures should fall back silently to CPU,
-            # but "GPU usable" should have filtered most systemic issues already.
-            logger.debug(f"GPU preload bundle failed, using CPU caches: {e}")
-            return False
 
     def clear_caches(self) -> None:
         """Clear all dict-based caches to free memory after feature extraction."""
@@ -530,13 +410,7 @@ class ImagePrecomputedData:
         """General-purpose Gaussian filter cache for arbitrary sigma/mode."""
         key = (float(sigma), mode)
         if key not in self._gaussian_cache:
-            if _USING_GPU_UTILS and mode == 'reflect':
-                self._gaussian_cache[key] = gpu_gaussian_filter(self.gray, sigma=sigma)
-            elif HAS_CV2 and mode == 'reflect':
-                ksize = int(6 * sigma + 1) | 1
-                self._gaussian_cache[key] = cv2.GaussianBlur(self.gray, (ksize, ksize), sigma)
-            else:
-                self._gaussian_cache[key] = ndimage.gaussian_filter(self.gray, sigma=sigma, mode=mode)
+            self._gaussian_cache[key] = gpu_gaussian_filter(self.gray, sigma=sigma)
         return self._gaussian_cache[key]
 
     def gaussian_sq(self, sigma: float, mode: str = 'reflect') -> np.ndarray:
@@ -544,13 +418,7 @@ class ImagePrecomputedData:
         key = (float(sigma), mode)
         if key not in self._gaussian_sq_cache:
             gray_sq = self.gray * self.gray
-            if _USING_GPU_UTILS and mode == 'reflect':
-                self._gaussian_sq_cache[key] = gpu_gaussian_filter(gray_sq, sigma=sigma)
-            elif HAS_CV2 and mode == 'reflect':
-                ksize = int(6 * sigma + 1) | 1
-                self._gaussian_sq_cache[key] = cv2.GaussianBlur(gray_sq, (ksize, ksize), sigma)
-            else:
-                self._gaussian_sq_cache[key] = ndimage.gaussian_filter(gray_sq, sigma=sigma, mode=mode)
+            self._gaussian_sq_cache[key] = gpu_gaussian_filter(gray_sq, sigma=sigma)
         return self._gaussian_sq_cache[key]
 
     def _sobel_xy_gaussian(self, sigma: float, mode: str = 'reflect') -> Tuple[np.ndarray, np.ndarray]:
@@ -558,14 +426,7 @@ class ImagePrecomputedData:
         key = (float(sigma), mode)
         if key not in self._sobel_gaussian_cache:
             g = self.gaussian(sigma, mode)
-            if _USING_GPU_UTILS:
-                sobel_v, sobel_h = gpu_sobel_xy(g)
-            elif HAS_CV2:
-                sobel_v = cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)
-                sobel_h = cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3)
-            else:
-                sobel_v = ndimage.sobel(g, axis=1)
-                sobel_h = ndimage.sobel(g, axis=0)
+            sobel_v, sobel_h = gpu_sobel_xy(g)
             self._sobel_gaussian_cache[key] = (sobel_v, sobel_h)
         return self._sobel_gaussian_cache[key]
 
@@ -581,27 +442,14 @@ class ImagePrecomputedData:
         """General-purpose uniform filter cache for arbitrary size/mode."""
         key = (int(size), mode)
         if key not in self._uniform_cache:
-            if _USING_GPU_UTILS and mode == 'reflect':
-                self._uniform_cache[key] = gpu_uniform_filter(self.gray, size=size)
-            elif mode == 'reflect':
-                self._uniform_cache[key] = cv2.blur(self.gray, (size, size), borderType=cv2.BORDER_REFLECT)
-            else:
-                self._uniform_cache[key] = ndimage.uniform_filter(self.gray, size=size, mode=mode)
+            self._uniform_cache[key] = gpu_uniform_filter(self.gray, size=size)
         return self._uniform_cache[key]
 
     def get_local_variance(self, size: int = 5, mode: str = 'reflect') -> np.ndarray:
         """General-purpose local variance cache for arbitrary window size/mode."""
         key = (int(size), mode)
         if key not in self._local_variance_cache:
-            if _USING_GPU_UTILS and mode == 'reflect':
-                self._local_variance_cache[key] = gpu_local_variance(self.gray, size=size)
-            else:
-                mean = self.uniform(size, mode)
-                if mode == 'reflect':
-                    mean_sq = cv2.blur(self.gray * self.gray, (size, size), borderType=cv2.BORDER_REFLECT)
-                else:
-                    mean_sq = ndimage.uniform_filter(self.gray * self.gray, size=size, mode=mode)
-                self._local_variance_cache[key] = np.maximum(mean_sq - mean * mean, 0)
+            self._local_variance_cache[key] = gpu_local_variance(self.gray, size=size)
         return self._local_variance_cache[key]
 
     @property
@@ -704,28 +552,18 @@ class ImagePrecomputedData:
     def sobel_h(self) -> np.ndarray:
         """Horizontal Sobel gradient (axis=0, Y derivative). float32."""
         if self._sobel_h is None:
-            if _USING_GPU_UTILS:
-                gx, gy = gpu_sobel_xy(self.gray)
-                self._sobel_v = gx  # axis=1
-                self._sobel_h = gy  # axis=0
-            elif HAS_CV2:
-                self._sobel_h = cv2.Sobel(self.gray, cv2.CV_32F, 0, 1, ksize=3)
-            else:
-                self._sobel_h = ndimage.sobel(self.gray, axis=0).astype(np.float32)
+            gx, gy = gpu_sobel_xy(self.gray)
+            self._sobel_v = gx  # axis=1
+            self._sobel_h = gy  # axis=0
         return self._sobel_h
 
     @property
     def sobel_v(self) -> np.ndarray:
         """Vertical Sobel gradient (axis=1, X derivative). float32."""
         if self._sobel_v is None:
-            if _USING_GPU_UTILS:
-                gx, gy = gpu_sobel_xy(self.gray)
-                self._sobel_v = gx  # axis=1
-                self._sobel_h = gy  # axis=0
-            elif HAS_CV2:
-                self._sobel_v = cv2.Sobel(self.gray, cv2.CV_32F, 1, 0, ksize=3)
-            else:
-                self._sobel_v = ndimage.sobel(self.gray, axis=1).astype(np.float32)
+            gx, gy = gpu_sobel_xy(self.gray)
+            self._sobel_v = gx  # axis=1
+            self._sobel_h = gy  # axis=0
         return self._sobel_v
 
     @property
@@ -816,86 +654,49 @@ class ImagePrecomputedData:
     def gaussian_0_5(self) -> np.ndarray:
         """Gaussian filtered (sigma=0.5)."""
         if self._gaussian_0_5 is None:
-            if _USING_GPU_UTILS:
-                self._gaussian_0_5 = gpu_gaussian_filter(self.gray, sigma=0.5)
-            elif HAS_CV2:
-                self._gaussian_0_5 = cv2.GaussianBlur(self.gray, (5, 5), 0.5)
-            else:
-                self._gaussian_0_5 = ndimage.gaussian_filter(self.gray, sigma=0.5)
+            self._gaussian_0_5 = gpu_gaussian_filter(self.gray, sigma=0.5)
         return self._gaussian_0_5
 
     @property
     def gaussian_1(self) -> np.ndarray:
         """Gaussian filtered (sigma=1)."""
         if self._gaussian_1 is None:
-            if _USING_GPU_UTILS:
-                self._gaussian_1 = gpu_gaussian_filter(self.gray, sigma=1)
-            elif HAS_CV2:
-                self._gaussian_1 = cv2.GaussianBlur(self.gray, (7, 7), 1)
-            else:
-                self._gaussian_1 = ndimage.gaussian_filter(self.gray, sigma=1)
+            self._gaussian_1 = gpu_gaussian_filter(self.gray, sigma=1)
         return self._gaussian_1
 
     @property
     def gaussian_1p5(self) -> np.ndarray:
         """Gaussian filtered (sigma=1.5)."""
         if self._gaussian_1p5 is None:
-            if _USING_GPU_UTILS:
-                self._gaussian_1p5 = gpu_gaussian_filter(self.gray, sigma=1.5)
-            elif HAS_CV2:
-                self._gaussian_1p5 = cv2.GaussianBlur(self.gray, (11, 11), 1.5)
-            else:
-                self._gaussian_1p5 = ndimage.gaussian_filter(self.gray, sigma=1.5)
+            self._gaussian_1p5 = gpu_gaussian_filter(self.gray, sigma=1.5)
         return self._gaussian_1p5
 
     @property
     def gaussian_2(self) -> np.ndarray:
         """Gaussian filtered (sigma=2)."""
         if self._gaussian_2 is None:
-            if _USING_GPU_UTILS:
-                self._gaussian_2 = gpu_gaussian_filter(self.gray, sigma=2)
-            elif HAS_CV2:
-                self._gaussian_2 = cv2.GaussianBlur(self.gray, (13, 13), 2)
-            else:
-                self._gaussian_2 = ndimage.gaussian_filter(self.gray, sigma=2)
+            self._gaussian_2 = gpu_gaussian_filter(self.gray, sigma=2)
         return self._gaussian_2
 
     @property
     def gaussian_3(self) -> np.ndarray:
         """Gaussian filtered (sigma=3)."""
         if self._gaussian_3 is None:
-            if _USING_GPU_UTILS:
-                self._gaussian_3 = gpu_gaussian_filter(self.gray, sigma=3)
-            elif HAS_CV2:
-                self._gaussian_3 = cv2.GaussianBlur(self.gray, (19, 19), 3)
-            else:
-                self._gaussian_3 = ndimage.gaussian_filter(self.gray, sigma=3)
+            self._gaussian_3 = gpu_gaussian_filter(self.gray, sigma=3)
         return self._gaussian_3
 
     @property
     def gaussian_5(self) -> np.ndarray:
         """Gaussian filtered (sigma=5)."""
         if self._gaussian_5 is None:
-            if _USING_GPU_UTILS:
-                self._gaussian_5 = gpu_gaussian_filter(self.gray, sigma=5)
-            elif HAS_CV2:
-                self._gaussian_5 = cv2.GaussianBlur(self.gray, (31, 31), 5)
-            else:
-                self._gaussian_5 = ndimage.gaussian_filter(self.gray, sigma=5)
+            self._gaussian_5 = gpu_gaussian_filter(self.gray, sigma=5)
         return self._gaussian_5
 
     @property
     def laplacian(self) -> np.ndarray:
         """Laplacian of grayscale image."""
         if self._laplacian is None:
-            if _USING_GPU_UTILS:
-                self._laplacian = gpu_laplacian(self.gray)
-            elif HAS_CV2:
-                self._laplacian = cv2.Laplacian(
-                    self.gray, cv2.CV_32F, ksize=3
-                )
-            else:
-                self._laplacian = ndimage.laplace(self.gray)
+            self._laplacian = gpu_laplacian(self.gray)
         return self._laplacian
 
     @property
@@ -948,12 +749,7 @@ class ImagePrecomputedData:
         key = (int(channel_idx), float(sigma))
         if key not in self._channel_residual_cache:
             ch = self._img_array[:, :, channel_idx].astype(np.float32)
-            if HAS_CV2:
-                denoised = cv2.GaussianBlur(ch, (0, 0), sigma)
-            elif _USING_GPU_UTILS:
-                denoised = gpu_gaussian_filter(ch, sigma=sigma)
-            else:
-                denoised = ndimage.gaussian_filter(ch, sigma=sigma)
+            denoised = gpu_gaussian_filter(ch, sigma=sigma)
             self._channel_residual_cache[key] = ch - denoised
         return self._channel_residual_cache[key]
 
@@ -1156,10 +952,7 @@ class ImagePrecomputedData:
     def edge_dilated(self) -> np.ndarray:
         """Dilated binary edge map (for near-edge region analysis)."""
         if self._edge_dilated is None:
-            if _USING_GPU_UTILS:
-                self._edge_dilated = gpu_binary_dilation(self.edge_binary, iterations=5)
-            else:
-                self._edge_dilated = ndimage.binary_dilation(self.edge_binary, iterations=5)
+            self._edge_dilated = gpu_binary_dilation(self.edge_binary, iterations=5)
         return self._edge_dilated
 
     # =========================================================================
@@ -1172,16 +965,8 @@ class ImagePrecomputedData:
             return self.sobel_h, self.sobel_v
 
         channel = self._img_array[:, :, channel_idx].astype(np.float32)
-        if _USING_GPU_UTILS:
-            gx, gy = gpu_sobel_xy(channel)
-            return gy, gx  # sobel_h=axis=0, sobel_v=axis=1
-        elif HAS_CV2:
-            sobel_h = cv2.Sobel(channel, cv2.CV_32F, 0, 1, ksize=3)
-            sobel_v = cv2.Sobel(channel, cv2.CV_32F, 1, 0, ksize=3)
-        else:
-            sobel_h = ndimage.sobel(channel, axis=0)
-            sobel_v = ndimage.sobel(channel, axis=1)
-        return sobel_h, sobel_v
+        gx, gy = gpu_sobel_xy(channel)
+        return gy, gx  # sobel_h=axis=0, sobel_v=axis=1
 
     def get_channel_edges(self, channel_idx: int) -> np.ndarray:
         """Get edge magnitude for a specific color channel."""

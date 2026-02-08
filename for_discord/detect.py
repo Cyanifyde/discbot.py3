@@ -14,20 +14,31 @@ Output:
 
 import sys
 import os
+
+# Force all threading/parallelism to single thread BEFORE any library imports
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+os.environ['NUMBA_NUM_THREADS'] = '1'
+os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'  # Single-threaded numba backend
+os.environ['SCIPY_FFT_BACKEND'] = 'scipy'  # Prevent multi-threaded FFT backends
+
 import joblib
+import gc
 import numpy as np
 from pathlib import Path
 from PIL import Image
 import warnings
 
-# Limit CPU threads to 1 for resource-constrained environments
-# Note: These should ideally be set before any numpy/scipy imports (see main.py)
-os.environ.setdefault('OMP_NUM_THREADS', '1')
-os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
-os.environ.setdefault('MKL_NUM_THREADS', '1')
-os.environ.setdefault('VECLIB_MAXIMUM_THREADS', '1')
-os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
-os.environ.setdefault('NUMBA_NUM_THREADS', '1')
+# Limit OpenCV threads
+try:
+    import cv2
+    cv2.setNumThreads(1)
+    cv2.ocl.setUseOpenCL(False)
+except ImportError:
+    pass
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -225,7 +236,6 @@ def extract_features(image):
         max_dimension=MAX_DIMENSION,
         n_jobs=1,
         use_cache=False,
-        use_gpu=False,
     )
     
     return extractor.extract(image)
@@ -261,6 +271,10 @@ def predict(image_path, verbose=False):
     if verbose:
         print("Extracting features...", file=sys.stderr)
     features = extract_features(image)
+    
+    # Free image memory early
+    del image
+    gc.collect()
     
     # Build feature vector
     vec = np.zeros(len(feature_names), dtype=np.float32)
@@ -350,6 +364,9 @@ def predict_image(image, verbose=False):
         print("Extracting features...", file=sys.stderr)
     features = extract_features(image)
     
+    # Free memory early
+    gc.collect()
+    
     # Build feature vector
     vec = np.zeros(len(feature_names), dtype=np.float32)
     matched_features = 0
@@ -412,13 +429,6 @@ def predict_image_with_progress(image, progress_callback=None):
     Returns:
         float: AI probability (0.0 to 1.0)
     """
-    # Limit OpenCV threads to 1
-    try:
-        import cv2
-        cv2.setNumThreads(1)
-    except ImportError:
-        pass
-    
     from features import FeatureExtractor
     
     # Load model
@@ -507,6 +517,10 @@ def predict_image_with_progress(image, progress_callback=None):
             
         except Exception as e:
             print(f"Warning: Failed to extract {family_name} features: {e}", file=sys.stderr)
+    
+    # Free precomputed data and image array to reclaim memory
+    del precomputed, img_array
+    gc.collect()
     
     # Build feature vector
     vec = np.zeros(len(feature_names), dtype=np.float32)
