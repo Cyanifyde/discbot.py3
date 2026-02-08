@@ -26,10 +26,8 @@ AVAILABLE_MODULES = {
     "moderation": "Warnings, mutes, bans, kicks, and mod notes",
     "serverstats": "Display server statistics and information",
     "serverlink": "Cross-server linking for syncing moderation actions",
-    "trust": "Trust scoring, vouches, and reputation utilities",
     "inviteprotection": "Detect and gate Discord invite links with allowlist/approval workflow",
     "artsearch": "Search images posted in approved channels",
-    "commissionreviews": "Commission reviews and dispute workflow",
     "analytics": "View statistics and trends",
 }
 
@@ -38,7 +36,6 @@ AVAILABLE_MODULES = {
 DEFAULT_MODULE_ENABLED = {
     "inviteprotection": False,
     "artsearch": True,
-    "commissionreviews": True,
 }
 
 # Available commands that can have role restrictions
@@ -54,7 +51,6 @@ AVAILABLE_COMMANDS = {
     ],
     "serverstats": ["serverstats", "serverstats help", "botstatus", "botstatus help"],
     "serverlink": ["linkserver", "addlink", "links", "unlink", "linksettings", "linkprotection"],
-    "trust": ["trust history", "vouch verify", "vouch remove"],
     "inviteprotection": [
         "invite allowlist",
         "invite approve",
@@ -64,7 +60,6 @@ AVAILABLE_COMMANDS = {
         "invite status",
     ],
     "artsearch": ["art search", "art channels", "art help"],
-    "commissionreviews": ["review", "review list", "review dispute", "review resolve", "review help"],
 }
 
 

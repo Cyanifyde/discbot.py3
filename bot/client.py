@@ -54,18 +54,6 @@ from modules.server_link import (
     handle_server_link_command,
     setup_server_link,
 )
-from modules.commissions import (
-    handle_commission_command,
-    setup_commissions,
-)
-from modules.commission_reviews import (
-    handle_commission_reviews_command,
-    setup_commission_reviews,
-)
-from modules.portfolio import (
-    handle_portfolio_command,
-    setup_portfolio,
-)
 from modules.reports import (
     handle_report_command,
     setup_reports,
@@ -104,10 +92,6 @@ from modules.custom_content import (
 from modules.analytics import (
     handle_analytics_command,
     setup_analytics,
-)
-from modules.trust import (
-    handle_trust_command,
-    setup_trust,
 )
 from modules.invite_protection import (
     handle_invite_protection,
@@ -172,10 +156,7 @@ class DiscBot(discord.Client):
         setup_server_link()
         setup_sync_interactions()
 
-        # Register Phase 2-4 modules
-        setup_commissions()
-        setup_commission_reviews()
-        setup_portfolio()
+        # Register additional modules
         setup_reports()
         setup_utility()
         setup_communication()
@@ -185,7 +166,6 @@ class DiscBot(discord.Client):
         setup_roles()
         setup_custom_content()
         setup_analytics()
-        setup_trust()
         setup_invite_protection()
 
         # Register help for the modules management command early so it appears in @bot help.
@@ -197,21 +177,17 @@ class DiscBot(discord.Client):
             "Art Tools",
             "Auto-Responder",
             "Automation",
-            "Commission Reviews",
-            "Commissions",
             "Communication",
             "Custom Content",
             "Inactivity Enforcement",
             "Invite Protection",
             "Moderation",
             "Module Management",
-            "Portfolio",
             "Reports",
             "Roles",
             "Scanner",
             "Server Link",
             "Server Stats",
-            "Trust",
             "Utility",
             "Verification",
         }
@@ -461,13 +437,7 @@ class DiscBot(discord.Client):
             if cmd0 in server_link_roots and await handle_server_link_command(message, self):
                 return
 
-            # Phase 2-4 module commands
-            if cmd0 == "commission" and await handle_commission_command(message, self):
-                return
-            if cmd0 == "review" and await handle_commission_reviews_command(message, self):
-                return
-            if cmd0 in {"portfolio", "ratecard"} and await handle_portfolio_command(message, self):
-                return
+            # Additional module commands
             if cmd0 == "report" and await handle_report_command(message, self):
                 return
 
@@ -499,10 +469,6 @@ class DiscBot(discord.Client):
                 return
 
             if cmd0 == "stats" and await handle_analytics_command(message, self):
-                return
-
-            trust_roots = {"trust", "vouch"}
-            if cmd0 in trust_roots and await handle_trust_command(message, self):
                 return
 
             # Custom commands can be any single word; handler uses a short-lived cache to avoid disk IO.

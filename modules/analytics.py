@@ -21,7 +21,6 @@ def setup_analytics() -> None:
         help_command="stats help",
         commands=[
             ("stats commissions [period]", "View commission statistics (period: month/year/all)"),
-            ("stats profile", "View your profile statistics"),
             ("stats bot", "View bot statistics"),
             ("stats trends <metric>", "View trends for a metric (e.g., commissions)"),
         ],
@@ -105,23 +104,6 @@ async def handle_analytics_command(message: discord.Message, bot: discord.Client
         else:
             embed.add_field(name="Total Completed", value=str(stats.get("total_completed", 0)), inline=True)
             embed.add_field(name="Total Value", value=f"${stats.get('total_value', 0):.2f}", inline=True)
-            embed.add_field(
-            color=0x3498db,
-        embed.set_thumbnail(url=message.author.display_avatar.url)
-
-        embed.add_field(name="Total Profile Views", value=str(stats.get("total_views", 0)), inline=True)
-
-        # Recent weeks
-        if stats.get("views_by_week"):
-            week_items = sorted(stats["views_by_week"].items(), reverse=True)[:4]
-            week_text = "\n".join([f"**{week}**: {count} views" for week, count in week_items])
-            embed.add_field(name="Recent Weeks", value=week_text or "No data", inline=False)
-
-        # Portfolio views
-        if stats.get("portfolio_views"):
-            portfolio_items = sorted(stats["portfolio_views"].items(), key=lambda x: x[1], reverse=True)[:5]
-            portfolio_text = "\n".join([f"**Entry {entry_id[:8]}...**: {count} views" for entry_id, count in portfolio_items])
-            embed.add_field(name="Top Portfolio Pieces", value=portfolio_text or "No data", inline=False)
 
         await message.reply(embed=embed, mention_author=False)
         return True
