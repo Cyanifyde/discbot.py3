@@ -104,6 +104,7 @@ from services.ptc_service import (
     restore_ptc_state,
     setup_ptc,
     cleanup_ptc,
+    handle_ptc_reaction,
 )
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import handle_command as handle_modules_command
@@ -559,6 +560,7 @@ class DiscBot(discord.Client):
         """Handle reaction events (bookmarks, reaction roles)."""
         await handle_bookmark_reaction(payload, self)
         await handle_reaction_role_event(payload, self, added=True)
+        await handle_ptc_reaction(payload, self)
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
         """Handle reaction remove events (reaction roles)."""

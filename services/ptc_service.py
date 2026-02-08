@@ -55,7 +55,7 @@ COMMAND_PATTERN = re.compile(r"^ptc\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
 
 SUBCOMMANDS = {
     "setforum", "bind", "unbind", "status", "start",
-    "clear", "force_clear", "debug", "help",
+    "setrules", "clear", "force_clear", "debug", "help",
 }
 
 TAKE_PHRASES = frozenset({
@@ -65,7 +65,7 @@ TAKE_PHRASES = frozenset({
 })
 
 # Admin subcommands that require host-level permissions.
-_HOST_COMMANDS = {"setforum", "bind", "unbind", "clear", "force_clear", "debug", "start"}
+_HOST_COMMANDS = {"setforum", "bind", "unbind", "clear", "force_clear", "debug", "start", "setrules"}
 
 
 class TurnStatus:
@@ -84,6 +84,7 @@ class PTCState:
     forum_channel_id: Optional[int] = None
     bound_thread_id: Optional[int] = None
     active: bool = False
+    rules_channel_id: Optional[int] = None
 
     status: str = TurnStatus.AVAILABLE
     holder_id: Optional[int] = None
@@ -93,6 +94,9 @@ class PTCState:
     last_taker_id: Optional[int] = None
     last_submission_url: Optional[str] = None
     candidates: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Non-persisted: pending rules confirmations {message_id: user_id}
+    pending_rules_confirmations: Dict[int, int] = field(default_factory=dict)
 
     # asyncio handles (not persisted)
     claim_task: Optional[asyncio.Task] = None
@@ -111,6 +115,7 @@ def _state_to_dict(state: PTCState) -> Dict[str, Any]:
         "forum_channel_id": state.forum_channel_id,
         "bound_thread_id": state.bound_thread_id,
         "active": state.active,
+        "rules_channel_id": state.rules_channel_id,
         "status": state.status,
         "holder_id": state.holder_id,
         "holder_name": state.holder_name,
@@ -127,6 +132,7 @@ def _dict_to_state(data: Dict[str, Any]) -> PTCState:
     state.forum_channel_id = data.get("forum_channel_id")
     state.bound_thread_id = data.get("bound_thread_id")
     state.active = data.get("active", False)
+    state.rules_channel_id = data.get("rules_channel_id")
     state.status = data.get("status", TurnStatus.AVAILABLE)
     state.holder_id = data.get("holder_id")
     state.holder_name = data.get("holder_name")
@@ -473,6 +479,22 @@ async def _enforce_thread_message(message: discord.Message, state: PTCState, bot
     # --- Take attempts ---
     if _is_take_attempt(content):
         if state.status in (TurnStatus.AVAILABLE, TurnStatus.EXPIRED):
+            # Check rules channel requirement.
+            if state.rules_channel_id:
+                has_read = await _check_rules_read(message, state.rules_channel_id, bot)
+                if not has_read:
+                    await _try_delete(message)
+                    conf_msg = await message.channel.send(
+                        f"{message.author.mention}, have you read the rules in <#{state.rules_channel_id}>? "
+                        f"React with ✅ to confirm."
+                    )
+                    try:
+                        await conf_msg.add_reaction("✅")
+                    except discord.HTTPException:
+                        pass
+                    state.pending_rules_confirmations[conf_msg.id] = user_id
+                    return
+
             # Reject consecutive turns.
             if state.last_taker_id is not None and user_id == state.last_taker_id:
                 await _try_delete(message)
@@ -493,6 +515,22 @@ async def _enforce_thread_message(message: discord.Message, state: PTCState, bot
             return
 
         if state.status == TurnStatus.CLAIMING:
+            # Check rules channel requirement.
+            if state.rules_channel_id:
+                has_read = await _check_rules_read(message, state.rules_channel_id, bot)
+                if not has_read:
+                    await _try_delete(message)
+                    conf_msg = await message.channel.send(
+                        f"{message.author.mention}, have you read the rules in <#{state.rules_channel_id}>? "
+                        f"React with ✅ to confirm."
+                    )
+                    try:
+                        await conf_msg.add_reaction("✅")
+                    except discord.HTTPException:
+                        pass
+                    state.pending_rules_confirmations[conf_msg.id] = user_id
+                    return
+
             # Reject consecutive turns.
             if state.last_taker_id is not None and user_id == state.last_taker_id:
                 await _try_delete(message)
@@ -621,6 +659,8 @@ async def _handle_command(message: discord.Message, bot: DiscBot) -> bool:
         await _cmd_unbind(message, bot)
     elif subcommand == "start":
         await _cmd_start(message, bot)
+    elif subcommand == "setrules":
+        await _cmd_setrules(message, args)
     elif subcommand == "status":
         await _cmd_status(message)
     elif subcommand == "clear":
@@ -665,6 +705,73 @@ async def _cmd_start(message: discord.Message, bot: DiscBot) -> None:
         pass
 
     logger.info("PTC guild=%s started by %s", guild_id, message.author.id)
+
+
+async def _check_rules_read(message: discord.Message, rules_channel_id: int, bot: DiscBot) -> bool:
+    """Check if the user has posted in the rules channel."""
+    try:
+        rules_channel = bot.get_channel(rules_channel_id)
+        if rules_channel is None:
+            rules_channel = await bot.fetch_channel(rules_channel_id)
+        
+        # Check last 100 messages to see if user has posted there.
+        async for msg in rules_channel.history(limit=100):  # type: ignore[union-attr]
+            if msg.author.id == message.author.id:
+                return True
+        return False
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        # If we can't access the channel, allow the take (don't block).
+        return True
+
+
+async def _cmd_setrules(message: discord.Message, args: str) -> None:
+    """Set the rules channel for PTC."""
+    if not args:
+        await message.reply(
+            "Provide a rules channel ID or mention.\n"
+            "Usage: `ptc setrules <channel_id>` or `ptc setrules #channel`\n"
+            "Use `ptc setrules clear` to remove the requirement.",
+            mention_author=False,
+        )
+        return
+
+    if args.lower() == "clear":
+        guild_id = message.guild.id  # type: ignore[union-attr]
+        state = _get_or_create_state(guild_id)
+        state.rules_channel_id = None
+        await _persist_state(guild_id)
+        await message.reply("Rules channel requirement removed.", mention_author=False)
+        logger.info("PTC guild=%s rules channel cleared by %s", guild_id, message.author.id)
+        return
+
+    # Parse channel mention <#id> or raw id.
+    ch_match = re.search(r"<#(\d+)>", args)
+    if ch_match:
+        channel_id = int(ch_match.group(1))
+    else:
+        raw = args.strip()
+        if raw.isdigit():
+            channel_id = int(raw)
+        else:
+            await message.reply("Invalid channel ID.", mention_author=False)
+            return
+
+    channel = message.guild.get_channel(channel_id)  # type: ignore[union-attr]
+    if channel is None:
+        await message.reply("Channel not found in this server.", mention_author=False)
+        return
+
+    guild_id = message.guild.id  # type: ignore[union-attr]
+    state = _get_or_create_state(guild_id)
+    state.rules_channel_id = channel_id
+    await _persist_state(guild_id)
+
+    await message.reply(
+        f"PTC rules channel set to <#{channel_id}>. "
+        f"Users must have posted in that channel or react to confirm before claiming.",
+        mention_author=False,
+    )
+    logger.info("PTC guild=%s rules channel set to %s by %s", guild_id, channel_id, message.author.id)
 
 
 async def _cmd_setforum(message: discord.Message, args: str) -> None:
@@ -936,6 +1043,7 @@ def register_help() -> None:
         commands=[
             ("ptc help", "Show all PTC commands"),
             ("ptc setforum <channel_id>", "Set the forum channel for PTC"),
+            ("ptc setrules <channel_id>", "Set rules channel requirement (admin)"),
             ("ptc bind [thread_id]", "Bind PTC to a forum thread"),
             ("ptc unbind", "Unbind and deactivate PTC"),
             ("ptc start", "Announce the event has started (admin)"),
@@ -1005,3 +1113,87 @@ async def cleanup_ptc() -> None:
     for state in _guild_states.values():
         await _cancel_timers(state)
     _guild_states.clear()
+
+
+async def handle_ptc_reaction(payload: discord.RawReactionActionEvent, bot: DiscBot) -> None:
+    """Handle reactions for PTC rules confirmation."""
+    if payload.user_id == bot.user.id:  # type: ignore[union-attr]
+        return
+
+    if not payload.guild_id:
+        return
+
+    state = _get_state(payload.guild_id)
+    if state is None or not state.active:
+        return
+
+    # Check if this is a pending rules confirmation.
+    if payload.message_id not in state.pending_rules_confirmations:
+        return
+
+    if str(payload.emoji) != "✅":
+        return
+
+    user_id = state.pending_rules_confirmations.get(payload.message_id)
+    if user_id != payload.user_id:
+        return
+
+    # User confirmed they've read the rules. Remove from pending.
+    state.pending_rules_confirmations.pop(payload.message_id, None)
+
+    # Delete the confirmation message.
+    try:
+        channel = bot.get_channel(payload.channel_id)
+        if channel is None:
+            channel = await bot.fetch_channel(payload.channel_id)
+        
+        msg = await channel.fetch_message(payload.message_id)  # type: ignore[union-attr]
+        await _try_delete(msg)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        pass
+
+    # Now process their take attempt.
+    try:
+        channel = bot.get_channel(payload.channel_id)
+        if channel is None:
+            channel = await bot.fetch_channel(payload.channel_id)
+        
+        member = channel.guild.get_member(user_id)  # type: ignore[union-attr]
+        if member is None:
+            return
+
+        user_name = member.display_name
+
+        # Check if they can still take (status might have changed).
+        if state.status in (TurnStatus.AVAILABLE, TurnStatus.EXPIRED):
+            # Reject consecutive turns.
+            if state.last_taker_id is not None and user_id == state.last_taker_id:
+                asyncio.create_task(
+                    _send_and_auto_delete(
+                        channel,  # type: ignore[arg-type]
+                        f"{member.mention}, you went last. Someone else needs to go first.",
+                    )
+                )
+                return
+
+            # First candidate: start claim window.
+            state.status = TurnStatus.CLAIMING
+            state.candidates = [{"user_id": user_id, "user_name": user_name}]
+            state.claim_task = asyncio.create_task(_claim_window_coro(payload.guild_id, bot))
+            await _persist_state(payload.guild_id)
+            logger.info("PTC guild=%s user %s confirmed rules, entering claim race", payload.guild_id, user_id)
+
+        elif state.status == TurnStatus.CLAIMING:
+            # Reject consecutive turns.
+            if state.last_taker_id is not None and user_id == state.last_taker_id:
+                return
+
+            # Deduplicate.
+            existing_ids = {c["user_id"] for c in state.candidates}
+            if user_id not in existing_ids:
+                state.candidates.append({"user_id": user_id, "user_name": user_name})
+                await _persist_state(payload.guild_id)
+                logger.info("PTC guild=%s user %s confirmed rules, joined claim race", payload.guild_id, user_id)
+
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+        logger.error("Failed to process PTC rules confirmation for user %s: %s", user_id, e)

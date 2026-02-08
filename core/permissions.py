@@ -65,7 +65,7 @@ AVAILABLE_COMMANDS = {
     ],
     "artsearch": ["art search", "art channels", "art help"],
     "ptc": [
-        "ptc setforum", "ptc bind", "ptc unbind", "ptc start", "ptc status",
+        "ptc setforum", "ptc bind", "ptc unbind", "ptc setrules", "ptc start", "ptc status",
         "ptc clear", "ptc force_clear", "ptc debug", "ptc help",
     ],
 }
