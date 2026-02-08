@@ -193,6 +193,116 @@ def predict_image(image, verbose=False):
     return ai_probability
 
 
+def predict_image_with_progress(image, progress_callback=None):
+    """
+    Predict if image is AI-generated from a PIL Image object with progress updates.
+    
+    Args:
+        image: PIL Image object (already loaded)
+        progress_callback: Optional callback function(family_name, idx, total) for progress updates
+    
+    Returns:
+        float: AI probability (0.0 to 1.0)
+    """
+    from features import FeatureExtractor
+    
+    # Load model
+    model_bundle = load_model()
+    model = model_bundle['model']
+    scaler = model_bundle['scaler']
+    feature_names = model_bundle['feature_names']
+    
+    # Image is already loaded, just ensure RGB
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert to numpy array for feature extraction
+    img_array = np.array(image)
+    
+    # Resize if needed
+    h, w = img_array.shape[:2]
+    if max(h, w) > MAX_DIMENSION:
+        scale = MAX_DIMENSION / max(h, w)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        image_resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        img_array = np.array(image_resized)
+    
+    # Extract features with progress updates
+    from image_precomputed import ImagePrecomputedData
+    precomputed = ImagePrecomputedData(img_array)
+    
+    features = {}
+    total_families = len(SELECTED_FAMILIES)
+    
+    for idx, family_name in enumerate(SELECTED_FAMILIES):
+        # Call progress callback if provided
+        if progress_callback:
+            try:
+                progress_callback(family_name, idx, total_families)
+            except Exception:
+                pass
+        
+        # Extract features for this family
+        try:
+            if family_name == 'color':
+                from features_color import extract_color_features
+                features.update(extract_color_features(img_array, precomputed=precomputed))
+            elif family_name == 'frequency':
+                from features_frequency import extract_frequency_features
+                features.update(extract_frequency_features(img_array, precomputed=precomputed))
+            elif family_name == 'spectral_diffusion':
+                from features_spectral_diffusion import extract_spectral_diffusion_features
+                features.update(extract_spectral_diffusion_features(img_array, precomputed=precomputed))
+            elif family_name == 'noise':
+                from features_noise import extract_noise_features
+                features.update(extract_noise_features(img_array, precomputed=precomputed))
+            elif family_name == 'texture':
+                from features_texture import extract_texture_features
+                features.update(extract_texture_features(img_array, precomputed=precomputed))
+            elif family_name == 'gradient':
+                from features_gradient import extract_gradient_features
+                features.update(extract_gradient_features(img_array, precomputed=precomputed))
+            elif family_name == 'forensic':
+                from features_forensic import extract_forensic_features
+                features.update(extract_forensic_features(img_array, precomputed=precomputed))
+            elif family_name == 'model_specific':
+                from features_model_specific import extract_model_specific_features
+                features.update(extract_model_specific_features(img_array, precomputed=precomputed))
+            elif family_name == 'nss':
+                from features_nss import extract_nss_features
+                features.update(extract_nss_features(img_array, precomputed=precomputed))
+            elif family_name == 'cfa':
+                from features_cfa import extract_cfa_features
+                features.update(extract_cfa_features(img_array, precomputed=precomputed))
+            elif family_name == 'self_similarity':
+                from features_self_similarity import extract_self_similarity_features
+                features.update(extract_self_similarity_features(img_array, precomputed=precomputed))
+            elif family_name == 'residual':
+                from features_residual import extract_residual_features
+                features.update(extract_residual_features(img_array, precomputed=precomputed))
+        except Exception as e:
+            print(f"Warning: Failed to extract {family_name} features: {e}", file=sys.stderr)
+    
+    # Build feature vector
+    vec = np.zeros(len(feature_names), dtype=np.float32)
+    for i, name in enumerate(feature_names):
+        vec[i] = features.get(name, 0.0)
+    
+    # Clean NaN/inf
+    vec = np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
+    X = vec.reshape(1, -1)
+    
+    # Scale and predict
+    X_sc = scaler.transform(X)
+    proba = model.predict_proba(X_sc)[0]
+    
+    # Return AI probability (class 1)
+    ai_probability = float(proba[1])
+    
+    return ai_probability
+
+
 def main():
     """Main entry point."""
     if len(sys.argv) < 2:
