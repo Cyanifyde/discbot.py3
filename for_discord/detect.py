@@ -13,11 +13,19 @@ Output:
 """
 
 import sys
+import os
 import joblib
 import numpy as np
 from pathlib import Path
 from PIL import Image
 import warnings
+
+# Limit CPU threads to 1 for resource-constrained environments
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -204,6 +212,13 @@ def predict_image_with_progress(image, progress_callback=None):
     Returns:
         float: AI probability (0.0 to 1.0)
     """
+    # Limit OpenCV threads to 1
+    try:
+        import cv2
+        cv2.setNumThreads(1)
+    except ImportError:
+        pass
+    
     from features import FeatureExtractor
     
     # Load model
