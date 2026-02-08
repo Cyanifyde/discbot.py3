@@ -264,8 +264,27 @@ def predict(image_path, verbose=False):
     
     # Build feature vector
     vec = np.zeros(len(feature_names), dtype=np.float32)
+    matched_features = 0
+    missing_features = []
+    
     for i, name in enumerate(feature_names):
-        vec[i] = features.get(name, 0.0)
+        if name in features:
+            vec[i] = features[name]
+            matched_features += 1
+        else:
+            vec[i] = 0.0
+            if verbose:
+                missing_features.append(name)
+    
+    # Report feature matching statistics
+    if verbose:
+        print(f"  Total features extracted: {len(features)}", file=sys.stderr)
+        print(f"  Model expects: {len(feature_names)} features", file=sys.stderr)
+        print(f"  Matched: {matched_features}/{len(feature_names)} ({100*matched_features/len(feature_names):.1f}%)", file=sys.stderr)
+        if missing_features and len(missing_features) <= 10:
+            print(f"  Missing features (sample): {missing_features[:10]}", file=sys.stderr)
+        elif missing_features:
+            print(f"  Missing {len(missing_features)} features", file=sys.stderr)
     
     # Clean NaN/inf
     vec = np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
@@ -333,8 +352,27 @@ def predict_image(image, verbose=False):
     
     # Build feature vector
     vec = np.zeros(len(feature_names), dtype=np.float32)
+    matched_features = 0
+    missing_features = []
+    
     for i, name in enumerate(feature_names):
-        vec[i] = features.get(name, 0.0)
+        if name in features:
+            vec[i] = features[name]
+            matched_features += 1
+        else:
+            vec[i] = 0.0
+            if verbose:
+                missing_features.append(name)
+    
+    # Report feature matching statistics
+    if verbose:
+        print(f"  Total features extracted: {len(features)}", file=sys.stderr)
+        print(f"  Model expects: {len(feature_names)} features", file=sys.stderr)
+        print(f"  Matched: {matched_features}/{len(feature_names)} ({100*matched_features/len(feature_names):.1f}%)", file=sys.stderr)
+        if missing_features and len(missing_features) <= 10:
+            print(f"  Missing features (sample): {missing_features[:10]}", file=sys.stderr)
+        elif missing_features:
+            print(f"  Missing {len(missing_features)} features", file=sys.stderr)
     
     # Clean NaN/inf
     vec = np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
@@ -424,47 +462,73 @@ def predict_image_with_progress(image, progress_callback=None):
         try:
             if family_name == 'color':
                 from features_color import extract_color_features
-                features.update(extract_color_features(img_array, precomputed=precomputed))
+                family_features = extract_color_features(img_array, precomputed=precomputed)
             elif family_name == 'frequency':
                 from features_frequency import extract_frequency_features
-                features.update(extract_frequency_features(img_array, precomputed=precomputed))
+                family_features = extract_frequency_features(img_array, precomputed=precomputed)
             elif family_name == 'spectral_diffusion':
                 from features_spectral_diffusion import extract_spectral_diffusion_features
-                features.update(extract_spectral_diffusion_features(img_array, precomputed=precomputed))
+                family_features = extract_spectral_diffusion_features(img_array, precomputed=precomputed)
             elif family_name == 'noise':
                 from features_noise import extract_noise_features
-                features.update(extract_noise_features(img_array, precomputed=precomputed))
+                family_features = extract_noise_features(img_array, precomputed=precomputed)
             elif family_name == 'texture':
                 from features_texture import extract_texture_features
-                features.update(extract_texture_features(img_array, precomputed=precomputed))
+                family_features = extract_texture_features(img_array, precomputed=precomputed)
             elif family_name == 'gradient':
                 from features_gradient import extract_gradient_features
-                features.update(extract_gradient_features(img_array, precomputed=precomputed))
+                family_features = extract_gradient_features(img_array, precomputed=precomputed)
             elif family_name == 'forensic':
                 from features_forensic import extract_forensic_features
-                features.update(extract_forensic_features(img_array, precomputed=precomputed))
+                family_features = extract_forensic_features(img_array, precomputed=precomputed)
             elif family_name == 'model_specific':
                 from features_model_specific import extract_model_specific_features
-                features.update(extract_model_specific_features(img_array, precomputed=precomputed))
+                family_features = extract_model_specific_features(img_array, precomputed=precomputed)
             elif family_name == 'nss':
                 from features_nss import extract_nss_features
-                features.update(extract_nss_features(img_array, precomputed=precomputed))
+                family_features = extract_nss_features(img_array, precomputed=precomputed)
             elif family_name == 'cfa':
                 from features_cfa import extract_cfa_features
-                features.update(extract_cfa_features(img_array, precomputed=precomputed))
+                family_features = extract_cfa_features(img_array, precomputed=precomputed)
             elif family_name == 'self_similarity':
                 from features_self_similarity import extract_self_similarity_features
-                features.update(extract_self_similarity_features(img_array, precomputed=precomputed))
+                family_features = extract_self_similarity_features(img_array, precomputed=precomputed)
             elif family_name == 'residual':
                 from features_residual import extract_residual_features
-                features.update(extract_residual_features(img_array, precomputed=precomputed))
+                family_features = extract_residual_features(img_array, precomputed=precomputed)
+            else:
+                print(f"Warning: Unknown family '{family_name}' - skipping", file=sys.stderr)
+                continue
+            
+            # Track feature extraction stats
+            num_extracted = len(family_features)
+            features.update(family_features)
+            print(f"  {family_name}: extracted {num_extracted} features", file=sys.stderr)
+            
         except Exception as e:
             print(f"Warning: Failed to extract {family_name} features: {e}", file=sys.stderr)
     
     # Build feature vector
     vec = np.zeros(len(feature_names), dtype=np.float32)
+    matched_features = 0
+    missing_features = []
+    
     for i, name in enumerate(feature_names):
-        vec[i] = features.get(name, 0.0)
+        if name in features:
+            vec[i] = features[name]
+            matched_features += 1
+        else:
+            vec[i] = 0.0
+            missing_features.append(name)
+    
+    # Report feature matching statistics
+    print(f"  Total features extracted: {len(features)}", file=sys.stderr)
+    print(f"  Model expects: {len(feature_names)} features", file=sys.stderr)
+    print(f"  Matched: {matched_features}/{len(feature_names)} ({100*matched_features/len(feature_names):.1f}%)", file=sys.stderr)
+    if missing_features and len(missing_features) <= 10:
+        print(f"  Missing features (sample): {missing_features[:10]}", file=sys.stderr)
+    elif missing_features:
+        print(f"  Missing {len(missing_features)} features", file=sys.stderr)
     
     # Clean NaN/inf
     vec = np.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
