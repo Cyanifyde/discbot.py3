@@ -54,7 +54,7 @@ TURN_EXPIRY_SECONDS = 30 * 60  # 30 minutes
 COMMAND_PATTERN = re.compile(r"^ptc\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
 
 SUBCOMMANDS = {
-    "setforum", "bind", "unbind", "status",
+    "setforum", "bind", "unbind", "status", "start",
     "clear", "force_clear", "debug", "help",
 }
 
@@ -65,7 +65,7 @@ TAKE_PHRASES = frozenset({
 })
 
 # Admin subcommands that require host-level permissions.
-_HOST_COMMANDS = {"setforum", "bind", "unbind", "clear", "force_clear", "debug"}
+_HOST_COMMANDS = {"setforum", "bind", "unbind", "clear", "force_clear", "debug", "start"}
 
 
 class TurnStatus:
@@ -619,6 +619,8 @@ async def _handle_command(message: discord.Message, bot: DiscBot) -> bool:
         await _cmd_bind(message, args, bot)
     elif subcommand == "unbind":
         await _cmd_unbind(message, bot)
+    elif subcommand == "start":
+        await _cmd_start(message, bot)
     elif subcommand == "status":
         await _cmd_status(message)
     elif subcommand == "clear":
@@ -636,6 +638,33 @@ async def _handle_command(message: discord.Message, bot: DiscBot) -> bool:
 # ---------------------------------------------------------------------------
 # Subcommand implementations
 # ---------------------------------------------------------------------------
+
+
+async def _cmd_start(message: discord.Message, bot: DiscBot) -> None:
+    """Start the PTC event in the current bound thread."""
+    guild_id = message.guild.id  # type: ignore[union-attr]
+    state = _get_state(guild_id)
+
+    if state is None or not state.active:
+        await message.reply(
+            "PTC is not bound to a thread yet. Use `ptc bind` first.",
+            mention_author=False,
+        )
+        return
+
+    # Delete the command message itself.
+    await _try_delete(message)
+
+    thread = await _get_thread(guild_id, bot, state)
+    if thread is None:
+        return
+
+    try:
+        await thread.send("**Event started!** Say **taken** to claim the canvas.")
+    except discord.HTTPException:
+        pass
+
+    logger.info("PTC guild=%s started by %s", guild_id, message.author.id)
 
 
 async def _cmd_setforum(message: discord.Message, args: str) -> None:
@@ -909,6 +938,7 @@ def register_help() -> None:
             ("ptc setforum <channel_id>", "Set the forum channel for PTC"),
             ("ptc bind [thread_id]", "Bind PTC to a forum thread"),
             ("ptc unbind", "Unbind and deactivate PTC"),
+            ("ptc start", "Announce the event has started (admin)"),
             ("ptc status", "Show current PTC state"),
             ("ptc clear", "Clear turn state (admin)"),
             ("ptc force_clear", "Force clear and unbind (admin)"),
