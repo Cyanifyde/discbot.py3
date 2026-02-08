@@ -21,11 +21,13 @@ from PIL import Image
 import warnings
 
 # Limit CPU threads to 1 for resource-constrained environments
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
+# Note: These should ideally be set before any numpy/scipy imports (see main.py)
+os.environ.setdefault('OMP_NUM_THREADS', '1')
+os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+os.environ.setdefault('MKL_NUM_THREADS', '1')
+os.environ.setdefault('VECLIB_MAXIMUM_THREADS', '1')
+os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
+os.environ.setdefault('NUMBA_NUM_THREADS', '1')
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')

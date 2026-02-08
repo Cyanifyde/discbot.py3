@@ -10,6 +10,14 @@ import logging
 import os
 from pathlib import Path
 
+# Set thread limits BEFORE any imports (prevents libgomp/OpenMP thread creation errors)
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+os.environ['NUMBA_NUM_THREADS'] = '1'
+
 from dotenv import load_dotenv
 from discord.errors import PrivilegedIntentsRequired
 
