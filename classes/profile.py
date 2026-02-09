@@ -2,7 +2,7 @@
 Profile responder.
 
 Handles artist profile management including bio, pronouns, specialties,
-commission status, and portfolio links.
+and portfolio links.
 """
 from __future__ import annotations
 
@@ -28,18 +28,9 @@ DEFAULT_EMBED: Dict[str, Any] = {
     "fields": [
         {"name": "Pronouns", "value": "{pronouns}", "inline": True},
         {"name": "Specialties", "value": "{specialties}", "inline": True},
-        {"name": "Commission Status", "value": "{commission_status}", "inline": True},
         {"name": "Portfolio", "value": "{links}", "inline": False},
     ],
     "footer": {"text": "Use profile setbio / setpronouns / setspecialities / addlink"},
-}
-DEFAULT_COMMISSION_EMBED: Dict[str, Any] = {
-    "title": "Commission Info: {user}",
-    "color": 0x2B6CB0,
-    "fields": [
-        {"name": "Status", "value": "{commission_status}", "inline": True},
-        {"name": "Info", "value": "{commission_info}", "inline": False},
-    ],
 }
 
 MAX_LINKS = 20
@@ -48,8 +39,6 @@ BIO_LIMIT = 800
 PRONOUNS_LIMIT = 80
 SPECIALTY_ITEM_LIMIT = 40
 SPECIALTIES_MAX = 12
-COMMISSION_STATUS_LIMIT = 80
-COMMISSION_INFO_LIMIT = 1200
 
 SPECIALTY_SPLIT_RE = re.compile(r"[,\n;/]+")
 COLOR_HEX_RE = re.compile(r"^#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -76,9 +65,9 @@ class ProfileResponder(BaseResponder):
         if command in {"setspecialities", "setspecialties"}:
             return await _handle_set_specialties(payload, rest)
         if command in {"commissionstatus", "commisionstatus"}:
-            return await _handle_commission_status_command(payload, rest)
+            return "Commission features have been removed."
         if command in {"commissioninfo", "commisioninfo"}:
-            return await _handle_commission_info_command(payload, rest)
+            return "Commission features have been removed."
         if command in {"bio"}:
             return await _handle_bio(payload, rest)
         if command in {"pronouns"}:
@@ -92,7 +81,7 @@ class ProfileResponder(BaseResponder):
         if command in {"remove", "removelink", "rm", "delete", "del"}:
             return await _handle_remove_link(payload, rest)
         if command in {"commission", "commision"}:
-            return await _handle_commission(payload, rest)
+            return "Commission features have been removed."
         if command == "timezone":
             return await _handle_timezone_command(payload, rest)
         if command == "contact":
@@ -130,20 +119,6 @@ async def _handle_set(payload: ResponderInput, rest: str) -> str:
     if command in {"specialities", "specialties"}:
         return await _handle_set_specialties(payload, value)
     return "Usage: profile set bio|pronouns|specialities <value>"
-
-
-async def _handle_commission_status_command(payload: ResponderInput, rest: str) -> str:
-    subcommand, value = _split_command(rest)
-    if subcommand.lower() == "set":
-        return await _handle_set_commission_status(payload, value)
-    return "Usage: profile commissionstatus set <text>"
-
-
-async def _handle_commission_info_command(payload: ResponderInput, rest: str) -> str:
-    subcommand, value = _split_command(rest)
-    if subcommand.lower() == "set":
-        return await _handle_set_commission_info(payload, value)
-    return "Usage: profile commissioninfo set <text|embed-json>"
 
 
 async def _handle_view(payload: ResponderInput, rest: str) -> Any:
@@ -218,37 +193,6 @@ async def _handle_links(payload: ResponderInput, rest: str) -> str:
     return _format_links(links, LINKS_TEXT_LIMIT) or "_No links yet._"
 
 
-async def _handle_commission(payload: ResponderInput, rest: str) -> Any:
-    rest = rest.strip()
-    if rest.lower().startswith("info"):
-        rest = rest[4:].strip()
-    message = payload.message
-    target = await _resolve_target(message, rest)
-    record = await _load_record(target.id)
-    if record is None:
-        if target.id != message.author.id:
-            return f"No profile found for {_safe_name(target)}."
-        record = await _load_default_record()
-    record = _normalize_record(record)
-    embed = _build_commission_embed(record, target)
-    return {"embed": embed}
-
-
-async def get_commission_embed_for(
-    viewer: discord.abc.User,
-    target: Optional[discord.abc.User] = None,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    resolved = target or viewer
-    record = await _load_record(resolved.id)
-    if record is None:
-        if resolved.id != viewer.id:
-            return None, f"No profile found for {_safe_name(resolved)}."
-        record = await _load_default_record()
-    record = _normalize_record(record)
-    embed = _build_commission_embed(record, resolved)
-    return embed, None
-
-
 async def _handle_set_bio(payload: ResponderInput, rest: str) -> str:
     text = rest.strip()
     if not text:
@@ -280,32 +224,6 @@ async def _handle_set_specialties(payload: ResponderInput, rest: str) -> str:
     record["specialties"] = specialties[:SPECIALTIES_MAX]
     await _save_record(payload.message.author.id, record)
     return f"Specialties updated ({len(record['specialties'])})."
-
-
-async def _handle_set_commission_status(payload: ResponderInput, rest: str) -> str:
-    text = rest.strip()
-    if not text:
-        return "Usage: profile setcommissionstatus <text>"
-    record = await _load_or_default(payload.message.author.id)
-    record["commission_status"] = _trim(text, COMMISSION_STATUS_LIMIT)
-    await _save_record(payload.message.author.id, record)
-    return "Commission status updated."
-
-
-async def _handle_set_commission_info(payload: ResponderInput, rest: str) -> str:
-    raw = rest.strip()
-    if not raw:
-        return "Usage: profile setcommissioninfo <text|embed-json>"
-    parsed = _parse_embed_json(raw)
-    record = await _load_or_default(payload.message.author.id)
-    if parsed is not None:
-        normalized = _sanitize_embed(parsed)
-        record["commission_embed"] = normalized if isinstance(normalized, dict) else parsed
-        await _save_record(payload.message.author.id, record)
-        return "Commission embed updated."
-    record["commission_info"] = _trim(raw, COMMISSION_INFO_LIMIT)
-    await _save_record(payload.message.author.id, record)
-    return "Commission info updated."
 
 
 async def _handle_add_link(payload: ResponderInput, rest: str) -> str:
@@ -353,12 +271,8 @@ def _help_text() -> str:
         "profile notifications <setting> <on|off>\n"
         "profile privacy <on|off>\n"
         "profile quickedit <field=value> ...\n"
-        "profile commissionstatus set <text>\n"
-        "profile commissioninfo set <text|embed-json>\n"
         "profile addlink <url> [text]\n"
         "profile removelink <number>\n"
-        "profile commission [@user]\n"
-        "profile commission info [@user]\n"
         "profile bio [@user]\n"
         "profile pronouns [@user]\n"
         "profile specialties [@user]\n"
@@ -374,15 +288,11 @@ def _default_record() -> Dict[str, Any]:
         "pronouns": "",
         "specialties": [],
         "links": [],
-        "commission_status": "",
-        "commission_info": "",
-        "commission_embed": None,
         "embed": dict(DEFAULT_EMBED),
         # Enhanced profile fields
         "timezone": None,
         "contact_preference": "dm_open",
         "email": None,
-        "featured_commission_id": None,
         "identity_verified": False,
         "verified_at": None,
         "verified_by": None,
@@ -395,7 +305,6 @@ def _default_record() -> Dict[str, Any]:
             "timezone": None,
         },
         "notification_preferences": {
-            "commission_updates": True,
             "waitlist_notifications": True,
             "vouch_received": True,
             "digest_mode": False,
@@ -439,15 +348,6 @@ def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
             if not isinstance(text, str) or not text.strip():
                 text = link
             links.append({"link": link.strip(), "text": _trim(text.strip(), 200)})
-    commission_status = (
-        record.get("commission_status") if isinstance(record.get("commission_status"), str) else ""
-    )
-    commission_info = (
-        record.get("commission_info") if isinstance(record.get("commission_info"), str) else ""
-    )
-    commission_embed = record.get("commission_embed")
-    if not isinstance(commission_embed, dict):
-        commission_embed = None
     embed = record.get("embed")
     if not isinstance(embed, dict):
         embed = dict(DEFAULT_EMBED)
@@ -458,7 +358,6 @@ def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
     if contact_preference not in ["dm_open", "dm_closed", "email_only"]:
         contact_preference = "dm_open"
     email = record.get("email") if isinstance(record.get("email"), str) else None
-    featured_commission_id = record.get("featured_commission_id") if isinstance(record.get("featured_commission_id"), str) else None
     identity_verified = bool(record.get("identity_verified"))
     verified_at = record.get("verified_at") if isinstance(record.get("verified_at"), str) else None
     verified_by = record.get("verified_by") if isinstance(record.get("verified_by"), (int, str)) else None
@@ -486,14 +385,12 @@ def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
     notif_prefs_raw = record.get("notification_preferences")
     if isinstance(notif_prefs_raw, dict):
         notif_prefs = {
-            "commission_updates": bool(notif_prefs_raw.get("commission_updates", True)),
             "waitlist_notifications": bool(notif_prefs_raw.get("waitlist_notifications", True)),
             "vouch_received": bool(notif_prefs_raw.get("vouch_received", True)),
             "digest_mode": bool(notif_prefs_raw.get("digest_mode", False)),
         }
     else:
         notif_prefs = {
-            "commission_updates": True,
             "waitlist_notifications": True,
             "vouch_received": True,
             "digest_mode": False,
@@ -504,15 +401,11 @@ def _normalize_record(record: Dict[str, Any]) -> Dict[str, Any]:
         "pronouns": _trim(pronouns, PRONOUNS_LIMIT),
         "specialties": specialties[:SPECIALTIES_MAX],
         "links": links[:MAX_LINKS],
-        "commission_status": _trim(commission_status, COMMISSION_STATUS_LIMIT),
-        "commission_info": _trim(commission_info, COMMISSION_INFO_LIMIT),
-        "commission_embed": commission_embed,
         "embed": embed,
         # Enhanced fields
         "timezone": timezone,
         "contact_preference": contact_preference,
         "email": email,
-        "featured_commission_id": featured_commission_id,
         "identity_verified": identity_verified,
         "verified_at": verified_at,
         "verified_by": verified_by,
@@ -635,7 +528,7 @@ def _render_placeholders(value: Any, placeholders: Dict[str, str]) -> Any:
 
 
 def _build_profile_embed(record: Dict[str, Any], target: discord.abc.User) -> Dict[str, Any]:
-    placeholders = _profile_placeholders(record, target, include_commission_info=False)
+    placeholders = _profile_placeholders(record, target)
     template = record.get("embed")
     if not isinstance(template, dict):
         template = dict(DEFAULT_EMBED)
@@ -643,42 +536,9 @@ def _build_profile_embed(record: Dict[str, Any], target: discord.abc.User) -> Di
     return _sanitize_embed(rendered)
 
 
-def _build_commission_embed(record: Dict[str, Any], target: discord.abc.User) -> Dict[str, Any]:
-    template = record.get("commission_embed")
-    allow_auto_fields = False
-    if not isinstance(template, dict):
-        template = dict(DEFAULT_COMMISSION_EMBED)
-        allow_auto_fields = True
-    placeholders = _profile_placeholders(record, target, include_commission_info=True)
-    rendered = _render_placeholders(template, placeholders)
-    if allow_auto_fields:
-        has_status = _template_has_placeholder(template, "commission_status")
-        has_info = _template_has_placeholder(template, "commission_info")
-        if not has_status or not has_info:
-            existing_fields = rendered.get("fields")
-            fields: List[Dict[str, Any]] = []
-            if isinstance(existing_fields, list):
-                for item in existing_fields:
-                    if isinstance(item, dict):
-                        fields.append(dict(item))
-            has_status_field = _fields_have_label(fields, ["status"])
-            has_info_field = _fields_have_label(fields, ["info"])
-            if not has_status and not has_status_field:
-                fields.append(
-                    {"name": "Status", "value": placeholders["commission_status"], "inline": True}
-                )
-            if not has_info and not has_info_field:
-                fields.append(
-                    {"name": "Info", "value": placeholders["commission_info"], "inline": False}
-                )
-            rendered["fields"] = fields
-    return _sanitize_embed(rendered)
-
-
 def _profile_placeholders(
     record: Dict[str, Any],
     target: discord.abc.User,
-    include_commission_info: bool,
 ) -> Dict[str, str]:
     bio = _clean_text(record.get("bio", ""), BIO_LIMIT, "_No bio set._")
     pronouns = _clean_text(record.get("pronouns", ""), PRONOUNS_LIMIT, "_Not set._")
@@ -688,21 +548,12 @@ def _profile_placeholders(
     else:
         specialties_text = "_Not set._"
     links = _format_links(record.get("links", []), LINKS_TEXT_LIMIT)
-    commission_status = _clean_text(record.get("commission_status", ""), COMMISSION_STATUS_LIMIT, "_Not set._")
-    if include_commission_info:
-        commission_info = _clean_text(
-            record.get("commission_info", ""), COMMISSION_INFO_LIMIT, "_Not set._"
-        )
-    else:
-        commission_info = "_Use profile commission._"
     return {
         "user": _safe_name(target),
         "bio": bio,
         "pronouns": pronouns,
         "specialties": specialties_text,
         "links": links,
-        "commission_status": commission_status,
-        "commission_info": commission_info,
     }
 
 
@@ -965,12 +816,12 @@ async def _handle_notifications_command(payload: ResponderInput, rest: str) -> s
     """Handle 'profile notifications <setting> <on|off>' command."""
     parts = rest.split()
     if len(parts) < 2:
-        return "Usage: profile notifications <setting> <on|off>\nSettings: commission_updates, waitlist_notifications, vouch_received, digest_mode"
+        return "Usage: profile notifications <setting> <on|off>\nSettings: waitlist_notifications, vouch_received, digest_mode"
 
     setting = parts[0].lower()
     toggle = parts[1].lower()
 
-    valid_settings = ["commission_updates", "waitlist_notifications", "vouch_received", "digest_mode"]
+    valid_settings = ["waitlist_notifications", "vouch_received", "digest_mode"]
     if setting not in valid_settings:
         return f"Invalid setting. Valid: {', '.join(valid_settings)}"
 

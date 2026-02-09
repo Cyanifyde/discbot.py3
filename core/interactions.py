@@ -11,6 +11,8 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 import discord
 
+from core.error_handler import handle_event_error
+
 logger = logging.getLogger("discbot.interactions")
 
 # Type alias for interaction handlers
@@ -69,6 +71,11 @@ async def _handle_component(interaction: discord.Interaction) -> bool:
                 return await handler(interaction)
             except Exception as e:
                 logger.error("Error in component handler for %s: %s", prefix, e)
+                await handle_event_error(
+                    e, context=f"component:{prefix}",
+                    guild_id=interaction.guild.id if interaction.guild else None,
+                    channel_id=interaction.channel_id,
+                )
                 # Try to respond with error if not already responded
                 try:
                     if not interaction.response.is_done():

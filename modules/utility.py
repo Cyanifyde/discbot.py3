@@ -34,7 +34,7 @@ def setup_utility() -> None:
         commands=[
             ("bookmark help", "Bookmark commands"),
             ("afk help", "AFK status commands"),
-            ("note help", "Personal notes commands"),
+            ("mynote help", "Personal notes commands"),
             ("alias help", "Command alias commands (mod only)"),
             ("export help", "User data export command"),
             ("utility help", "Show this help message"),
@@ -79,14 +79,14 @@ def setup_utility() -> None:
     help_system.register_module(
         name="Notes",
         description="Personal notes stored by the bot (private to you).",
-        help_command="note help",
+        help_command="mynote help",
         commands=[
-            ("note add <content>", "Add personal note"),
-            ("notes", "List personal notes"),
-            ("note view <id>", "View a note"),
-            ("note edit <id> <text>", "Edit a note"),
-            ("note remove <id>", "Remove note"),
-            ("note help", "Show this help message"),
+            ("mynote add <content>", "Add personal note"),
+            ("mynotes", "List personal notes"),
+            ("mynote view <id>", "View a note"),
+            ("mynote edit <id> <text>", "Edit a note"),
+            ("mynote remove <id>", "Remove note"),
+            ("mynote help", "Show this help message"),
         ],
         group="Utility",
         hidden=True,
@@ -145,7 +145,7 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
         target_map = {
             "bookmark": "Bookmarks",
             "afk": "AFK",
-            "note": "Notes",
+            "mynote": "Notes",
             "alias": "Aliases",
             "export": "Export",
         }
@@ -169,10 +169,10 @@ async def handle_utility_command(message: discord.Message, bot: discord.Client) 
     elif command == "afk":
         await _handle_afk(message, parts, bot)
         return True
-    elif command == "note":
+    elif command == "mynote":
         await _handle_note(message, parts)
         return True
-    elif command == "notes":
+    elif command == "mynotes":
         await _handle_notes_list(message)
         return True
     elif command == "alias":
@@ -811,7 +811,7 @@ async def _handle_afk(message: discord.Message, parts: list[str], bot: discord.C
 async def _handle_note(message: discord.Message, parts: list[str]) -> None:
     """Handle note commands."""
     if len(parts) < 2:
-        await message.reply(" Usage: `note <add|view|edit|remove>`")
+        await message.reply(" Usage: `mynote <add|view|edit|remove>`")
         return
 
     subcommand = parts[1].lower()
@@ -825,13 +825,13 @@ async def _handle_note(message: discord.Message, parts: list[str]) -> None:
     elif subcommand == "remove":
         await _handle_note_remove(message, parts)
     else:
-        await message.reply(" Usage: `note <add|view|edit|remove>`")
+        await message.reply(" Usage: `mynote <add|view|edit|remove>`")
 
 
 async def _handle_note_add(message: discord.Message, parts: list[str]) -> None:
     """Add a personal note."""
     if len(parts) < 3:
-        await message.reply(" Usage: `note add <content>`")
+        await message.reply(" Usage: `mynote add <content>`")
         return
 
     content = parts[2]
@@ -876,7 +876,7 @@ async def _handle_notes_list(message: discord.Message) -> None:
 async def _handle_note_remove(message: discord.Message, parts: list[str]) -> None:
     """Remove a note."""
     if len(parts) < 3:
-        await message.reply(" Usage: `note remove <id>`")
+        await message.reply(" Usage: `mynote remove <id>`")
         return
 
     note_id = parts[2]
@@ -904,7 +904,7 @@ async def _handle_note_remove(message: discord.Message, parts: list[str]) -> Non
 async def _handle_note_view(message: discord.Message, parts: list[str]) -> None:
     """View a note."""
     if len(parts) < 3:
-        await message.reply(" Usage: `note view <id>`")
+        await message.reply(" Usage: `mynote view <id>`")
         return
     note_id = parts[2].strip()
     store = UtilityStore(message.author.id)
@@ -928,11 +928,11 @@ async def _handle_note_view(message: discord.Message, parts: list[str]) -> None:
 async def _handle_note_edit(message: discord.Message, parts: list[str]) -> None:
     """Edit a note."""
     if len(parts) < 3:
-        await message.reply(" Usage: `note edit <id> <text>`")
+        await message.reply(" Usage: `mynote edit <id> <text>`")
         return
     args = parts[2].split(maxsplit=1)
     if len(args) < 2:
-        await message.reply(" Usage: `note edit <id> <text>`")
+        await message.reply(" Usage: `mynote edit <id> <text>`")
         return
     note_id_prefix = args[0]
     new_text = args[1].strip()

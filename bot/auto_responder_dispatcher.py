@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 from modules.auto_responder import handle_auto_responder
+from core.error_handler import handle_event_error
 
 if TYPE_CHECKING:
     import discord
@@ -95,6 +96,11 @@ class AutoResponderDispatcher:
                 except Exception:
                     mid = None
                 logger.error("Auto-responder worker %d failed for message %s: %s", worker_id, mid, e)
+                await handle_event_error(
+                    e, context="auto_responder_worker",
+                    guild_id=getattr(msg, "guild", None) and msg.guild.id,
+                    channel_id=getattr(msg, "channel", None) and msg.channel.id,
+                )
             finally:
                 self._processed += 1
                 try:

@@ -14,7 +14,6 @@ from typing import Any, Optional
 import discord
 from discord import app_commands
 
-from classes import profile as profile_module
 from core.config import (
     ConfigError,
     OWNER_ID,
@@ -24,6 +23,12 @@ from core.config import (
 )
 from core.config_migration import migrate_all_guild_configs
 from core.constants import K
+from core.error_handler import (
+    handle_command_error,
+    handle_event_error,
+    handle_interaction_error,
+    handle_slash_command_error,
+)
 from core.interactions import handle_interaction
 from core.io_utils import read_json, read_text
 from core.paths import resolve_repo_path
@@ -87,10 +92,6 @@ from modules.roles import (
 from modules.custom_content import (
     handle_custom_content_command,
     setup_custom_content,
-)
-from modules.analytics import (
-    handle_analytics_command,
-    setup_analytics,
 )
 from modules.invite_protection import (
     handle_invite_protection,
@@ -159,6 +160,14 @@ class DiscBot(discord.Client):
         self.user_utility = UserUtilityService(max_stores=5000, afk_cache_ttl_seconds=5.0)
         self.bookmark_scheduler = BookmarkScheduler()
 
+    async def _safe_dispatch(self, handler_coro, message: discord.Message) -> bool:
+        """Wrap a command handler coroutine with centralised error handling."""
+        try:
+            return await handler_coro
+        except Exception as e:
+            await handle_command_error(e, message)
+            return True
+
     # ─── Lifecycle ────────────────────────────────────────────────────────────
 
     async def setup_hook(self) -> None:
@@ -179,7 +188,6 @@ class DiscBot(discord.Client):
         setup_automation()
         setup_roles()
         setup_custom_content()
-        setup_analytics()
         setup_invite_protection()
         setup_ptc()
 
@@ -187,7 +195,6 @@ class DiscBot(discord.Client):
         register_modules_help()
 
         expected_help = {
-            "Analytics",
             "Art Search",
             "Art Tools",
             "Auto-Responder",
@@ -230,24 +237,48 @@ class DiscBot(discord.Client):
             await self._initialize_existing_guilds()
 
             # Restore verification buttons from saved data
-            await restore_verification_views(self)
+            try:
+                await restore_verification_views(self)
+            except Exception as e:
+                await handle_event_error(e, context="restore_verification_views")
 
             # Restore service states (inactivity)
-            await restore_inactivity_state(self)
+            try:
+                await restore_inactivity_state(self)
+            except Exception as e:
+                await handle_event_error(e, context="restore_inactivity_state")
 
             # Restore scanner state (also registers scanner help)
-            await restore_scanner_state(self)
+            try:
+                await restore_scanner_state(self)
+            except Exception as e:
+                await handle_event_error(e, context="restore_scanner_state")
 
             # Restore PTC state (timers, etc.)
-            await restore_ptc_state(self)
+            try:
+                await restore_ptc_state(self)
+            except Exception as e:
+                await handle_event_error(e, context="restore_ptc_state")
 
             # Restore reaction role emojis
-            await restore_reaction_roles(self)
+            try:
+                await restore_reaction_roles(self)
+            except Exception as e:
+                await handle_event_error(e, context="restore_reaction_roles")
 
             # Start bounded dispatchers/schedulers
-            await self.auto_responder.start(self)
-            await self.bookmark_scheduler.start(self)
-            await self.bookmark_scheduler.restore_from_index(self)
+            try:
+                await self.auto_responder.start(self)
+            except Exception as e:
+                await handle_event_error(e, context="auto_responder_start")
+            try:
+                await self.bookmark_scheduler.start(self)
+            except Exception as e:
+                await handle_event_error(e, context="bookmark_scheduler_start")
+            try:
+                await self.bookmark_scheduler.restore_from_index(self)
+            except Exception as e:
+                await handle_event_error(e, context="bookmark_scheduler_restore")
 
             self._status_task = asyncio.create_task(self._status_loop())
 
@@ -377,20 +408,32 @@ class DiscBot(discord.Client):
 
         # Handle DMs
         if message.guild is None:
-            await handle_dm_send(self, message)
+            try:
+                await handle_dm_send(self, message)
+            except Exception as e:
+                await handle_event_error(e, context="dm_send", channel_id=message.channel.id)
             return
 
         # Invite protection runs before other handlers (can delete messages)
-        if await handle_invite_protection(message, self):
-            return
+        try:
+            if await handle_invite_protection(message, self):
+                return
+        except Exception as e:
+            await handle_event_error(e, context="invite_protection", guild_id=message.guild.id, channel_id=message.channel.id)
 
         # PTC enforcement: intercepts ALL messages in bound threads + ptc commands
-        if await handle_ptc_message(message, self):
-            return
+        try:
+            if await handle_ptc_message(message, self):
+                return
+        except Exception as e:
+            await handle_event_error(e, context="ptc_message", guild_id=message.guild.id, channel_id=message.channel.id)
 
         # Check for help command first (before other handlers)
-        if await self._handle_help_command(message):
-            return
+        try:
+            if await self._handle_help_command(message):
+                return
+        except Exception as e:
+            await handle_command_error(e, message)
         # Fast dispatch: only call handlers that match the first token.
         content = (message.content or "").strip()
         if content:
@@ -399,36 +442,26 @@ class DiscBot(discord.Client):
             cmd1 = parts[1].lower() if len(parts) > 1 else ""
 
             # Auto-responder admin commands
-            if cmd0 == "listresponses" and await handle_list_responses_command(message):
+            if cmd0 == "listresponses" and await self._safe_dispatch(handle_list_responses_command(message), message):
                 return
-            if cmd0 == "addresponse" and await handle_add_response_command(message):
+            if cmd0 == "addresponse" and await self._safe_dispatch(handle_add_response_command(message), message):
                 return
-            if cmd0 == "removeresponse" and await handle_remove_response_command(message):
+            if cmd0 == "removeresponse" and await self._safe_dispatch(handle_remove_response_command(message), message):
                 return
 
             # Admin / core commands
-            if cmd0 == "modules" and await handle_modules_command(message):
+            if cmd0 == "modules" and await self._safe_dispatch(handle_modules_command(message), message):
                 return
 
-            if cmd0 in {"verification", "addverification"} and await handle_verification_command(message, self):
+            if cmd0 in {"verification", "addverification"} and await self._safe_dispatch(handle_verification_command(message, self), message):
                 return
-            if cmd0 == "removeverification" and await handle_remove_verification_command(message, self):
-                return
-
-            if cmd0 == "scanner" and await handle_scanner_command(message, self):
-                return
-            if cmd0 == "inactivity" and await handle_inactivity_command(message, self):
+            if cmd0 == "removeverification" and await self._safe_dispatch(handle_remove_verification_command(message, self), message):
                 return
 
-            # Moderation vs Utility note/notes name collision:
-            # - Utility personal notes: `note add/view/edit/remove`, `notes`
-            # - Moderation notes: `note @user ...`, `notes @user`
-            if cmd0 == "note" and cmd1 in {"add", "view", "edit", "remove", "help"}:
-                if await handle_utility_command(message, self):
-                    return
-            if cmd0 == "notes" and not message.mentions:
-                if await handle_utility_command(message, self):
-                    return
+            if cmd0 == "scanner" and await self._safe_dispatch(handle_scanner_command(message, self), message):
+                return
+            if cmd0 == "inactivity" and await self._safe_dispatch(handle_inactivity_command(message, self), message):
+                return
 
             mod_roots = {
                 "moderation",
@@ -445,10 +478,10 @@ class DiscBot(discord.Client):
                 "notes",
                 "clearnote",
             }
-            if cmd0 in mod_roots and await handle_moderation_command(message, self):
+            if cmd0 in mod_roots and await self._safe_dispatch(handle_moderation_command(message, self), message):
                 return
 
-            if cmd0 in {"serverstats", "botstatus"} and await handle_serverstats_command(message, self):
+            if cmd0 in {"serverstats", "botstatus"} and await self._safe_dispatch(handle_serverstats_command(message, self), message):
                 return
 
             server_link_roots = {
@@ -460,45 +493,42 @@ class DiscBot(discord.Client):
                 "linksettings",
                 "linkprotection",
             }
-            if cmd0 in server_link_roots and await handle_server_link_command(message, self):
+            if cmd0 in server_link_roots and await self._safe_dispatch(handle_server_link_command(message, self), message):
                 return
 
             # Additional module commands
-            if cmd0 == "report" and await handle_report_command(message, self):
+            if cmd0 == "report" and await self._safe_dispatch(handle_report_command(message, self), message):
                 return
 
-            utility_roots = {"utility", "bookmark", "afk", "note", "notes", "alias", "export"}
-            if cmd0 in utility_roots and await handle_utility_command(message, self):
+            utility_roots = {"utility", "bookmark", "afk", "mynote", "mynotes", "alias", "export"}
+            if cmd0 in utility_roots and await self._safe_dispatch(handle_utility_command(message, self), message):
                 return
 
             communication_roots = {"communication", "feedback", "notify", "ack"}
-            if cmd0 in communication_roots and await handle_communication_command(message, self):
+            if cmd0 in communication_roots and await self._safe_dispatch(handle_communication_command(message, self), message):
                 return
 
             # Art: `art help` (tools), `art search/channels` (search), plus `palette/prompt/artdice`.
             if cmd0 in {"art", "palette", "prompt", "artdice"}:
-                if await handle_art_tools_command(message, self):
+                if await self._safe_dispatch(handle_art_tools_command(message, self), message):
                     return
-                if await handle_art_search_command(message, self):
+                if await self._safe_dispatch(handle_art_search_command(message, self), message):
                     return
-            if cmd0 == "artsearch" and await handle_art_search_command(message, self):
+            if cmd0 == "artsearch" and await self._safe_dispatch(handle_art_search_command(message, self), message):
                 return
 
-            if cmd0 in {"automation", "trigger", "schedule", "vacation"} and await handle_automation_command(message, self):
+            if cmd0 in {"automation", "trigger", "schedule", "vacation"} and await self._safe_dispatch(handle_automation_command(message, self), message):
                 return
 
             roles_roots = {"roles", "temprole", "requestrole", "approverole", "rolebundle", "reactionrole"}
-            if cmd0 in roles_roots and await handle_roles_command(message, self):
+            if cmd0 in roles_roots and await self._safe_dispatch(handle_roles_command(message, self), message):
                 return
 
-            if cmd0 in {"custom", "customcmd", "form"} and await handle_custom_content_command(message, self):
-                return
-
-            if cmd0 == "stats" and await handle_analytics_command(message, self):
+            if cmd0 in {"custom", "customcmd", "form"} and await self._safe_dispatch(handle_custom_content_command(message, self), message):
                 return
 
             # Custom commands can be any single word; handler uses a short-lived cache to avoid disk IO.
-            if await handle_custom_content_command(message, self):
+            if await self._safe_dispatch(handle_custom_content_command(message, self), message):
                 return
 
         state = self._get_guild_state(message.guild.id)
@@ -540,7 +570,7 @@ class DiscBot(discord.Client):
         try:
             await state.storage.record_message(message.author.id, utcnow())
         except Exception as e:
-            logger.error("Failed to record message for user %s: %s", message.author.id, e)
+            await handle_event_error(e, context="record_message", guild_id=message.guild.id, channel_id=message.channel.id)
 
         # Build and enqueue scan jobs if applicable (one per attachment)
         try:
@@ -550,25 +580,43 @@ class DiscBot(discord.Client):
             scanner_on = False
 
         if scanner_on:
-            jobs = state.job_factory.build_jobs_for_message(message)
-            for job in jobs:
-                await state.enqueue_job(job.to_dict())
+            try:
+                jobs = state.job_factory.build_jobs_for_message(message)
+                for job in jobs:
+                    await state.enqueue_job(job.to_dict())
+            except Exception as e:
+                await handle_event_error(e, context="scanner_enqueue", guild_id=message.guild.id, channel_id=message.channel.id)
 
     # ─── Interaction Events ───────────────────────────────────────────────────
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         """Handle interactions (button clicks, etc.)."""
-        await handle_interaction(interaction)
+        try:
+            await handle_interaction(interaction)
+        except Exception as e:
+            await handle_interaction_error(e, interaction)
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
         """Handle reaction events (bookmarks, reaction roles)."""
-        await handle_bookmark_reaction(payload, self)
-        await handle_reaction_role_event(payload, self, added=True)
-        await handle_ptc_reaction(payload, self)
+        try:
+            await handle_bookmark_reaction(payload, self)
+        except Exception as e:
+            await handle_event_error(e, context="bookmark_reaction", guild_id=payload.guild_id, channel_id=payload.channel_id)
+        try:
+            await handle_reaction_role_event(payload, self, added=True)
+        except Exception as e:
+            await handle_event_error(e, context="reaction_role_add", guild_id=payload.guild_id, channel_id=payload.channel_id)
+        try:
+            await handle_ptc_reaction(payload, self)
+        except Exception as e:
+            await handle_event_error(e, context="ptc_reaction", guild_id=payload.guild_id, channel_id=payload.channel_id)
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
         """Handle reaction remove events (reaction roles)."""
-        await handle_reaction_role_event(payload, self, added=False)
+        try:
+            await handle_reaction_role_event(payload, self, added=False)
+        except Exception as e:
+            await handle_event_error(e, context="reaction_role_remove", guild_id=payload.guild_id, channel_id=payload.channel_id)
 
     # ─── Enforcement ──────────────────────────────────────────────────────────
 
@@ -579,47 +627,50 @@ class DiscBot(discord.Client):
         matched_hash: str,
     ) -> None:
         """Handle a hash match - enforce against the user."""
-        state = self._get_guild_state(guild_id)
-        if not state:
-            return
-        
-        guild = message.guild
-        if guild is None or guild.id != guild_id:
-            return
-        
-        member = message.author if isinstance(message.author, discord.Member) else None
-        if member is None:
-            return
-        
-        if state.is_exempt(member):
-            return
-        
-        # Get bot's top role for permission checks
-        bot_member = guild.get_member(self.user.id) if self.user else None
-        bot_top_role = bot_member.top_role if bot_member else None
-        
-        # Use enforcement service
-        result = await state.enforcement.enforce_member(
-            member,
-            bot_top_role,
-            reason="hash match",
-            delete_message=message,
-        )
-        
-        state.record_action("hash_match")
-        
-        # Log the action
-        log_text = state.enforcement.format_action_log(
-            member,
-            result,
-            action="image uploaded",
-            extra={
-                "channel_id": message.channel.id,
-                "message_id": message.id,
-                "matched_hash": matched_hash,
-            },
-        )
-        await self._post_action_log(state, log_text)
+        try:
+            state = self._get_guild_state(guild_id)
+            if not state:
+                return
+            
+            guild = message.guild
+            if guild is None or guild.id != guild_id:
+                return
+            
+            member = message.author if isinstance(message.author, discord.Member) else None
+            if member is None:
+                return
+            
+            if state.is_exempt(member):
+                return
+            
+            # Get bot's top role for permission checks
+            bot_member = guild.get_member(self.user.id) if self.user else None
+            bot_top_role = bot_member.top_role if bot_member else None
+            
+            # Use enforcement service
+            result = await state.enforcement.enforce_member(
+                member,
+                bot_top_role,
+                reason="hash match",
+                delete_message=message,
+            )
+            
+            state.record_action("hash_match")
+            
+            # Log the action
+            log_text = state.enforcement.format_action_log(
+                member,
+                result,
+                action="image uploaded",
+                extra={
+                    "channel_id": message.channel.id,
+                    "message_id": message.id,
+                    "matched_hash": matched_hash,
+                },
+            )
+            await self._post_action_log(state, log_text)
+        except Exception as e:
+            await handle_event_error(e, context="enforce_hash_match", guild_id=guild_id, channel_id=message.channel.id)
 
     # ─── Helper Methods ───────────────────────────────────────────────────────
 
@@ -1331,89 +1382,50 @@ class DiscBot(discord.Client):
             self._questions_cache_mtime = mtime
             return mapping, allowed_ids
 
-        @app_commands.command(name="commission", description="Show commission info")
-        @app_commands.describe(user="User to view commission info for (optional)")
-        async def commission_cmd(
-            interaction: discord.Interaction,
-            user: Optional[discord.User] = None,
-        ) -> None:
-            target = user or interaction.user
-            embed, error = await profile_module.get_commission_embed_for(interaction.user, target)
-            
-            if error:
-                await interaction.response.send_message(
-                    sanitize_text(error),
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            
-            if not isinstance(embed, dict):
-                await interaction.response.send_message(
-                    "Invalid commission embed.",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            
-            try:
-                embed_obj = discord.Embed.from_dict(embed)
-            except Exception:
-                await interaction.response.send_message(
-                    "Invalid commission embed.",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            
-            await interaction.response.send_message(
-                embed=embed_obj,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-        
-        self.tree.add_command(commission_cmd)
-
         @app_commands.command(name="question", description="Ask a question and get a saved answer")
         @app_commands.describe(question="Your question")
         async def question_cmd(interaction: discord.Interaction, question: str) -> None:
-            def _norm(text: str) -> str:
-                return " ".join(text.strip().lower().split())
+            try:
+                def _norm(text: str) -> str:
+                    return " ".join(text.strip().lower().split())
 
-            q_norm = _norm(question)
-            if not q_norm:
+                q_norm = _norm(question)
+                if not q_norm:
+                    await interaction.response.send_message(
+                        "Please provide a question.",
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+
+                questions_map, allowed_ids = await _load_questions_data()
+                if allowed_ids is not None and interaction.user.id not in allowed_ids:
+                    await interaction.response.send_message(
+                        "You are not allowed to use this command.",
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+                answer = questions_map.get(q_norm)
+
+                if not answer:
+                    await interaction.response.send_message(
+                        "No saved answer found for that question.",
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+
+                embed = discord.Embed(title="Question")
+                embed.add_field(name="User asked", value=sanitize_text(question), inline=False)
+                embed.add_field(name="Answer", value=sanitize_text(answer), inline=False)
+
                 await interaction.response.send_message(
-                    "Please provide a question.",
-                    ephemeral=True,
+                    embed=embed,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
-                return
-
-            questions_map, allowed_ids = await _load_questions_data()
-            if allowed_ids is not None and interaction.user.id not in allowed_ids:
-                await interaction.response.send_message(
-                    "You are not allowed to use this command.",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            answer = questions_map.get(q_norm)
-
-            if not answer:
-                await interaction.response.send_message(
-                    "No saved answer found for that question.",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-
-            embed = discord.Embed(title="Question")
-            embed.add_field(name="User asked", value=sanitize_text(question), inline=False)
-            embed.add_field(name="Answer", value=sanitize_text(answer), inline=False)
-
-            await interaction.response.send_message(
-                embed=embed,
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            except Exception as e:
+                await handle_slash_command_error(e, interaction, "question")
 
         self.tree.add_command(question_cmd)
         @app_commands.command(name="check_ai", description="Check if an image is AI-generated")
@@ -1426,50 +1438,53 @@ class DiscBot(discord.Client):
             image: discord.Attachment,
             version: int = 1,
         ) -> None:
-            # Validate version
-            if version not in [1]:
-                await interaction.response.send_message(
-                    "Invalid model version. Available versions: 1",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
+            try:
+                # Validate version
+                if version not in [1]:
+                    await interaction.response.send_message(
+                        "Invalid model version. Available versions: 1",
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+                
+                # Validate that it's an image
+                if not image.content_type or not image.content_type.startswith("image/"):
+                    await interaction.response.send_message(
+                        "Please provide a valid image file.",
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+                
+                # Check file size (max 10MB)
+                if image.size > 10 * 1024 * 1024:
+                    await interaction.response.send_message(
+                        "Image is too large. Maximum size is 10MB.",
+                        ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+                
+                # Send initial embed with disclaimer
+                embed = discord.Embed(
+                    title=f"AI Detection Analysis (Model v{version})",
+                    description=(
+                        "**Early Test Model - Use with caution**\n"
+                        "This is an experimental model that may produce incorrect results. "
+                        "It analyzes pixel-level features but cannot detect tracing or heavily edited images.\n\n"
+                        "Status: Queued..."
+                    ),
+                    color=discord.Color.blue(),
                 )
-                return
-            
-            # Validate that it's an image
-            if not image.content_type or not image.content_type.startswith("image/"):
-                await interaction.response.send_message(
-                    "Please provide a valid image file.",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            
-            # Check file size (max 10MB)
-            if image.size > 10 * 1024 * 1024:
-                await interaction.response.send_message(
-                    "Image is too large. Maximum size is 10MB.",
-                    ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            
-            # Send initial embed with disclaimer
-            embed = discord.Embed(
-                title=f"AI Detection Analysis (Model v{version})",
-                description=(
-                    "**Early Test Model - Use with caution**\n"
-                    "This is an experimental model that may produce incorrect results. "
-                    "It analyzes pixel-level features but cannot detect tracing or heavily edited images.\n\n"
-                    "Status: Queued..."
-                ),
-                color=discord.Color.blue(),
-            )
-            embed.add_field(name="Progress", value="Queued 1/1", inline=False)
-            embed.set_footer(text=f"Analyzing: {image.filename} | Model v{version}")
-            
-            await interaction.response.send_message(embed=embed)
-            
-            # Run analysis in background
-            asyncio.create_task(self._run_ai_detection(interaction, image, embed, version))
+                embed.add_field(name="Progress", value="Queued 1/1", inline=False)
+                embed.set_footer(text=f"Analyzing: {image.filename} | Model v{version}")
+                
+                await interaction.response.send_message(embed=embed)
+                
+                # Run analysis in background
+                asyncio.create_task(self._run_ai_detection(interaction, image, embed, version))
+            except Exception as e:
+                await handle_slash_command_error(e, interaction, "check_ai")
         
         self.tree.add_command(check_ai_cmd)

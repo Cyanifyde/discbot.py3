@@ -30,7 +30,6 @@ AVAILABLE_MODULES = {
     "serverlink": "Cross-server linking for syncing moderation actions",
     "inviteprotection": "Detect and gate Discord invite links with allowlist/approval workflow",
     "artsearch": "Search images posted in approved channels",
-    "analytics": "View statistics and trends",
     "ptc": "Pass-the-Canvas turn management for collaborative art threads",
 }
 
@@ -38,7 +37,7 @@ AVAILABLE_MODULES = {
 # Most modules default enabled; potentially disruptive modules default disabled.
 DEFAULT_MODULE_ENABLED = {
     "inviteprotection": False,
-    "artsearch": True,
+    "artsearch": False,
     "ptc": False,
 }
 
