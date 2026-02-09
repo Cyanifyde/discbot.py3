@@ -678,11 +678,19 @@ def _parse_message_ref_arg(message: discord.Message, arg: str) -> tuple[Optional
     arg = (arg or "").strip()
     if not arg:
         return None, None
+
+    # Remove angle brackets if present (Discord auto-link suppression)
+    if arg.startswith("<") and arg.endswith(">"):
+        arg = arg[1:-1]
+
+    # Try as plain message ID first
     if arg.isdigit():
         try:
             return int(arg), None
         except Exception:
             return None, None
+
+    # Try to extract message link from the content
     trip = extract_first_message_link(arg, message.guild.id)
     if not trip:
         return None, None
@@ -831,7 +839,13 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
 
     message_id, channel_id = _parse_message_ref_arg(message, parts[2])
     if not message_id:
-        await message.reply(" Invalid message link or message ID.")
+        await message.reply(
+            f" Invalid message link or message ID.\n"
+            f"**Expected formats:**\n"
+            f"• Message ID: `1234567890`\n"
+            f"• Message link: `https://discord.com/channels/{message.guild.id}/channel_id/message_id`\n"
+            f"• Right-click a message → Copy Message Link"
+        )
         return
 
     emoji = parts[3]
