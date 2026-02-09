@@ -691,6 +691,7 @@ def _parse_message_ref_arg(message: discord.Message, arg: str) -> tuple[Optional
 
 
 _ROLE_MENTION_RE = re.compile(r"^<@&(\d+)>$")
+_CHANNEL_MENTION_RE = re.compile(r"^<#(\d+)>$")
 
 
 def _extract_role_id_token(token: str) -> Optional[int]:
@@ -704,6 +705,25 @@ def _extract_role_id_token(token: str) -> Optional[int]:
         except Exception:
             return None
     m = _ROLE_MENTION_RE.match(token)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
+def _extract_channel_id_token(token: str) -> Optional[int]:
+    """Extract a channel ID from either a raw ID or a channel mention token (<#id>)."""
+    token = (token or "").strip()
+    if not token:
+        return None
+    if token.isdigit():
+        try:
+            return int(token)
+        except Exception:
+            return None
+    m = _CHANNEL_MENTION_RE.match(token)
     if not m:
         return None
     try:
@@ -806,11 +826,10 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
         )
         return
 
-    channel_id_raw = (parts[2] or "").strip()
-    if not channel_id_raw.isdigit():
+    channel_id = _extract_channel_id_token(parts[2])
+    if not channel_id:
         await message.reply(" Invalid channel ID.")
         return
-    channel_id = int(channel_id_raw)
 
     pairs = _parse_reactionrole_pairs(parts[3:])
     if not pairs:
@@ -825,8 +844,19 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
             channel = await bot.fetch_channel(channel_id)
         except Exception:
             channel = None
-    if channel is None or not isinstance(channel, discord.TextChannel):
-        await message.reply(" I couldn't access that text channel ID.")
+    if channel is None:
+        await message.reply(" I couldn't access that channel ID.")
+        return
+
+    # Must be able to send messages to the target.
+    if not hasattr(channel, "send"):
+        await message.reply(f" That channel type can't receive messages (`{type(channel).__name__}`).")
+        return
+
+    # Prevent cross-guild surprises if someone pastes an ID from another server.
+    ch_guild = getattr(channel, "guild", None)
+    if ch_guild is not None and ch_guild.id != message.guild.id:
+        await message.reply(" That channel is not in this server.")
         return
 
     embed = discord.Embed(
@@ -838,7 +868,10 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
         embed.add_field(name=emoji, value=f"<@&{role_id}>", inline=False)
 
     try:
-        rr_message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        rr_message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())  # type: ignore[no-any-return]
+    except discord.Forbidden:
+        await message.reply(" I don't have permission to send embeds in that channel (need Send Messages + Embed Links).")
+        return
     except Exception:
         await message.reply(" Failed to post the reaction-role embed in that channel.")
         return
@@ -855,6 +888,9 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
         await store.add_reaction_role(rr_message.id, emoji, role.id)
         try:
             await rr_message.add_reaction(emoji)
+        except discord.Forbidden:
+            added_lines.append(f"- {emoji} → {role.mention} (missing permission to add reactions)")
+            continue
         except Exception:
             try:
                 await rr_message.add_reaction(discord.PartialEmoji.from_str(emoji))
