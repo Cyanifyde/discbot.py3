@@ -6,6 +6,7 @@ Provides role management features including temporary assignments and automated 
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Optional
 
@@ -98,7 +99,14 @@ def setup_roles() -> None:
         description="Reaction roles: users react to a message to receive roles.",
         help_command="reactionrole help",
         commands=[
-            ("reactionrole add <message_link> <emoji> @role", "Add reaction role mapping (mod only)"),
+            (
+                "reactionrole add <message_link|message_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]",
+                "Add one or more reaction role mappings (mod only)",
+            ),
+            (
+                "reactionrole create <channel_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]",
+                "Create an embed in a channel and attach reaction roles (mod only)",
+            ),
             ("reactionrole remove <message_link> <emoji>", "Remove reaction role mapping (mod only)"),
             ("reactionrole list <message_link>", "List reaction roles on a message"),
             ("reactionrole help", "Show this help message"),
@@ -652,52 +660,218 @@ async def _handle_reactionrole(
     subcommand = parts[1].lower()
 
     if subcommand == "add":
-        await _handle_reactionrole_add(message, parts)
+        await _handle_reactionrole_add(message, parts, bot)
+    elif subcommand == "create":
+        await _handle_reactionrole_create(message, parts, bot)
     elif subcommand == "remove":
         await _handle_reactionrole_remove(message, parts)
     elif subcommand == "list":
         await _handle_reactionrole_list(message, parts)
     else:
-        await message.reply(" Usage: `reactionrole <add|remove|list> ...`")
+        await message.reply(" Usage: `reactionrole <add|create|remove|list> ...`")
 
 
-def _parse_message_id_arg(message: discord.Message, arg: str) -> Optional[int]:
+def _parse_message_ref_arg(message: discord.Message, arg: str) -> tuple[Optional[int], Optional[int]]:
     arg = (arg or "").strip()
     if not arg:
-        return None
+        return None, None
     if arg.isdigit():
         try:
-            return int(arg)
+            return int(arg), None
         except Exception:
-            return None
+            return None, None
     trip = extract_first_message_link(arg, message.guild.id)
     if not trip:
-        return None
-    _gid, _cid, mid = trip
+        return None, None
+    _gid, cid, mid = trip
     try:
-        return int(mid)
+        return int(mid), int(cid)
+    except Exception:
+        return None, None
+
+
+_ROLE_MENTION_RE = re.compile(r"^<@&(\d+)>$")
+
+
+def _extract_role_id_token(token: str) -> Optional[int]:
+    """Extract a role ID from either a raw ID or a role mention token (<@&id>)."""
+    token = (token or "").strip()
+    if not token:
+        return None
+    if token.isdigit():
+        try:
+            return int(token)
+        except Exception:
+            return None
+    m = _ROLE_MENTION_RE.match(token)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
     except Exception:
         return None
 
 
-async def _handle_reactionrole_add(message: discord.Message, parts: list[str]) -> None:
-    """Add reaction role mapping."""
-    if len(parts) < 5 or not message.role_mentions:
-        await message.reply(" Usage: `reactionrole add <message_link> <emoji> @role`")
+def _parse_reactionrole_pairs(tokens: list[str]) -> Optional[list[tuple[str, int]]]:
+    """Parse <emoji> <role> pairs from tokens. Returns list[(emoji, role_id)] or None on invalid."""
+    if len(tokens) < 2 or (len(tokens) % 2) != 0:
+        return None
+    out: list[tuple[str, int]] = []
+    for i in range(0, len(tokens), 2):
+        emoji = tokens[i]
+        rid = _extract_role_id_token(tokens[i + 1])
+        if not emoji or not rid:
+            return None
+        out.append((emoji, rid))
+    return out
+
+
+async def _maybe_add_reaction_to_message(
+    bot: discord.Client,
+    guild_id: int,
+    channel_id: Optional[int],
+    message_id: int,
+    emoji: str,
+) -> None:
+    """Best-effort: add a reaction to an existing message (only possible with a message link)."""
+    if not channel_id:
+        return
+    channel = bot.get_channel(int(channel_id))
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(int(channel_id))
+        except Exception:
+            return
+    if not isinstance(channel, discord.TextChannel):
+        return
+    try:
+        target = await channel.fetch_message(int(message_id))
+    except Exception:
+        return
+    try:
+        await target.add_reaction(emoji)
+        return
+    except Exception:
+        pass
+    try:
+        await target.add_reaction(discord.PartialEmoji.from_str(emoji))
+    except Exception:
         return
 
-    message_id = _parse_message_id_arg(message, parts[2])
+
+async def _handle_reactionrole_add(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
+    """Add reaction role mapping."""
+    if len(parts) < 5:
+        await message.reply(
+            " Usage: `reactionrole add <message_link|message_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
+        )
+        return
+
+    message_id, channel_id = _parse_message_ref_arg(message, parts[2])
     if not message_id:
         await message.reply(" Invalid message link or message ID.")
         return
 
-    emoji = parts[3]
-    role = message.role_mentions[0]
+    pairs = _parse_reactionrole_pairs(parts[3:])
+    if not pairs:
+        await message.reply(
+            " Usage: `reactionrole add <message_link|message_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
+        )
+        return
 
     store = RolesStore(message.guild.id)
     await store.initialize()
-    await store.add_reaction_role(message_id, emoji, role.id)
-    await message.reply(f" Reaction role added: {emoji} → {role.mention} (message `{message_id}`)")
+    # Store mappings; best-effort add reactions if a message link was provided (channel_id known).
+    added_lines: list[str] = []
+    for emoji, role_id in pairs[:25]:
+        role = message.guild.get_role(int(role_id))
+        if role is None:
+            added_lines.append(f"- {emoji} → <@&{role_id}> (role not found)")
+            continue
+        await store.add_reaction_role(message_id, emoji, role.id)
+        await _maybe_add_reaction_to_message(bot, message.guild.id, channel_id, message_id, emoji)
+        added_lines.append(f"- {emoji} → {role.mention}")
+
+    await message.reply(
+        "\n".join([f" Reaction roles updated for message `{message_id}`:"] + added_lines),
+        allowed_mentions=discord.AllowedMentions(roles=False, users=False, everyone=False),
+    )
+
+
+async def _handle_reactionrole_create(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
+    """Create an embed message in a channel and attach reaction roles to it."""
+    if len(parts) < 6:
+        await message.reply(
+            " Usage: `reactionrole create <channel_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
+        )
+        return
+
+    channel_id_raw = (parts[2] or "").strip()
+    if not channel_id_raw.isdigit():
+        await message.reply(" Invalid channel ID.")
+        return
+    channel_id = int(channel_id_raw)
+
+    pairs = _parse_reactionrole_pairs(parts[3:])
+    if not pairs:
+        await message.reply(
+            " Usage: `reactionrole create <channel_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
+        )
+        return
+
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except Exception:
+            channel = None
+    if channel is None or not isinstance(channel, discord.TextChannel):
+        await message.reply(" I couldn't access that text channel ID.")
+        return
+
+    embed = discord.Embed(
+        title="Pick your roles",
+        description="React below to get (or remove) the role.",
+        color=discord.Color.blurple(),
+    )
+    for emoji, role_id in pairs[:25]:
+        embed.add_field(name=emoji, value=f"<@&{role_id}>", inline=False)
+
+    try:
+        rr_message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        await message.reply(" Failed to post the reaction-role embed in that channel.")
+        return
+
+    store = RolesStore(message.guild.id)
+    await store.initialize()
+
+    added_lines: list[str] = []
+    for emoji, role_id in pairs[:25]:
+        role = message.guild.get_role(int(role_id))
+        if role is None:
+            added_lines.append(f"- {emoji} → <@&{role_id}> (role not found)")
+            continue
+        await store.add_reaction_role(rr_message.id, emoji, role.id)
+        try:
+            await rr_message.add_reaction(emoji)
+        except Exception:
+            try:
+                await rr_message.add_reaction(discord.PartialEmoji.from_str(emoji))
+            except Exception:
+                added_lines.append(f"- {emoji} → {role.mention} (failed to add reaction)")
+                continue
+        added_lines.append(f"- {emoji} → {role.mention}")
+
+    await message.reply(
+        "\n".join(
+            [
+                f" Created reaction-role message `{rr_message.id}` in <#{channel_id}>.",
+                *added_lines,
+            ]
+        ),
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 async def _handle_reactionrole_remove(message: discord.Message, parts: list[str]) -> None:
@@ -706,7 +880,7 @@ async def _handle_reactionrole_remove(message: discord.Message, parts: list[str]
         await message.reply(" Usage: `reactionrole remove <message_link> <emoji>`")
         return
 
-    message_id = _parse_message_id_arg(message, parts[2])
+    message_id, _channel_id = _parse_message_ref_arg(message, parts[2])
     if not message_id:
         await message.reply(" Invalid message link or message ID.")
         return
@@ -727,7 +901,7 @@ async def _handle_reactionrole_list(message: discord.Message, parts: list[str]) 
         await message.reply(" Usage: `reactionrole list <message_link>`")
         return
 
-    message_id = _parse_message_id_arg(message, parts[2])
+    message_id, _channel_id = _parse_message_ref_arg(message, parts[2])
     if not message_id:
         await message.reply(" Invalid message link or message ID.")
         return
