@@ -336,8 +336,9 @@ class RolesStore(StorageBase):
         message_id: int,
         emoji: str,
         role_id: int,
+        custom_text: Optional[str] = None,
     ) -> bool:
-        """Add a reaction role mapping."""
+        """Add a reaction role mapping with optional custom text."""
         async with self._lock:
             data = await self._read_reaction_roles()
 
@@ -345,7 +346,14 @@ class RolesStore(StorageBase):
             if msg_key not in data["reaction_roles"]:
                 data["reaction_roles"][msg_key] = {}
 
-            data["reaction_roles"][msg_key][emoji] = role_id
+            # Store as dict if custom text is provided, otherwise just the role_id for backward compat
+            if custom_text:
+                data["reaction_roles"][msg_key][emoji] = {
+                    "role_id": role_id,
+                    "text": custom_text,
+                }
+            else:
+                data["reaction_roles"][msg_key][emoji] = role_id
             await self._write_reaction_roles(data)
             return True
 
@@ -375,13 +383,17 @@ class RolesStore(StorageBase):
         async with self._lock:
             data = await self._read_reaction_roles()
             msg_key = str(message_id)
-            return data["reaction_roles"].get(msg_key, {}).get(emoji)
+            value = data["reaction_roles"].get(msg_key, {}).get(emoji)
+            # Handle both old format (int) and new format (dict with role_id)
+            if isinstance(value, dict):
+                return value.get("role_id")
+            return value
 
     async def get_all_reaction_roles(
         self,
         message_id: int,
-    ) -> Dict[str, int]:
-        """Get all reaction roles for a message."""
+    ) -> Dict[str, Any]:
+        """Get all reaction roles for a message. Returns dict[emoji -> role_id or {role_id, text}]."""
         async with self._lock:
             data = await self._read_reaction_roles()
             msg_key = str(message_id)
