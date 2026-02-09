@@ -100,8 +100,8 @@ def setup_roles() -> None:
         help_command="reactionrole help",
         commands=[
             (
-                "reactionrole add <message_link|message_id> <emoji> <role_id|@role>|custom text [<emoji> <role_id|@role>|custom text ...]",
-                "Add one or more reaction role mappings to an existing message. Use | to add custom text instead of role mention (mod only)",
+                "reactionrole add <message_link|message_id> <emoji> <role_id|@role> [custom text]",
+                "Add a reaction role mapping to an existing message (mod only)",
             ),
             (
                 "reactionrole create <channel_id> <emoji> <role_id|@role> [custom text]",
@@ -698,37 +698,23 @@ _CHANNEL_MENTION_RE = re.compile(r"^<#(\d+)>$")
 
 
 def _extract_role_id_token(token: str) -> Optional[int]:
-    """Extract a role ID from either a raw ID or a role mention token (<@&id>), ignoring custom text after |."""
+    """Extract a role ID from either a raw ID or a role mention token (<@&id>)."""
     token = (token or "").strip()
     if not token:
         return None
 
-    # Split by | to separate role from custom text
-    role_part = token.split("|")[0].strip()
-
-    if role_part.isdigit():
+    if token.isdigit():
         try:
-            return int(role_part)
+            return int(token)
         except Exception:
             return None
-    m = _ROLE_MENTION_RE.match(role_part)
+    m = _ROLE_MENTION_RE.match(token)
     if not m:
         return None
     try:
         return int(m.group(1))
     except Exception:
         return None
-
-
-def _extract_custom_text(token: str) -> Optional[str]:
-    """Extract custom text from a role token if present (format: role_id|custom text)."""
-    token = (token or "").strip()
-    if "|" in token:
-        parts = token.split("|", 1)
-        if len(parts) == 2:
-            custom_text = parts[1].strip()
-            return custom_text if custom_text else None
-    return None
 
 
 def _extract_channel_id_token(token: str) -> Optional[int]:
@@ -748,22 +734,6 @@ def _extract_channel_id_token(token: str) -> Optional[int]:
         return int(m.group(1))
     except Exception:
         return None
-
-
-def _parse_reactionrole_pairs(tokens: list[str]) -> Optional[list[tuple[str, int, Optional[str]]]]:
-    """Parse <emoji> <role> pairs from tokens. Returns list[(emoji, role_id, custom_text)] or None on invalid."""
-    if len(tokens) < 2 or (len(tokens) % 2) != 0:
-        return None
-    out: list[tuple[str, int, Optional[str]]] = []
-    for i in range(0, len(tokens), 2):
-        emoji = tokens[i]
-        role_token = tokens[i + 1]
-        rid = _extract_role_id_token(role_token)
-        custom_text = _extract_custom_text(role_token)
-        if not emoji or not rid:
-            return None
-        out.append((emoji, rid, custom_text))
-    return out
 
 
 async def _create_reaction_role_embed(guild: discord.Guild, mappings: dict[str, Any]) -> discord.Embed:
@@ -848,11 +818,15 @@ async def _maybe_add_reaction_to_message(
 
 
 async def _handle_reactionrole_add(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
-    """Add reaction role mapping."""
+    """Add a single reaction role mapping to an existing message."""
     if len(parts) < 5:
         await message.reply(
-            " Usage: `reactionrole add <message_link|message_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
+            " Usage: `reactionrole add <message_link|message_id> <emoji> <role_id|@role> [custom text]`"
         )
+        return
+
+    if not message.guild:
+        await message.reply(" This command must be used in a server.")
         return
 
     message_id, channel_id = _parse_message_ref_arg(message, parts[2])
@@ -860,11 +834,21 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
         await message.reply(" Invalid message link or message ID.")
         return
 
-    pairs = _parse_reactionrole_pairs(parts[3:])
-    if not pairs:
-        await message.reply(
-            " Usage: `reactionrole add <message_link|message_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
-        )
+    emoji = parts[3]
+    role_token = parts[4]
+
+    # Custom text is everything after the role_id
+    custom_text = " ".join(parts[5:]).strip() if len(parts) > 5 else None
+
+    # Extract role ID from token (handles both raw ID and @role mention)
+    role_id = _extract_role_id_token(role_token)
+    if not role_id:
+        await message.reply(" Invalid role ID or mention.")
+        return
+
+    role = message.guild.get_role(role_id)
+    if not role:
+        await message.reply(f" Role <@&{role_id}> not found in this server.")
         return
 
     store = RolesStore(message.guild.id)
@@ -885,21 +869,9 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
             except Exception:
                 pass
 
-    # Store mappings and add reactions
-    added_lines: list[str] = []
-    for emoji, role_id, custom_text in pairs[:25]:
-        role = message.guild.get_role(int(role_id))
-        if role is None:
-            added_lines.append(f"{emoji} → <@&{role_id}> (role not found)")
-            continue
-        await store.add_reaction_role(message_id, emoji, role.id, custom_text)
-        await _maybe_add_reaction_to_message(bot, message.guild.id, channel_id, message_id, emoji)
-
-        # Display custom text or role mention in confirmation
-        if custom_text:
-            added_lines.append(f"{emoji} → {custom_text}")
-        else:
-            added_lines.append(f"{emoji} → {role.mention}")
+    # Store mapping and add reaction
+    await store.add_reaction_role(message_id, emoji, role.id, custom_text)
+    await _maybe_add_reaction_to_message(bot, message.guild.id, channel_id, message_id, emoji)
 
     # If target message exists and is from the bot, update its embed
     if target_message and bot.user and target_message.author.id == bot.user.id and target_message.embeds and message.guild:
@@ -911,17 +883,20 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
         except Exception:
             pass  # If update fails, continue anyway
 
+    # Send confirmation
     embed = discord.Embed(
-        title="✅ Reaction Roles Updated",
-        description=f"Added reaction roles to message `{message_id}`",
+        title="✅ Reaction Role Added",
+        description=f"Added reaction role to message `{message_id}`",
         color=discord.Color.green(),
     )
-    if added_lines:
-        embed.add_field(
-            name="Added Mappings",
-            value="\n".join(added_lines[:25]),
-            inline=False,
-        )
+
+    display_text = custom_text if custom_text else role.mention
+    embed.add_field(
+        name="Mapping",
+        value=f"{emoji} → {display_text}",
+        inline=False,
+    )
+
     if channel_id:
         embed.add_field(
             name="Message Link",
