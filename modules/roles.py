@@ -1107,8 +1107,18 @@ async def _handle_reactionrole_list(message: discord.Message, parts: list[str]) 
         return
 
     lines = [f"**Reaction Roles for `{message_id}`**"]
-    for emoji, rid in list(mappings.items())[:25]:
-        lines.append(f"- {emoji} → <@&{rid}>")
+    for emoji, value in list(mappings.items())[:25]:
+        if isinstance(value, dict):
+            role_id = value.get("role_id")
+            custom_text = value.get("text")
+        else:
+            role_id = value
+            custom_text = None
+
+        if custom_text:
+            lines.append(f"- {emoji} → {custom_text} (<@&{role_id}>)")
+        else:
+            lines.append(f"- {emoji} → <@&{role_id}>")
     await message.reply("\n".join(lines), allowed_mentions=discord.AllowedMentions.none())
 
 
