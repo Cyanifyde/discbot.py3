@@ -79,8 +79,9 @@ from modules.automation import (
     setup_automation,
 )
 from modules.roles import (
-    handle_roles_command,
     handle_reaction_role_event,
+    handle_roles_command,
+    restore_reaction_roles,
     setup_roles,
 )
 from modules.custom_content import (
@@ -239,6 +240,9 @@ class DiscBot(discord.Client):
 
             # Restore PTC state (timers, etc.)
             await restore_ptc_state(self)
+
+            # Restore reaction role emojis
+            await restore_reaction_roles(self)
 
             # Start bounded dispatchers/schedulers
             await self.auto_responder.start(self)

@@ -1253,3 +1253,77 @@ async def handle_reaction_role_event(
         return
     except Exception:
         return
+
+
+async def restore_reaction_roles(bot: discord.Client) -> None:
+    """Restore reaction emojis to reaction role messages after bot restart."""
+    logger.info("Restoring reaction roles...")
+    restored_count = 0
+    error_count = 0
+
+    for guild in bot.guilds:
+        if not await is_module_enabled(guild.id, MODULE_NAME):
+            continue
+
+        try:
+            store = RolesStore(guild.id)
+            await store.initialize()
+            all_data = await store.get_all_reaction_roles_data()
+
+            if not all_data:
+                continue
+
+            for msg_id_str, mappings in all_data.items():
+                if not isinstance(mappings, dict):
+                    continue
+
+                try:
+                    message_id = int(msg_id_str)
+                except (ValueError, TypeError):
+                    continue
+
+                # Try to find the message in guild channels
+                message: Optional[discord.Message] = None
+                for channel in guild.text_channels:
+                    try:
+                        message = await channel.fetch_message(message_id)
+                        break
+                    except discord.NotFound:
+                        continue
+                    except (discord.Forbidden, discord.HTTPException):
+                        continue
+                    except Exception:
+                        continue
+
+                if not message:
+                    continue
+
+                # Add missing reactions
+                for emoji in mappings.keys():
+                    try:
+                        # Check if reaction already exists
+                        has_reaction = any(
+                            str(reaction.emoji) == emoji for reaction in message.reactions
+                        )
+                        if not has_reaction:
+                            try:
+                                await message.add_reaction(emoji)
+                                restored_count += 1
+                            except Exception:
+                                # Try as PartialEmoji
+                                try:
+                                    await message.add_reaction(discord.PartialEmoji.from_str(emoji))
+                                    restored_count += 1
+                                except Exception:
+                                    error_count += 1
+                    except Exception:
+                        error_count += 1
+
+        except Exception as e:
+            logger.error("Error restoring reaction roles for guild %s: %s", guild.id, e)
+            error_count += 1
+
+    if restored_count > 0:
+        logger.info("Restored %d reaction role emojis", restored_count)
+    if error_count > 0:
+        logger.warning("Failed to restore %d reaction role emojis", error_count)
