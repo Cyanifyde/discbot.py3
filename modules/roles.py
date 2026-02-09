@@ -15,7 +15,7 @@ import discord
 from core.help_system import help_system
 from core.permissions import is_module_enabled
 from core.roles_storage import RolesStore
-from core.utils import dt_to_iso, extract_first_message_link, iso_to_dt, parse_deadline, parse_duration_extended
+from core.utils import dt_to_iso, iso_to_dt, parse_deadline, parse_duration_extended
 
 logger = logging.getLogger("discbot.roles")
 
@@ -100,15 +100,15 @@ def setup_roles() -> None:
         help_command="reactionrole help",
         commands=[
             (
-                "reactionrole add <message_link|message_id> <emoji> <role_id|@role> [custom text]",
+                "reactionrole add <channel_id/message_id> <emoji> <role_id|@role> [custom text]",
                 "Add a reaction role mapping to an existing message (mod only)",
             ),
             (
                 "reactionrole create <channel_id> <emoji> <role_id|@role> [custom text]",
                 "Create a reaction role message in a channel (mod only)",
             ),
-            ("reactionrole remove <message_link> <emoji>", "Remove reaction role mapping (mod only)"),
-            ("reactionrole list <message_link>", "List reaction roles on a message"),
+            ("reactionrole remove <channel_id/message_id> <emoji>", "Remove reaction role mapping (mod only)"),
+            ("reactionrole list <channel_id/message_id>", "List reaction roles on a message"),
             ("reactionrole purge [channel_id]", "Remove all reaction roles (from server or specific channel) (mod only)"),
             ("reactionrole help", "Show this help message"),
         ],
@@ -674,29 +674,27 @@ async def _handle_reactionrole(
         await message.reply(" Usage: `reactionrole <add|create|remove|list|purge> ...`")
 
 
-def _parse_message_ref_arg(message: discord.Message, arg: str) -> tuple[Optional[int], Optional[int]]:
+_CHANNEL_MSG_REF_RE = re.compile(
+    r"(?:<#)?(\d+)>?\s*/\s*(\d+)"
+)
+
+
+def _parse_channel_message_ref(arg: str) -> tuple[Optional[int], Optional[int]]:
+    """Parse a channel_id/message_id reference.
+
+    Accepted formats:
+      - 123456/789012
+      - <#123456>/789012
+    Returns (channel_id, message_id) or (None, None).
+    """
     arg = (arg or "").strip()
     if not arg:
         return None, None
-
-    # Remove angle brackets if present (Discord auto-link suppression)
-    if arg.startswith("<") and arg.endswith(">"):
-        arg = arg[1:-1]
-
-    # Try as plain message ID first
-    if arg.isdigit():
-        try:
-            return int(arg), None
-        except Exception:
-            return None, None
-
-    # Try to extract message link from the content
-    trip = extract_first_message_link(arg, message.guild.id)
-    if not trip:
+    m = _CHANNEL_MSG_REF_RE.search(arg)
+    if not m:
         return None, None
-    _gid, cid, mid = trip
     try:
-        return int(mid), int(cid)
+        return int(m.group(1)), int(m.group(2))
     except Exception:
         return None, None
 
@@ -829,7 +827,7 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
     """Add a single reaction role mapping to an existing message."""
     if len(parts) < 5:
         await message.reply(
-            " Usage: `reactionrole add <message_link|message_id> <emoji> <role_id|@role> [custom text]`"
+            " Usage: `reactionrole add <channel_id/message_id> <emoji> <role_id|@role> [custom text]`"
         )
         return
 
@@ -837,19 +835,12 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
         await message.reply(" This command must be used in a server.")
         return
 
-    # First, try to extract from the full message content (before Discord's transformation)
-    message_id, channel_id = _parse_message_ref_arg(message, message.content)
-
-    # If that didn't work, try parsing just the specific argument
-    if not message_id:
-        message_id, channel_id = _parse_message_ref_arg(message, parts[2])
-    if not message_id:
+    # Parse channel_id/message_id from the argument
+    channel_id, message_id = _parse_channel_message_ref(parts[2])
+    if not channel_id or not message_id:
         await message.reply(
-            f" Invalid message link or message ID.\n"
-            f"**Expected formats:**\n"
-            f"• Message ID: `1234567890`\n"
-            f"• Message link: `https://discord.com/channels/{message.guild.id}/channel_id/message_id`\n"
-            f"• Right-click a message → Copy Message Link"
+            " Invalid channel/message reference.\n"
+            "**Expected format:** `channel_id/message_id` or `<#channel>/message_id`"
         )
         return
 
@@ -870,49 +861,42 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
         await message.reply(f" Role <@&{role_id}> not found in this server.")
         return
 
+    # Fetch the target channel and message
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except Exception:
+            channel = None
+    if not isinstance(channel, discord.TextChannel):
+        await message.reply(" Channel not found or not a text channel.")
+        return
+
+    # Verify channel belongs to this guild
+    if channel.guild.id != message.guild.id:
+        await message.reply(" That channel is not in this server.")
+        return
+
+    target_message: Optional[discord.Message] = None
+    try:
+        target_message = await channel.fetch_message(message_id)
+    except discord.NotFound:
+        await message.reply(f" Message `{message_id}` not found in <#{channel_id}>.")
+        return
+    except Exception:
+        await message.reply(f" Failed to fetch message `{message_id}` from <#{channel_id}>.")
+        return
+
     store = RolesStore(message.guild.id)
     await store.initialize()
-
-    # Try to fetch the target message to update its embed if it exists
-    target_message: Optional[discord.Message] = None
-    if channel_id:
-        # We have the channel ID from the message link
-        channel = bot.get_channel(channel_id)
-        if channel is None:
-            try:
-                channel = await bot.fetch_channel(channel_id)
-            except Exception:
-                pass
-        if isinstance(channel, discord.TextChannel):
-            try:
-                target_message = await channel.fetch_message(message_id)
-            except Exception:
-                pass
-    else:
-        # No channel ID provided, search for the message in recent history
-        for channel in message.guild.text_channels:
-            try:
-                # Check only the most recent 20 messages to avoid rate limits
-                async for msg in channel.history(limit=20):
-                    if msg.id == message_id:
-                        target_message = msg
-                        channel_id = channel.id  # Set channel_id for later use
-                        break
-                if target_message:
-                    break
-            except (discord.Forbidden, discord.HTTPException):
-                continue
-            except Exception:
-                continue
 
     # Store mapping and add reaction
     await store.add_reaction_role(message_id, emoji, role.id, custom_text)
     await _maybe_add_reaction_to_message(bot, message.guild.id, channel_id, message_id, emoji)
 
-    # If target message exists and is from the bot, update its embed
-    if target_message and bot.user and target_message.author.id == bot.user.id and target_message.embeds and message.guild:
+    # If target message is from the bot, update its embed
+    if bot.user and target_message.author.id == bot.user.id and target_message.embeds:
         try:
-            # Get all current reaction roles for this message
             all_mappings = await store.get_all_reaction_roles(message_id)
             updated_embed = await _create_reaction_role_embed(message.guild, all_mappings)
             await target_message.edit(embed=updated_embed)
@@ -921,7 +905,7 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
 
     # Send confirmation
     embed = discord.Embed(
-        title="✅ Reaction Role Added",
+        title="Reaction Role Added",
         description=f"Added reaction role to message `{message_id}`",
         color=discord.Color.green(),
     )
@@ -929,16 +913,15 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
     display_text = custom_text if custom_text else role.mention
     embed.add_field(
         name="Mapping",
-        value=f"{emoji} → {display_text}",
+        value=f"{emoji} -> {display_text}",
         inline=False,
     )
 
-    if channel_id:
-        embed.add_field(
-            name="Message Link",
-            value=f"[Jump to message](https://discord.com/channels/{message.guild.id}/{channel_id}/{message_id})",
-            inline=False,
-        )
+    embed.add_field(
+        name="Message Link",
+        value=f"[Jump to message](https://discord.com/channels/{message.guild.id}/{channel_id}/{message_id})",
+        inline=False,
+    )
 
     await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
@@ -1070,12 +1053,15 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
 async def _handle_reactionrole_remove(message: discord.Message, parts: list[str]) -> None:
     """Remove reaction role mapping."""
     if len(parts) < 4:
-        await message.reply(" Usage: `reactionrole remove <message_link> <emoji>`")
+        await message.reply(" Usage: `reactionrole remove <channel_id/message_id> <emoji>`")
         return
 
-    message_id, _channel_id = _parse_message_ref_arg(message, parts[2])
-    if not message_id:
-        await message.reply(" Invalid message link or message ID.")
+    channel_id, message_id = _parse_channel_message_ref(parts[2])
+    if not channel_id or not message_id:
+        await message.reply(
+            " Invalid channel/message reference.\n"
+            "**Expected format:** `channel_id/message_id` or `<#channel>/message_id`"
+        )
         return
 
     emoji = parts[3]
@@ -1091,12 +1077,15 @@ async def _handle_reactionrole_remove(message: discord.Message, parts: list[str]
 async def _handle_reactionrole_list(message: discord.Message, parts: list[str]) -> None:
     """List reaction roles for a message."""
     if len(parts) < 3:
-        await message.reply(" Usage: `reactionrole list <message_link>`")
+        await message.reply(" Usage: `reactionrole list <channel_id/message_id>`")
         return
 
-    message_id, _channel_id = _parse_message_ref_arg(message, parts[2])
-    if not message_id:
-        await message.reply(" Invalid message link or message ID.")
+    channel_id, message_id = _parse_channel_message_ref(parts[2])
+    if not channel_id or not message_id:
+        await message.reply(
+            " Invalid channel/message reference.\n"
+            "**Expected format:** `channel_id/message_id` or `<#channel>/message_id`"
+        )
         return
 
     store = RolesStore(message.guild.id)
