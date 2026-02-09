@@ -386,3 +386,30 @@ class RolesStore(StorageBase):
             data = await self._read_reaction_roles()
             msg_key = str(message_id)
             return data["reaction_roles"].get(msg_key, {})
+
+    async def get_all_reaction_roles_data(self) -> Dict[str, Any]:
+        """Get all reaction roles data (all messages and their mappings)."""
+        async with self._lock:
+            data = await self._read_reaction_roles()
+            return data.get("reaction_roles", {})
+
+    async def purge_all_reaction_roles(self) -> bool:
+        """Remove all reaction roles from the server."""
+        async with self._lock:
+            data = await self._read_reaction_roles()
+            data["reaction_roles"] = {}
+            await self._write_reaction_roles(data)
+            return True
+
+    async def purge_reaction_roles_by_messages(self, message_ids: List[str]) -> int:
+        """Remove reaction roles for specific message IDs. Returns count of messages removed."""
+        async with self._lock:
+            data = await self._read_reaction_roles()
+            removed_count = 0
+            for msg_id in message_ids:
+                if msg_id in data["reaction_roles"]:
+                    del data["reaction_roles"][msg_id]
+                    removed_count += 1
+            if removed_count > 0:
+                await self._write_reaction_roles(data)
+            return removed_count

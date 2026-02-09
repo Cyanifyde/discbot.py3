@@ -109,6 +109,7 @@ def setup_roles() -> None:
             ),
             ("reactionrole remove <message_link> <emoji>", "Remove reaction role mapping (mod only)"),
             ("reactionrole list <message_link>", "List reaction roles on a message"),
+            ("reactionrole purge [channel_id]", "Remove all reaction roles (from server or specific channel) (mod only)"),
             ("reactionrole help", "Show this help message"),
         ],
         group="Roles",
@@ -667,8 +668,10 @@ async def _handle_reactionrole(
         await _handle_reactionrole_remove(message, parts)
     elif subcommand == "list":
         await _handle_reactionrole_list(message, parts)
+    elif subcommand == "purge":
+        await _handle_reactionrole_purge(message, parts, bot)
     else:
-        await message.reply(" Usage: `reactionrole <add|create|remove|list> ...`")
+        await message.reply(" Usage: `reactionrole <add|create|remove|list|purge> ...`")
 
 
 def _parse_message_ref_arg(message: discord.Message, arg: str) -> tuple[Optional[int], Optional[int]]:
@@ -746,6 +749,41 @@ def _parse_reactionrole_pairs(tokens: list[str]) -> Optional[list[tuple[str, int
     return out
 
 
+async def _create_reaction_role_embed(guild: discord.Guild, mappings: dict[str, int]) -> discord.Embed:
+    """Create a reaction role embed from emoji->role_id mappings."""
+    embed = discord.Embed(
+        title="🎭 Reaction Roles",
+        description="React to this message to get or remove roles!\nClick an emoji below to toggle the corresponding role.",
+        color=discord.Color.blurple(),
+    )
+
+    if not mappings:
+        embed.add_field(
+            name="No roles configured",
+            value="Contact a moderator to set up reaction roles.",
+            inline=False,
+        )
+        return embed
+
+    # Build role list with emoji
+    role_lines: list[str] = []
+    for emoji, role_id in list(mappings.items())[:25]:
+        role = guild.get_role(int(role_id))
+        if role:
+            role_lines.append(f"{emoji} • {role.mention}")
+        else:
+            role_lines.append(f"{emoji} • <@&{role_id}> *(role not found)*")
+
+    embed.add_field(
+        name="Available Roles",
+        value="\n".join(role_lines) if role_lines else "No roles available",
+        inline=False,
+    )
+
+    embed.set_footer(text="React below to receive your roles!")
+    return embed
+
+
 async def _maybe_add_reaction_to_message(
     bot: discord.Client,
     guild_id: int,
@@ -801,21 +839,62 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
 
     store = RolesStore(message.guild.id)
     await store.initialize()
-    # Store mappings; best-effort add reactions if a message link was provided (channel_id known).
+
+    # Try to fetch the target message to update its embed if it exists
+    target_message: Optional[discord.Message] = None
+    if channel_id:
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except Exception:
+                pass
+        if isinstance(channel, discord.TextChannel):
+            try:
+                target_message = await channel.fetch_message(message_id)
+            except Exception:
+                pass
+
+    # Store mappings and add reactions
     added_lines: list[str] = []
     for emoji, role_id in pairs[:25]:
         role = message.guild.get_role(int(role_id))
         if role is None:
-            added_lines.append(f"- {emoji} → <@&{role_id}> (role not found)")
+            added_lines.append(f"{emoji} → <@&{role_id}> (role not found)")
             continue
         await store.add_reaction_role(message_id, emoji, role.id)
         await _maybe_add_reaction_to_message(bot, message.guild.id, channel_id, message_id, emoji)
-        added_lines.append(f"- {emoji} → {role.mention}")
+        added_lines.append(f"{emoji} → {role.mention}")
 
-    await message.reply(
-        "\n".join([f" Reaction roles updated for message `{message_id}`:"] + added_lines),
-        allowed_mentions=discord.AllowedMentions(roles=False, users=False, everyone=False),
+    # If target message exists and is from the bot, update its embed
+    if target_message and bot.user and target_message.author.id == bot.user.id and target_message.embeds and message.guild:
+        try:
+            # Get all current reaction roles for this message
+            all_mappings = await store.get_all_reaction_roles(message_id)
+            updated_embed = await _create_reaction_role_embed(message.guild, all_mappings)
+            await target_message.edit(embed=updated_embed)
+        except Exception:
+            pass  # If update fails, continue anyway
+
+    embed = discord.Embed(
+        title="✅ Reaction Roles Updated",
+        description=f"Added reaction roles to message `{message_id}`",
+        color=discord.Color.green(),
     )
+    if added_lines:
+        embed.add_field(
+            name="Added Mappings",
+            value="\n".join(added_lines[:25]),
+            inline=False,
+        )
+    if channel_id:
+        embed.add_field(
+            name="Message Link",
+            value=f"[Jump to message](https://discord.com/channels/{message.guild.id}/{channel_id}/{message_id})",
+            inline=False,
+        )
+
+    await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def _handle_reactionrole_create(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
@@ -859,16 +938,23 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
         await message.reply(" That channel is not in this server.")
         return
 
-    embed = discord.Embed(
-        title="Pick your roles",
-        description="React below to get (or remove) the role.",
-        color=discord.Color.blurple(),
-    )
+    store = RolesStore(message.guild.id)
+    await store.initialize()
+
+    # Build the mappings dict for the embed
+    mappings: dict[str, int] = {}
     for emoji, role_id in pairs[:25]:
-        embed.add_field(name=emoji, value=f"<@&{role_id}>", inline=False)
+        mappings[emoji] = role_id
+
+    # Create the reaction role embed
+    if not message.guild:
+        await message.reply(" This command must be used in a server.")
+        return
+
+    rr_embed = await _create_reaction_role_embed(message.guild, mappings)
 
     try:
-        rr_message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())  # type: ignore[no-any-return]
+        rr_message = await channel.send(embed=rr_embed, allowed_mentions=discord.AllowedMentions.none())  # type: ignore[no-any-return]
     except discord.Forbidden:
         await message.reply(" I don't have permission to send embeds in that channel (need Send Messages + Embed Links).")
         return
@@ -876,38 +962,56 @@ async def _handle_reactionrole_create(message: discord.Message, parts: list[str]
         await message.reply(" Failed to post the reaction-role embed in that channel.")
         return
 
-    store = RolesStore(message.guild.id)
-    await store.initialize()
-
+    # Store mappings and add reactions
     added_lines: list[str] = []
+    failed_lines: list[str] = []
     for emoji, role_id in pairs[:25]:
         role = message.guild.get_role(int(role_id))
         if role is None:
-            added_lines.append(f"- {emoji} → <@&{role_id}> (role not found)")
+            failed_lines.append(f"{emoji} → <@&{role_id}> (role not found)")
             continue
         await store.add_reaction_role(rr_message.id, emoji, role.id)
         try:
             await rr_message.add_reaction(emoji)
         except discord.Forbidden:
-            added_lines.append(f"- {emoji} → {role.mention} (missing permission to add reactions)")
+            failed_lines.append(f"{emoji} → {role.mention} (missing permission)")
             continue
         except Exception:
             try:
                 await rr_message.add_reaction(discord.PartialEmoji.from_str(emoji))
             except Exception:
-                added_lines.append(f"- {emoji} → {role.mention} (failed to add reaction)")
+                failed_lines.append(f"{emoji} → {role.mention} (invalid emoji)")
                 continue
-        added_lines.append(f"- {emoji} → {role.mention}")
+        added_lines.append(f"{emoji} → {role.mention}")
 
-    await message.reply(
-        "\n".join(
-            [
-                f" Created reaction-role message `{rr_message.id}` in <#{channel_id}>.",
-                *added_lines,
-            ]
-        ),
-        allowed_mentions=discord.AllowedMentions.none(),
+    # Send confirmation embed
+    confirm_embed = discord.Embed(
+        title="✅ Reaction Role Message Created",
+        description=f"Created reaction role message in <#{channel_id}>",
+        color=discord.Color.green(),
     )
+
+    if added_lines:
+        confirm_embed.add_field(
+            name="Successfully Added",
+            value="\n".join(added_lines[:25]),
+            inline=False,
+        )
+
+    if failed_lines:
+        confirm_embed.add_field(
+            name="⚠️ Failed",
+            value="\n".join(failed_lines[:25]),
+            inline=False,
+        )
+
+    confirm_embed.add_field(
+        name="Message Link",
+        value=f"[Jump to message](https://discord.com/channels/{message.guild.id}/{channel_id}/{rr_message.id})",
+        inline=False,
+    )
+
+    await message.reply(embed=confirm_embed, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def _handle_reactionrole_remove(message: discord.Message, parts: list[str]) -> None:
@@ -953,6 +1057,97 @@ async def _handle_reactionrole_list(message: discord.Message, parts: list[str]) 
     for emoji, rid in list(mappings.items())[:25]:
         lines.append(f"- {emoji} → <@&{rid}>")
     await message.reply("\n".join(lines), allowed_mentions=discord.AllowedMentions.none())
+
+
+async def _handle_reactionrole_purge(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
+    """Purge all reaction roles from the server or a specific channel."""
+    if not message.guild:
+        return
+
+    store = RolesStore(message.guild.id)
+    await store.initialize()
+
+    # Check if a channel ID was provided
+    channel_id: Optional[int] = None
+    if len(parts) >= 3:
+        channel_id = _extract_channel_id_token(parts[2])
+        if not channel_id:
+            await message.reply(" Invalid channel ID.")
+            return
+
+    # Get all reaction roles before purging
+    all_data = await store.get_all_reaction_roles_data()
+
+    if channel_id:
+        # Filter to only messages in the specified channel
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(channel_id)
+            except Exception:
+                pass
+
+        if not isinstance(channel, discord.TextChannel):
+            await message.reply(" Channel not found or not a text channel.")
+            return
+
+        # Check if channel is in the same guild
+        if channel.guild.id != message.guild.id:
+            await message.reply(" That channel is not in this server.")
+            return
+
+        # Count messages to purge in this channel
+        messages_to_purge = []
+        for msg_id_str in all_data.keys():
+            try:
+                msg_id = int(msg_id_str)
+                # Try to fetch the message to check its channel
+                try:
+                    msg = await channel.fetch_message(msg_id)
+                    if msg:
+                        messages_to_purge.append(msg_id_str)
+                except discord.NotFound:
+                    # Message doesn't exist in this channel, skip
+                    pass
+                except Exception:
+                    pass
+            except ValueError:
+                pass
+
+        if not messages_to_purge:
+            await message.reply(f" No reaction roles found in <#{channel_id}>.")
+            return
+
+        # Purge only messages from this channel
+        removed_count = await store.purge_reaction_roles_by_messages(messages_to_purge)
+
+        embed = discord.Embed(
+            title="🗑️ Reaction Roles Purged",
+            description=f"Removed all reaction roles from <#{channel_id}>",
+            color=discord.Color.orange(),
+        )
+        embed.add_field(name="Messages Cleared", value=str(removed_count), inline=False)
+    else:
+        # Purge all reaction roles from the entire server
+        if not all_data:
+            await message.reply(" No reaction roles configured in this server.")
+            return
+
+        total_messages = len(all_data)
+        total_mappings = sum(len(mappings) if isinstance(mappings, dict) else 0 for mappings in all_data.values())
+
+        # Clear all reaction roles
+        await store.purge_all_reaction_roles()
+
+        embed = discord.Embed(
+            title="🗑️ All Reaction Roles Purged",
+            description="Removed all reaction roles from this server",
+            color=discord.Color.red(),
+        )
+        embed.add_field(name="Messages Cleared", value=str(total_messages), inline=True)
+        embed.add_field(name="Total Mappings Removed", value=str(total_mappings), inline=True)
+
+    await message.reply(embed=embed)
 
 
 async def handle_reaction_role_event(
