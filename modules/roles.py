@@ -820,7 +820,7 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
 
 async def _handle_reactionrole_create(message: discord.Message, parts: list[str], bot: discord.Client) -> None:
     """Create an embed message in a channel and attach reaction roles to it."""
-    if len(parts) < 6:
+    if len(parts) < 5:
         await message.reply(
             " Usage: `reactionrole create <channel_id> <emoji> <role_id|@role> [<emoji> <role_id|@role> ...]`"
         )
