@@ -110,7 +110,7 @@ async def handle_analytics_command(message: discord.Message, bot: discord.Client
 
     elif subcommand == "bot":
         # Bot statistics
-        stats = analytics.get_bot_stats()
+        stats = await analytics.get_bot_stats()
 
         embed = discord.Embed(
             title="Bot Statistics",
@@ -149,7 +149,7 @@ async def handle_analytics_command(message: discord.Message, bot: discord.Client
             await message.reply("This command must be used in a server.", mention_author=False)
             return True
 
-        trends = analytics.calculate_trends(guild_id, metric)
+        trends = await analytics.calculate_trends(guild_id, metric)
 
         if not trends:
             await message.reply(f"No trend data available for metric: {metric}", mention_author=False)
