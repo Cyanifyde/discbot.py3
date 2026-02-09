@@ -889,24 +889,21 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
             except Exception:
                 pass
     else:
-        # No channel ID provided, check if this message exists in storage first
-        existing_mappings = await store.get_all_reaction_roles(message_id)
-        if existing_mappings:
-            # Message has reaction roles configured, search for it in recent messages
-            for channel in message.guild.text_channels:
-                try:
-                    # Check only the most recent 20 messages to avoid rate limits
-                    async for msg in channel.history(limit=20):
-                        if msg.id == message_id:
-                            target_message = msg
-                            channel_id = channel.id  # Set channel_id for later use
-                            break
-                    if target_message:
+        # No channel ID provided, search for the message in recent history
+        for channel in message.guild.text_channels:
+            try:
+                # Check only the most recent 20 messages to avoid rate limits
+                async for msg in channel.history(limit=20):
+                    if msg.id == message_id:
+                        target_message = msg
+                        channel_id = channel.id  # Set channel_id for later use
                         break
-                except (discord.Forbidden, discord.HTTPException):
-                    continue
-                except Exception:
-                    continue
+                if target_message:
+                    break
+            except (discord.Forbidden, discord.HTTPException):
+                continue
+            except Exception:
+                continue
 
     # Store mapping and add reaction
     await store.add_reaction_role(message_id, emoji, role.id, custom_text)
