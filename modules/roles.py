@@ -109,6 +109,7 @@ def setup_roles() -> None:
             ),
             ("reactionrole remove <channel_id/message_id> <emoji>", "Remove reaction role mapping (mod only)"),
             ("reactionrole list <channel_id/message_id>", "List reaction roles on a message"),
+            ("reactionrole order <channel_id/message_id> <emoji1> <emoji2> ...", "Set display order of reaction roles (mod only)"),
             ("reactionrole purge [channel_id]", "Remove all reaction roles (from server or specific channel) (mod only)"),
             ("reactionrole help", "Show this help message"),
         ],
@@ -668,10 +669,12 @@ async def _handle_reactionrole(
         await _handle_reactionrole_remove(message, parts)
     elif subcommand == "list":
         await _handle_reactionrole_list(message, parts)
+    elif subcommand == "order":
+        await _handle_reactionrole_order(message, parts, bot)
     elif subcommand == "purge":
         await _handle_reactionrole_purge(message, parts, bot)
     else:
-        await message.reply(" Usage: `reactionrole <add|create|remove|list|purge> ...`")
+        await message.reply(" Usage: `reactionrole <add|create|remove|list|order|purge> ...`")
 
 
 _CHANNEL_MSG_REF_RE = re.compile(
@@ -1109,6 +1112,109 @@ async def _handle_reactionrole_list(message: discord.Message, parts: list[str]) 
         else:
             lines.append(f"- {emoji} → <@&{role_id}>")
     await message.reply("\n".join(lines), allowed_mentions=discord.AllowedMentions.none())
+
+
+async def _handle_reactionrole_order(
+    message: discord.Message, parts: list[str], bot: discord.Client
+) -> None:
+    """Reorder reaction roles on a message."""
+    if len(parts) < 4:
+        await message.reply(
+            " Usage: `reactionrole order <channel_id/message_id> <emoji1> <emoji2> ...`\n"
+            "List the emojis in the order you want them displayed."
+        )
+        return
+
+    if not message.guild:
+        await message.reply(" This command must be used in a server.")
+        return
+
+    channel_id, message_id = _parse_channel_message_ref(parts[2])
+    if not channel_id or not message_id:
+        await message.reply(
+            " Invalid channel/message reference.\n"
+            "**Expected format:** `channel_id/message_id` or `<#channel>/message_id`"
+        )
+        return
+
+    emoji_order = parts[3:]
+    if not emoji_order:
+        await message.reply(" Provide the emojis in the order you want.")
+        return
+
+    store = RolesStore(message.guild.id)
+    await store.initialize()
+
+    # Validate emojis exist
+    current = await store.get_all_reaction_roles(message_id)
+    if not current:
+        await message.reply(" No reaction roles configured for that message.")
+        return
+
+    current_emojis = set(current.keys())
+    given_emojis = set(emoji_order)
+
+    missing = current_emojis - given_emojis
+    extra = given_emojis - current_emojis
+    if missing or extra or len(emoji_order) != len(current):
+        lines = [" Emoji list doesn't match the existing reaction roles."]
+        if missing:
+            lines.append(f"**Missing:** {' '.join(missing)}")
+        if extra:
+            lines.append(f"**Unknown:** {' '.join(extra)}")
+        lines.append(f"\n**Current emojis:** {' '.join(current.keys())}")
+        await message.reply("\n".join(lines))
+        return
+
+    ok = await store.reorder_reaction_roles(message_id, emoji_order)
+    if not ok:
+        await message.reply(" Failed to reorder reaction roles.")
+        return
+
+    # Fetch the target message to reorder reactions and update embed
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except Exception:
+            channel = None
+
+    target: Optional[discord.Message] = None
+    if isinstance(channel, discord.TextChannel):
+        try:
+            target = await channel.fetch_message(message_id)
+        except Exception:
+            pass
+
+    if target:
+        # Update the embed if the message is ours
+        if bot.user and target.author.id == bot.user.id and target.embeds:
+            try:
+                new_mappings = await store.get_all_reaction_roles(message_id)
+                updated_embed = await _create_reaction_role_embed(message.guild, new_mappings)
+                await target.edit(embed=updated_embed)
+            except Exception:
+                pass
+
+        # Remove all reactions then re-add in the new order
+        try:
+            await target.clear_reactions()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        for emoji in emoji_order:
+            try:
+                await target.add_reaction(emoji)
+            except Exception:
+                try:
+                    await target.add_reaction(discord.PartialEmoji.from_str(emoji))
+                except Exception:
+                    pass
+
+    # Show new order
+    new_mappings = await store.get_all_reaction_roles(message_id)
+    order_display = " ".join(new_mappings.keys())
+    await message.reply(f" Reaction roles reordered: {order_display}")
 
 
 async def _handle_reactionrole_purge(message: discord.Message, parts: list[str], bot: discord.Client) -> None:

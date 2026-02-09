@@ -413,6 +413,33 @@ class RolesStore(StorageBase):
             await self._write_reaction_roles(data)
             return True
 
+    async def reorder_reaction_roles(
+        self,
+        message_id: int,
+        emoji_order: List[str],
+    ) -> bool:
+        """Reorder reaction roles for a message according to the given emoji list.
+
+        ``emoji_order`` must contain exactly the same emojis that are currently
+        stored for *message_id* (no additions, no removals – just a permutation).
+        Returns True on success, False if the emojis don't match.
+        """
+        async with self._lock:
+            data = await self._read_reaction_roles()
+            msg_key = str(message_id)
+            mappings = data.get("reaction_roles", {}).get(msg_key)
+            if not isinstance(mappings, dict):
+                return False
+
+            # Validate: same set of emojis
+            if set(emoji_order) != set(mappings.keys()) or len(emoji_order) != len(mappings):
+                return False
+
+            # Rebuild in the requested order
+            data["reaction_roles"][msg_key] = {e: mappings[e] for e in emoji_order}
+            await self._write_reaction_roles(data)
+            return True
+
     async def purge_reaction_roles_by_messages(self, message_ids: List[str]) -> int:
         """Remove reaction roles for specific message IDs. Returns count of messages removed."""
         async with self._lock:
