@@ -837,7 +837,12 @@ async def _handle_reactionrole_add(message: discord.Message, parts: list[str], b
         await message.reply(" This command must be used in a server.")
         return
 
-    message_id, channel_id = _parse_message_ref_arg(message, parts[2])
+    # First, try to extract from the full message content (before Discord's transformation)
+    message_id, channel_id = _parse_message_ref_arg(message, message.content)
+
+    # If that didn't work, try parsing just the specific argument
+    if not message_id:
+        message_id, channel_id = _parse_message_ref_arg(message, parts[2])
     if not message_id:
         await message.reply(
             f" Invalid message link or message ID.\n"
