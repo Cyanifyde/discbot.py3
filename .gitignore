@@ -34,3 +34,4 @@ Thumbs.db
 .github
 .claude
 .claude/settings.local.json
+.claude/*
