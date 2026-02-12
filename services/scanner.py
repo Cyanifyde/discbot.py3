@@ -100,10 +100,6 @@ def register_help() -> None:
     ))
 
 
-# Register help on import so `@bot help` can list it even before restore_state runs.
-register_help()
-
-
 def _is_mod(member: discord.Member) -> bool:
     """Check if member has mod permissions."""
     perms = member.guild_permissions
@@ -231,6 +227,10 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
         await _cmd_config(message)
 
     return True
+
+
+# Register help on import so `@bot help` can list it even before restore_state runs.
+register_help()
 
 
 async def _cmd_help(message: discord.Message) -> None:
