@@ -14,6 +14,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 
 logger = logging.getLogger("discbot.server_stats")
 
@@ -33,6 +34,13 @@ def setup_server_stats() -> None:
             ("botstatus help", "Show bot status help"),
         ]
     )
+
+    command_registry.register(CommandRoute(
+        name="server_stats",
+        roots=["serverstats", "botstatus"],
+        handler=handle_serverstats_command,
+        needs_bot=True,
+    ))
 
 
 async def handle_serverstats_command(

@@ -17,6 +17,7 @@ The inactivity state is persisted in guild config and survives bot restarts.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import re
@@ -29,6 +30,7 @@ from core.constants import K
 from core.utils import iso_to_dt, safe_int, utcnow
 from core.help_system import help_system
 from core.permissions import can_use_module, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 
 if TYPE_CHECKING:
     from bot.client import DiscBot
@@ -43,7 +45,7 @@ COMMAND_PATTERN = re.compile(r"^inactivity\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
 SUBCOMMANDS = {
     "enable", "disable", "status", "step", "stats", "help",
     "setup", "removerole", "addrole", "clearroles", "config",
-    "setgrace", "setbaseline", "init",
+    "setgrace", "setbaseline", "init", "diagnose",
 }
 
 # Default state structure
@@ -90,9 +92,17 @@ def register_help() -> None:
             ("inactivity addrole <role_id>", "Add role to assign on enforcement"),
             ("inactivity removerole <role_id>", "Remove role from assignment list"),
             ("inactivity clearroles", "Clear all role assignments"),
+            ("inactivity diagnose", "Sample records and show why they were skipped"),
         ],
     )
     _HELP_REGISTERED = True
+
+    command_registry.register(CommandRoute(
+        name="inactivity",
+        roots=["inactivity"],
+        handler=handle_command,
+        needs_bot=True,
+    ))
 
 
 # Register help on import so `@bot help` can list it without waiting for restore_state.
@@ -144,6 +154,13 @@ async def increment_stats(guild_id: int, enforced: int = 0, scanned: int = 0) ->
     data["total_enforced"] = data.get("total_enforced", 0) + enforced
     data["total_scanned"] = data.get("total_scanned", 0) + scanned
     data["last_step_at"] = utcnow().isoformat()
+    await update_guild_module_data(guild_id, MODULE_NAME, data)
+
+
+async def update_state(guild_id: int, updates: dict) -> None:
+    """Merge arbitrary key-value updates into the guild inactivity state."""
+    data = await get_state(guild_id)
+    data.update(updates)
     await update_guild_module_data(guild_id, MODULE_NAME, data)
 
 
@@ -223,6 +240,8 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
         await _cmd_setbaseline(message, match.group(2))
     elif subcommand == "init":
         await _cmd_init(message)
+    elif subcommand == "diagnose":
+        await _cmd_diagnose(message, bot, state)
 
     return True
 
@@ -416,7 +435,16 @@ async def _cmd_stats(
         lines.append(f"• Total records: {counts.get('total', 0):,}")
         lines.append(f"• Cleared: {counts.get('cleared', 0):,}")
         lines.append(f"• Enforced: {counts.get('enforced', 0):,}")
-
+    # Show last step skip reasons if available
+    last_skips = data.get("last_skip_reasons")
+    if last_skips and isinstance(last_skips, dict):
+        lines.append("")
+        lines.append("**Last Step Skip Reasons:**")
+        for reason, count in last_skips.items():
+            if count > 0:
+                lines.append(f"\u2022 {reason}: {count:,}")
+        if not any(v > 0 for v in last_skips.values()):
+            lines.append("\u2022 (none)")
     await message.reply("\n".join(lines), mention_author=False)
 
 
@@ -447,13 +475,22 @@ async def _cmd_step(
     await message.reply(" Running enforcement step...", mention_author=False)
 
     try:
-        enforced, scanned = await run_enforcement_step(bot, state, guild)
+        enforced, scanned, skip_reasons = await run_enforcement_step(bot, state, guild)
         await increment_stats(guild_id, enforced=enforced, scanned=scanned)
+        await update_state(guild_id, {"last_skip_reasons": skip_reasons})
+
+        skip_lines = []
+        for reason, count in skip_reasons.items():
+            if count > 0:
+                skip_lines.append(f"  {reason}: {count:,}")
+
+        skip_text = "\n".join(skip_lines) if skip_lines else "  (none)"
 
         await message.channel.send(
             f"**Enforcement step complete!**\n"
             f"**Scanned:** {scanned:,} users\n"
-            f"**Enforced:** {enforced:,} users",
+            f"**Enforced:** {enforced:,} users\n"
+            f"**Skip reasons:**\n{skip_text}",
             allowed_mentions=discord.AllowedMentions.none(),
         )
     except Exception as e:
@@ -774,26 +811,158 @@ async def _cmd_init(message: discord.Message) -> None:
     )
 
 
+async def _cmd_diagnose(
+    message: discord.Message,
+    bot: "DiscBot",
+    state: Optional["GuildState"],
+) -> None:
+    """Sample uncleared/unenforced records and show why each is skipped."""
+    if not state:
+        await message.reply("Guild state not initialized.", mention_author=False)
+        return
+
+    guild = message.guild
+    now = utcnow()
+    threshold_days = int(state.config.get(K.INACTIVE_DAYS_THRESHOLD, 0))
+    max_messages = int(state.config.get(K.INACTIVITY_MESSAGE_THRESHOLD, 3))
+
+    inactivity_data = await get_state(guild.id)
+    baseline_date_str = inactivity_data.get("baseline_date")
+    baseline_date = iso_to_dt(baseline_date_str) if baseline_date_str else None
+
+    samples: list[str] = []
+    sample_limit = 20
+
+    shards = [f"{i:02d}" for i in range(100)]
+    for shard in shards:
+        if len(samples) >= sample_limit:
+            break
+        data = await state.storage._read_shard_file(state.storage.shard_path(shard))
+        for uid, record in data.items():
+            if len(samples) >= sample_limit:
+                break
+            if not isinstance(record, dict):
+                continue
+            if record.get("enforced") or record.get("cleared"):
+                continue
+
+            user_id_int = safe_int(uid)
+            if user_id_int is None:
+                continue
+
+            # Determine why this record would be skipped
+            reason = "WOULD BE ENFORCED"
+
+            msg_count = int(record.get("nonexcluded_messages", 0))
+            if msg_count > max_messages:
+                reason = f"above_threshold ({msg_count} msgs > {max_messages})"
+                samples.append(f"`{uid}`: {reason}")
+                continue
+
+            grace_until = iso_to_dt(record.get("grace_until"))
+            if grace_until and now < grace_until:
+                reason = f"grace_period (until {grace_until.strftime('%Y-%m-%d')})"
+                samples.append(f"`{uid}`: {reason}")
+                continue
+
+            joined_at = iso_to_dt(record.get("joined_at"))
+            if baseline_date:
+                baseline = baseline_date
+                if joined_at and joined_at > baseline_date:
+                    baseline = joined_at
+            else:
+                baseline = joined_at or iso_to_dt(
+                    state.storage.lock_data.get("initialized_at")
+                )
+
+            if baseline is None:
+                reason = "no_baseline (no joined_at or baseline_date)"
+                samples.append(f"`{uid}`: {reason}")
+                continue
+
+            last_message = iso_to_dt(record.get("last_message_at"))
+            delta = now - (last_message or baseline)
+            if delta < dt.timedelta(days=threshold_days):
+                days_inactive = delta.days
+                reason = f"below_inactive_threshold ({days_inactive}d < {threshold_days}d)"
+                samples.append(f"`{uid}`: {reason}")
+                continue
+
+            # Check member
+            member = guild.get_member(user_id_int)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(user_id_int)
+                    await asyncio.sleep(0.05)
+                except discord.NotFound:
+                    reason = "member_left (not in server)"
+                    samples.append(f"`{uid}`: {reason}")
+                    continue
+                except discord.HTTPException:
+                    reason = "member_not_found (API error)"
+                    samples.append(f"`{uid}`: {reason}")
+                    continue
+
+            if state.is_exempt(member):
+                reason = f"exempt ({member.display_name})"
+                samples.append(f"`{uid}`: {reason}")
+                continue
+
+            reason = f"WOULD BE ENFORCED ({member.display_name}, {delta.days}d inactive)"
+            samples.append(f"`{uid}`: {reason}")
+
+    if not samples:
+        await message.reply(
+            "No uncleared/unenforced records found to diagnose.",
+            mention_author=False,
+        )
+        return
+
+    header = (
+        f"**Inactivity Diagnosis** (sampled {len(samples)} uncleared records)\n"
+        f"Threshold: {threshold_days}d | Msg threshold: {max_messages} | "
+        f"Baseline: {baseline_date_str or 'not set'}\n\n"
+    )
+    body = "\n".join(samples)
+
+    # Truncate if too long for Discord
+    full = header + body
+    if len(full) > 1900:
+        full = full[:1900] + "\n... (truncated)"
+
+    await message.reply(full, mention_author=False)
+
+
 async def run_enforcement_step(
     bot: "DiscBot",
     state: "GuildState",
     guild: discord.Guild,
-) -> tuple[int, int]:
+) -> tuple[int, int, dict[str, int]]:
     """
     Run one batch of inactivity enforcement.
 
-    Returns (enforced_count, scanned_count).
+    Returns (enforced_count, scanned_count, skip_reasons).
     """
     now = utcnow()
     threshold_days = int(state.config.get(K.INACTIVE_DAYS_THRESHOLD, 0))
     max_scan = int(state.config.get(K.ENFORCEMENT_SCAN_MAX_USERS_PER_RUN, 0))
     max_messages = int(state.config.get(K.INACTIVITY_MESSAGE_THRESHOLD, 3))
 
-    # Get grace period and baseline from module data
+    # Get baseline from module data
     inactivity_data = await get_state(guild.id)
-    grace_period_days = int(inactivity_data.get("grace_period_days", 7))
     baseline_date_str = inactivity_data.get("baseline_date")
     baseline_date = iso_to_dt(baseline_date_str) if baseline_date_str else None
+
+    skip_reasons: dict[str, int] = {
+        "cleared": 0,
+        "above_threshold": 0,
+        "grace_period": 0,
+        "no_baseline": 0,
+        "below_inactive_threshold": 0,
+        "member_not_found": 0,
+        "member_left": 0,
+        "exempt": 0,
+    }
 
     cursor = state.storage.state_data.get(
         "enforcement_cursor", {"shard": "00", "after": None}
@@ -848,13 +1017,16 @@ async def run_enforcement_step(
             last_scanned_shard = shard
 
             if record.get("enforced") or record.get("cleared"):
+                skip_reasons["cleared"] += 1
                 continue
             if int(record.get("nonexcluded_messages", 0)) > max_messages:
+                skip_reasons["above_threshold"] += 1
                 continue
 
             # Check grace period (per-user grace_until in record)
             grace_until = iso_to_dt(record.get("grace_until"))
             if grace_until and now < grace_until:
+                skip_reasons["grace_period"] += 1
                 continue
 
             # Determine baseline: use baseline_date if set, else joined_at, else initialized_at
@@ -872,15 +1044,29 @@ async def run_enforcement_step(
                 )
             
             if baseline is None:
+                skip_reasons["no_baseline"] += 1
                 continue
 
             last_message = iso_to_dt(record.get("last_message_at"))
             delta = now - (last_message or baseline)
             if delta < dt.timedelta(days=threshold_days):
+                skip_reasons["below_inactive_threshold"] += 1
                 continue
 
+            # Try cache first, then API fetch for cache miss
             member = guild.get_member(user_id_int)
-            if member is None or state.is_exempt(member):
+            if member is None:
+                try:
+                    member = await guild.fetch_member(user_id_int)
+                    await asyncio.sleep(0.05)  # rate limit courtesy
+                except discord.NotFound:
+                    skip_reasons["member_left"] += 1
+                    continue
+                except discord.HTTPException:
+                    skip_reasons["member_not_found"] += 1
+                    continue
+            if state.is_exempt(member):
+                skip_reasons["exempt"] += 1
                 continue
 
             result = await state.enforcement.enforce_member(
@@ -917,7 +1103,12 @@ async def run_enforcement_step(
             lambda s: s.update({"enforcement_cursor": {"shard": "00", "after": None}})
         )
 
-    return enforced, scanned
+    logger.info(
+        "Enforcement step for guild %s: scanned=%d enforced=%d skips=%s",
+        guild.id, scanned, enforced, skip_reasons,
+    )
+
+    return enforced, scanned, skip_reasons
 
 
 async def restore_state(bot: "DiscBot") -> None:

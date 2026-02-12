@@ -16,6 +16,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from core.utility_storage import UtilityStore, GuildUtilityStore
 from core.types import Bookmark
 from core.utils import utcnow, dt_to_iso, iso_to_dt, parse_duration_extended
@@ -117,6 +118,13 @@ def setup_utility() -> None:
         group="Utility",
         hidden=True,
     )
+
+    command_registry.register(CommandRoute(
+        name="utility",
+        roots=["utility", "bookmark", "afk", "mynote", "mynotes", "alias", "export"],
+        handler=handle_utility_command,
+        needs_bot=True,
+    ))
 
 
 async def handle_utility_command(message: discord.Message, bot: discord.Client) -> bool:

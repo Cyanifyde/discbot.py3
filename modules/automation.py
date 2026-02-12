@@ -12,6 +12,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from services.automation_service import automation_service
 from core.utils import parse_deadline
 
@@ -76,6 +77,13 @@ def setup_automation() -> None:
         group="Automation",
         hidden=True,
     )
+
+    command_registry.register(CommandRoute(
+        name="automation",
+        roots=["automation", "trigger", "schedule", "vacation"],
+        handler=handle_automation_command,
+        needs_bot=True,
+    ))
 
 
 async def handle_automation_command(message: discord.Message, bot: discord.Client) -> bool:

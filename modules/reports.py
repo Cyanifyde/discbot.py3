@@ -12,6 +12,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from services.report_service import report_service
 
 logger = logging.getLogger("discbot.reports")
@@ -39,6 +40,13 @@ def setup_reports() -> None:
             ("report help", "Show this help message"),
         ],
     )
+
+    command_registry.register(CommandRoute(
+        name="reports",
+        roots=["report"],
+        handler=handle_report_command,
+        needs_bot=True,
+    ))
 
 
 async def handle_report_command(message: discord.Message, bot: discord.Client) -> bool:

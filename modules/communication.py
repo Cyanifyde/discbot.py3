@@ -13,6 +13,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from core.utils import extract_first_message_link
 from services.communication_service import communication_service
 
@@ -80,6 +81,13 @@ def setup_communication() -> None:
         group="Communication",
         hidden=True,
     )
+
+    command_registry.register(CommandRoute(
+        name="communication",
+        roots=["communication", "feedback", "notify", "ack"],
+        handler=handle_communication_command,
+        needs_bot=True,
+    ))
 
 
 async def handle_communication_command(message: discord.Message, bot: discord.Client) -> bool:

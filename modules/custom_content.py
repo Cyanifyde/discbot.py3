@@ -14,6 +14,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from core.custom_content_storage import CustomContentStore
 
 logger = logging.getLogger("discbot.custom_content")
@@ -70,6 +71,21 @@ def setup_custom_content() -> None:
             ("form delete <name>", "Delete form (mod only)"),
         ],
     )
+
+    command_registry.register(CommandRoute(
+        name="custom_content",
+        roots=["custom", "customcmd", "form"],
+        handler=handle_custom_content_command,
+        needs_bot=True,
+    ))
+    # Fallback: custom commands can be any single word
+    command_registry.register(CommandRoute(
+        name="custom_content_fallback",
+        roots=[],
+        handler=handle_custom_content_command,
+        needs_bot=True,
+        is_fallback=True,
+    ))
 
 
 async def handle_custom_content_command(message: discord.Message, bot: discord.Client) -> bool:

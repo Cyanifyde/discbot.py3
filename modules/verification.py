@@ -22,6 +22,7 @@ from core.config_migration import get_guild_module_data, update_guild_module_dat
 from core.interactions import register_component_handler
 from core.help_system import help_system
 from core.permissions import can_use_command, can_use_module, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 
 logger = logging.getLogger("discbot.verification")
 
@@ -244,6 +245,19 @@ def setup_verification() -> None:
     )
     
     register_component_handler(VERIFY_BUTTON_PREFIX, handle_verify_button)
+
+    command_registry.register(CommandRoute(
+        name="verification",
+        roots=["verification", "addverification"],
+        handler=handle_verification_command,
+        needs_bot=True,
+    ))
+    command_registry.register(CommandRoute(
+        name="verification_remove",
+        roots=["removeverification"],
+        handler=handle_remove_verification_command,
+        needs_bot=True,
+    ))
 
 
 async def _cmd_help(message: discord.Message) -> None:

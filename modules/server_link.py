@@ -17,6 +17,7 @@ import discord
 from core.help_system import help_system
 from core.link_storage import get_link_storage, TrustLevel
 from core.permissions import can_use_command, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from core.sync_protection import (
     DEFAULT_MAX_ACTIONS,
     DEFAULT_WINDOW_SECONDS,
@@ -44,6 +45,13 @@ def setup_server_link() -> None:
             ("linkprotection [window|max|reset] [value]", "Configure sync protection thresholds"),
         ]
     )
+
+    command_registry.register(CommandRoute(
+        name="server_link",
+        roots=["serverlink", "linkserver", "addlink", "links", "unlink", "linksettings", "linkprotection"],
+        handler=handle_server_link_command,
+        needs_bot=True,
+    ))
 
 
 async def _cmd_help(message: discord.Message) -> None:

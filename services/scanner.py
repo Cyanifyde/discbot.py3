@@ -27,6 +27,7 @@ from core.hashes import load_hashes
 from core.utils import utcnow
 from core.help_system import help_system
 from core.permissions import can_use_module, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 
 if TYPE_CHECKING:
     from bot.client import DiscBot
@@ -90,6 +91,13 @@ def register_help() -> None:
         ],
     )
     _HELP_REGISTERED = True
+
+    command_registry.register(CommandRoute(
+        name="scanner",
+        roots=["scanner"],
+        handler=handle_command,
+        needs_bot=True,
+    ))
 
 
 # Register help on import so `@bot help` can list it even before restore_state runs.

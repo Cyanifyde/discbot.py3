@@ -29,6 +29,7 @@ from core.permissions import (
     set_module_enabled,
 )
 from core.help_system import help_system
+from core.command_registry import command_registry, CommandRoute
 
 if TYPE_CHECKING:
     pass
@@ -58,6 +59,13 @@ def register_help() -> None:
             ("modules help", "Show detailed module management help"),
         ]
     )
+
+    command_registry.register(CommandRoute(
+        name="modules_command",
+        roots=["modules"],
+        handler=handle_command,
+        needs_bot=False,
+    ))
 
 
 async def handle_command(message: discord.Message) -> bool:

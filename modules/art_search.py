@@ -22,6 +22,7 @@ import discord
 from core.art_search_storage import ArtSearchStore, parse_channel_id
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 
 logger = logging.getLogger("discbot.art_search")
 
@@ -68,6 +69,15 @@ def setup_art_search() -> None:
             ("artsearch help", "Show this help message"),
         ],
     )
+
+    # art root shared with art_tools; priority=1 means art_search is tried second
+    command_registry.register(CommandRoute(
+        name="art_search",
+        roots=["art", "artsearch"],
+        handler=handle_art_search_command,
+        needs_bot=True,
+        priority=1,
+    ))
 
 
 # ── command dispatcher ──────────────────────────────────────────────────────

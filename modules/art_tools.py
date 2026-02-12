@@ -17,6 +17,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from services.render_service import render_service
 
 logger = logging.getLogger("discbot.art_tools")
@@ -103,6 +104,15 @@ def setup_art_tools() -> None:
         group="Art Tools",
         hidden=True,
     )
+
+    # art root shared with art_search; priority=0 means art_tools is tried first
+    command_registry.register(CommandRoute(
+        name="art_tools",
+        roots=["art", "palette", "prompt", "artdice"],
+        handler=handle_art_tools_command,
+        needs_bot=True,
+        priority=0,
+    ))
 
 
 async def handle_art_tools_command(message: discord.Message, bot: discord.Client) -> bool:

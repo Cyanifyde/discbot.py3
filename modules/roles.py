@@ -14,6 +14,7 @@ import discord
 
 from core.help_system import help_system
 from core.permissions import is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from core.roles_storage import RolesStore
 from core.utils import dt_to_iso, iso_to_dt, parse_deadline, parse_duration_extended
 
@@ -116,6 +117,13 @@ def setup_roles() -> None:
         group="Roles",
         hidden=True,
     )
+
+    command_registry.register(CommandRoute(
+        name="roles",
+        roots=["roles", "temprole", "requestrole", "approverole", "rolebundle", "reactionrole"],
+        handler=handle_roles_command,
+        needs_bot=True,
+    ))
 
 
 async def handle_roles_command(message: discord.Message, bot: discord.Client) -> bool:

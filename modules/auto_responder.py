@@ -23,6 +23,7 @@ from core.paths import resolve_repo_path
 from core.utils import is_safe_relative_path, sanitize_text
 from core.help_system import help_system
 from core.permissions import can_use_command, is_module_enabled, can_use_module
+from core.command_registry import command_registry, CommandRoute
 from classes.response_handlers import ResponderInput
 
 MODULE_NAME = "autoresponder"
@@ -43,6 +44,37 @@ help_system.register_module(
         ("removeresponse \"trigger\"", "Remove a server-added response"),
     ]
 )
+
+# Register command routes for dispatch
+# NOTE: handler references are forward-declared; the functions are defined below.
+# Python module-level code runs top-to-bottom, so we defer registration
+# to a helper called at the bottom of the file.
+_AUTORESPONDER_ROUTES_REGISTERED = False
+
+
+def _register_autoresponder_routes() -> None:
+    global _AUTORESPONDER_ROUTES_REGISTERED
+    if _AUTORESPONDER_ROUTES_REGISTERED:
+        return
+    _AUTORESPONDER_ROUTES_REGISTERED = True
+    command_registry.register(CommandRoute(
+        name="auto_responder_list",
+        roots=["listresponses"],
+        handler=handle_list_responses_command,
+        needs_bot=False,
+    ))
+    command_registry.register(CommandRoute(
+        name="auto_responder_add",
+        roots=["addresponse"],
+        handler=handle_add_response_command,
+        needs_bot=False,
+    ))
+    command_registry.register(CommandRoute(
+        name="auto_responder_remove",
+        roots=["removeresponse"],
+        handler=handle_remove_response_command,
+        needs_bot=False,
+    ))
 
 # Command patterns
 ADD_RESPONSE_PATTERN = re.compile(
@@ -1208,3 +1240,7 @@ async def handle_remove_response_command(message: discord.Message) -> bool:
     )
     
     return True
+
+
+# Deferred registration (handler functions are now defined)
+_register_autoresponder_routes()

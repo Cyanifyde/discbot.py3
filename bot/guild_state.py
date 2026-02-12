@@ -208,12 +208,16 @@ class GuildState:
                 
                 logger.info("Running scheduled enforcement for guild %s", self.guild_id)
                 
-                enforced, scanned = await run_enforcement_step(self.bot, self, guild)
+                enforced, scanned, skip_reasons = await run_enforcement_step(self.bot, self, guild)
                 await increment_stats(self.guild_id, enforced=enforced, scanned=scanned)
                 
+                # Persist skip reasons for later display
+                from services.inactivity import update_state
+                await update_state(self.guild_id, {"last_skip_reasons": skip_reasons})
+                
                 logger.info(
-                    "Scheduled enforcement complete for guild %s: scanned=%d enforced=%d",
-                    self.guild_id, scanned, enforced,
+                    "Scheduled enforcement complete for guild %s: scanned=%d enforced=%d skips=%s",
+                    self.guild_id, scanned, enforced, skip_reasons,
                 )
             except Exception as e:
                 logger.error(

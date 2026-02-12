@@ -34,72 +34,53 @@ from core.io_utils import read_json, read_text
 from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from core.help_system import help_system
-from modules.auto_responder import (
-    handle_add_response_command,
-    handle_list_responses_command,
-    handle_remove_response_command,
-)
+import modules.auto_responder  # noqa: F401 - routes registered at module level
 from modules.dm_sender import handle_dm_send
 from modules.verification import (
-    handle_remove_verification_command,
-    handle_verification_command,
     restore_verification_views,
     setup_verification,
 )
 from modules.moderation import (
-    handle_moderation_command,
     setup_moderation,
 )
 from modules.server_stats import (
-    handle_serverstats_command,
     setup_server_stats,
 )
 from modules.server_link import (
-    handle_server_link_command,
     setup_server_link,
 )
 from modules.reports import (
-    handle_report_command,
     setup_reports,
 )
 from modules.utility import (
-    handle_utility_command,
     setup_utility,
     handle_bookmark_reaction,
 )
 from modules.communication import (
-    handle_communication_command,
     setup_communication,
 )
 from modules.art_tools import (
-    handle_art_tools_command,
     setup_art_tools,
 )
 from modules.art_search import (
-    handle_art_search_command,
     setup_art_search,
 )
 from modules.automation import (
-    handle_automation_command,
     setup_automation,
 )
 from modules.roles import (
     handle_reaction_role_event,
-    handle_roles_command,
     restore_reaction_roles,
     setup_roles,
 )
 from modules.custom_content import (
-    handle_custom_content_command,
     setup_custom_content,
 )
 from modules.invite_protection import (
     handle_invite_protection,
     setup_invite_protection,
 )
-from services.inactivity import handle_command as handle_inactivity_command
 from services.inactivity import restore_state as restore_inactivity_state
-from services.scanner import handle_command as handle_scanner_command
 from services.scanner import restore_state as restore_scanner_state
 from services.ptc_service import (
     handle_ptc_message,
@@ -109,7 +90,6 @@ from services.ptc_service import (
     handle_ptc_reaction,
 )
 from services.sync_service import setup_sync_interactions
-from modules.modules_command import handle_command as handle_modules_command
 from modules.modules_command import register_help as register_modules_help
 
 from .guild_state import GuildState
@@ -434,101 +414,11 @@ class DiscBot(discord.Client):
                 return
         except Exception as e:
             await handle_command_error(e, message)
-        # Fast dispatch: only call handlers that match the first token.
+        # Central command dispatch via registry.
         content = (message.content or "").strip()
         if content:
-            parts = content.split()
-            cmd0 = parts[0].lower()
-            cmd1 = parts[1].lower() if len(parts) > 1 else ""
-
-            # Auto-responder admin commands
-            if cmd0 == "listresponses" and await self._safe_dispatch(handle_list_responses_command(message), message):
-                return
-            if cmd0 == "addresponse" and await self._safe_dispatch(handle_add_response_command(message), message):
-                return
-            if cmd0 == "removeresponse" and await self._safe_dispatch(handle_remove_response_command(message), message):
-                return
-
-            # Admin / core commands
-            if cmd0 == "modules" and await self._safe_dispatch(handle_modules_command(message), message):
-                return
-
-            if cmd0 in {"verification", "addverification"} and await self._safe_dispatch(handle_verification_command(message, self), message):
-                return
-            if cmd0 == "removeverification" and await self._safe_dispatch(handle_remove_verification_command(message, self), message):
-                return
-
-            if cmd0 == "scanner" and await self._safe_dispatch(handle_scanner_command(message, self), message):
-                return
-            if cmd0 == "inactivity" and await self._safe_dispatch(handle_inactivity_command(message, self), message):
-                return
-
-            mod_roots = {
-                "moderation",
-                "warn",
-                "warnings",
-                "clearwarning",
-                "clearwarnings",
-                "mute",
-                "unmute",
-                "ban",
-                "unban",
-                "kick",
-                "note",
-                "notes",
-                "clearnote",
-            }
-            if cmd0 in mod_roots and await self._safe_dispatch(handle_moderation_command(message, self), message):
-                return
-
-            if cmd0 in {"serverstats", "botstatus"} and await self._safe_dispatch(handle_serverstats_command(message, self), message):
-                return
-
-            server_link_roots = {
-                "serverlink",
-                "linkserver",
-                "addlink",
-                "links",
-                "unlink",
-                "linksettings",
-                "linkprotection",
-            }
-            if cmd0 in server_link_roots and await self._safe_dispatch(handle_server_link_command(message, self), message):
-                return
-
-            # Additional module commands
-            if cmd0 == "report" and await self._safe_dispatch(handle_report_command(message, self), message):
-                return
-
-            utility_roots = {"utility", "bookmark", "afk", "mynote", "mynotes", "alias", "export"}
-            if cmd0 in utility_roots and await self._safe_dispatch(handle_utility_command(message, self), message):
-                return
-
-            communication_roots = {"communication", "feedback", "notify", "ack"}
-            if cmd0 in communication_roots and await self._safe_dispatch(handle_communication_command(message, self), message):
-                return
-
-            # Art: `art help` (tools), `art search/channels` (search), plus `palette/prompt/artdice`.
-            if cmd0 in {"art", "palette", "prompt", "artdice"}:
-                if await self._safe_dispatch(handle_art_tools_command(message, self), message):
-                    return
-                if await self._safe_dispatch(handle_art_search_command(message, self), message):
-                    return
-            if cmd0 == "artsearch" and await self._safe_dispatch(handle_art_search_command(message, self), message):
-                return
-
-            if cmd0 in {"automation", "trigger", "schedule", "vacation"} and await self._safe_dispatch(handle_automation_command(message, self), message):
-                return
-
-            roles_roots = {"roles", "temprole", "requestrole", "approverole", "rolebundle", "reactionrole"}
-            if cmd0 in roles_roots and await self._safe_dispatch(handle_roles_command(message, self), message):
-                return
-
-            if cmd0 in {"custom", "customcmd", "form"} and await self._safe_dispatch(handle_custom_content_command(message, self), message):
-                return
-
-            # Custom commands can be any single word; handler uses a short-lived cache to avoid disk IO.
-            if await self._safe_dispatch(handle_custom_content_command(message, self), message):
+            from core.command_registry import command_registry
+            if await command_registry.dispatch(message, self):
                 return
 
         state = self._get_guild_state(message.guild.id)
@@ -832,126 +722,6 @@ class DiscBot(discord.Client):
             lambda s: s.update({"snapshot_after": str(next_after) if next_after else s.get("snapshot_after")})
         )
         return processed, False
-
-    # ─── Enforcement Loop ─────────────────────────────────────────────────────
-
-    async def _enforce_inactivity_step(
-        self,
-        state: GuildState,
-        guild: discord.Guild,
-    ) -> tuple[int, int]:
-        """Process one batch of inactivity enforcement."""
-        now = utcnow()
-        threshold_days = int(state.config.get(K.INACTIVE_DAYS_THRESHOLD, 0))
-        max_scan = int(state.config.get(K.ENFORCEMENT_SCAN_MAX_USERS_PER_RUN, 0))
-        max_messages = int(state.config.get(K.INACTIVITY_MESSAGE_THRESHOLD, 3))
-        
-        cursor = state.storage.state_data.get("enforcement_cursor", {"shard": "00", "after": None})
-        start_shard = cursor.get("shard", "00")
-        after = cursor.get("after")
-        after_int = safe_int(after) if after else None
-        
-        shards = [f"{i:02d}" for i in range(100)]
-        if start_shard in shards:
-            idx = shards.index(start_shard)
-            shards = shards[idx:] + shards[:idx]
-        
-        scanned = 0
-        enforced = 0
-        last_scanned_user: Optional[str] = None
-        last_scanned_shard: str = start_shard
-        
-        bot_member = guild.get_member(self.user.id) if self.user else None
-        bot_top_role = bot_member.top_role if bot_member else None
-        
-        for shard in shards:
-            data = await state.storage._read_shard_file(state.storage.shard_path(shard))
-            parsed_ids: list[tuple[int, str]] = [
-                (safe_int(uid), uid) for uid in data.keys() if safe_int(uid) is not None  # type: ignore
-            ]
-            parsed_ids.sort(key=lambda item: item[0])
-            
-            for user_id_int, user_id in parsed_ids:
-                if shard == start_shard and after_int is not None and user_id_int is not None and user_id_int <= after_int:
-                    continue
-                if scanned >= max_scan:
-                    break
-                
-                record = data.get(user_id)
-                if not isinstance(record, dict):
-                    # Still track position even for invalid records
-                    last_scanned_user = user_id
-                    last_scanned_shard = shard
-                    continue
-                
-                scanned += 1
-                last_scanned_user = user_id
-                last_scanned_shard = shard
-                
-                # Skip already processed
-                if record.get("enforced") or record.get("cleared"):
-                    continue
-                if int(record.get("nonexcluded_messages", 0)) > max_messages:
-                    continue
-                
-                # Check grace period
-                grace_until = iso_to_dt(record.get("grace_until"))
-                if grace_until and now < grace_until:
-                    continue
-                
-                # Check inactivity threshold
-                baseline = iso_to_dt(record.get("joined_at")) or iso_to_dt(
-                    state.storage.lock_data.get("initialized_at")
-                )
-                if baseline is None:
-                    continue
-                
-                last_message = iso_to_dt(record.get("last_message_at"))
-                delta = now - (last_message or baseline)
-                if delta < dt.timedelta(days=threshold_days):
-                    continue
-                
-                # Get member and check exemption
-                member = guild.get_member(user_id_int)
-                if member is None or state.is_exempt(member):
-                    continue
-                
-                # Enforce
-                result = await state.enforcement.enforce_member(
-                    member,
-                    bot_top_role,
-                    reason="inactivity",
-                )
-                
-                await state.storage.mark_enforced(member.id)
-                state.record_action("inactivity")
-                
-                log_text = state.enforcement.format_action_log(member, result, action="inactivity")
-                await self._post_action_log(state, log_text)
-                enforced += 1
-            
-            if scanned >= max_scan:
-                break
-            # Reset after filter when moving to next shard
-            after = None
-            after_int = None
-        
-        # Update cursor
-        if last_scanned_user:
-            await state.storage.update_state(
-                lambda s: s.update({"enforcement_cursor": {"shard": last_scanned_shard, "after": last_scanned_user}})
-            )
-        elif scanned == 0:
-            # Completed all shards with no users scanned - reset to beginning
-            await state.storage.update_state(
-                lambda s: s.update({"enforcement_cursor": {"shard": "00", "after": None}})
-            )
-        else:
-            await state.storage.update_state(
-                lambda s: s.update({"enforcement_cursor": {"shard": "00", "after": None}})
-            )
-        
-        return enforced, scanned
 
     # ─── Helper Methods ───────────────────────────────────────────────────────
 

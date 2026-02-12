@@ -15,6 +15,7 @@ import discord
 from core.help_system import help_system
 from core.moderation_storage import get_moderation_store
 from core.permissions import can_use_command, is_module_enabled
+from core.command_registry import command_registry, CommandRoute
 from core.utils import iso_to_dt
 from services.sync_service import sync_action_downstream, request_upstream
 
@@ -108,6 +109,16 @@ def setup_moderation() -> None:
             ("clearnote <user> <id>", "Remove a specific note"),
         ]
     )
+
+    command_registry.register(CommandRoute(
+        name="moderation",
+        roots=[
+            "moderation", "warn", "warnings", "clearwarning", "clearwarnings",
+            "mute", "unmute", "ban", "unban", "kick", "note", "notes", "clearnote",
+        ],
+        handler=handle_moderation_command,
+        needs_bot=True,
+    ))
 
 
 async def _cmd_help(message: discord.Message) -> None:
