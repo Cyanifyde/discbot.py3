@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Optional
 
 import discord
 
+from core.config import OWNER_ID
 from core.permissions import (
     AVAILABLE_COMMANDS,
     AVAILABLE_MODULES,
@@ -30,6 +31,12 @@ from core.permissions import (
 )
 from core.help_system import help_system
 from core.command_registry import command_registry, CommandRoute
+from services.hot_reload_service import (
+    check_and_update_once as check_hot_reload_now,
+    pause as pause_hot_reload,
+    resume as resume_hot_reload,
+    status as hot_reload_status,
+)
 
 if TYPE_CHECKING:
     pass
@@ -39,7 +46,7 @@ logger = logging.getLogger("discbot.modules_command")
 COMMAND_PATTERN = re.compile(r"^modules\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
 
 SUBCOMMANDS = {
-    "list", "enable", "disable", "permissions", "allow", "deny", "help"
+    "list", "enable", "disable", "permissions", "allow", "deny", "help", "reload"
 }
 
 
@@ -57,6 +64,10 @@ def register_help() -> None:
             ("modules allow <module|command> <role_id>", "Grant a role access to module/command"),
             ("modules deny <module|command> <role_id>", "Revoke role access to module/command"),
             ("modules help", "Show detailed module management help"),
+            ("modules reload status", "Show hot-reload updater status (owner only)"),
+            ("modules reload now", "Run one immediate git check + apply cycle (owner only)"),
+            ("modules reload pause", "Pause automatic hot-reload polling (owner only)"),
+            ("modules reload resume", "Resume automatic hot-reload polling (owner only)"),
         ]
     )
 
@@ -86,17 +97,6 @@ async def handle_command(message: discord.Message) -> bool:
     if not message.guild:
         return False
     
-    # Must be an admin
-    if not isinstance(message.author, discord.Member):
-        return False
-    
-    if not message.author.guild_permissions.administrator:
-        await message.reply(
-            "You need Administrator permission to use this command.",
-            mention_author=False,
-        )
-        return True
-    
     # Parse subcommand
     match = COMMAND_PATTERN.match(content)
     if not match:
@@ -109,6 +109,20 @@ async def handle_command(message: discord.Message) -> bool:
     if subcommand not in SUBCOMMANDS:
         await message.reply(
             f"Unknown subcommand: `{subcommand}`\\nUse `modules help` for available commands.",
+            mention_author=False,
+        )
+        return True
+
+    if subcommand == "reload":
+        await _cmd_reload(message, args)
+        return True
+
+    # Non-reload subcommands remain admin-only.
+    if not isinstance(message.author, discord.Member):
+        return False
+    if not message.author.guild_permissions.administrator:
+        await message.reply(
+            "You need Administrator permission to use this command.",
             mention_author=False,
         )
         return True
@@ -130,6 +144,70 @@ async def handle_command(message: discord.Message) -> bool:
         await _cmd_help(message)
     
     return True
+
+
+async def _cmd_reload(message: discord.Message, args: str) -> None:
+    """Owner-only controls for git hot reload service."""
+    if message.author.id != OWNER_ID:
+        await message.reply(
+            "Only the bot owner can use `modules reload` commands.",
+            mention_author=False,
+        )
+        return
+
+    action = (args.strip().split()[0].lower() if args.strip() else "status")
+
+    if action == "status":
+        state = hot_reload_status()
+        await message.reply(
+            "\n".join([
+                "**Hot Reload Status**",
+                f"Enabled: `{state.get('enabled')}`",
+                f"Running: `{state.get('running')}`",
+                f"Paused: `{state.get('paused')}`",
+                f"Remote: `{state.get('remote')}/{state.get('branch')}`",
+                f"Poll Seconds: `{state.get('poll_seconds')}`",
+                f"Protected Halt: `{state.get('protected_halt')}`",
+                f"Last Check: `{state.get('last_check_at')}`",
+                f"Last Local Head: `{state.get('last_local_head')}`",
+                f"Last Remote Head: `{state.get('last_remote_head')}`",
+                f"Last Result: `{state.get('last_result')}`",
+            ]),
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return
+
+    if action == "now":
+        result = await check_hot_reload_now()
+        await message.reply(
+            "\n".join([
+                "**Hot Reload Manual Check**",
+                f"Status: `{result.get('status')}`",
+                f"Detail: `{result.get('detail', '')}`",
+                f"Local Head: `{result.get('local_head')}`",
+                f"Remote Head: `{result.get('remote_head')}`",
+                f"Reload Success: `{result.get('reload_success')}`",
+            ]),
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        return
+
+    if action == "pause":
+        pause_hot_reload()
+        await message.reply("Hot reload polling paused.", mention_author=False)
+        return
+
+    if action == "resume":
+        resume_hot_reload()
+        await message.reply("Hot reload polling resumed.", mention_author=False)
+        return
+
+    await message.reply(
+        "Usage: `modules reload <status|now|pause|resume>`",
+        mention_author=False,
+    )
 
 
 async def _cmd_list(message: discord.Message) -> None:

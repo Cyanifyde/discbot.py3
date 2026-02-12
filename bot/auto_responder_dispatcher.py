@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
-from modules.auto_responder import handle_auto_responder
 from core.error_handler import handle_event_error
 
 if TYPE_CHECKING:
@@ -18,6 +17,8 @@ if TYPE_CHECKING:
     from bot.client import DiscBot
 
 logger = logging.getLogger("discbot.auto_responder_dispatcher")
+
+AutoResponderHandler = Callable[["discord.Message"], Awaitable[bool]]
 
 
 class AutoResponderDispatcher:
@@ -89,7 +90,17 @@ class AutoResponderDispatcher:
             except asyncio.CancelledError:
                 break
             try:
-                await handle_auto_responder(msg)
+                handler: Optional[AutoResponderHandler] = None
+                if self._bot is not None:
+                    try:
+                        handler = self._bot.get_auto_responder_handler()
+                    except Exception:
+                        handler = None
+                if handler is None:
+                    logger.warning("Auto-responder handler unavailable; dropping message")
+                    continue
+
+                await handler(msg)
             except Exception as e:
                 try:
                     mid = getattr(msg, "id", None)
@@ -107,4 +118,3 @@ class AutoResponderDispatcher:
                     self._queue.task_done()
                 except Exception:
                     pass
-

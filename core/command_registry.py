@@ -55,6 +55,11 @@ class CommandRegistry:
 
     def register(self, route: CommandRoute) -> None:
         """Register a command route."""
+        self.replace(route)
+
+    def replace(self, route: CommandRoute) -> None:
+        """Register a route by name, replacing any existing route with that name."""
+        self.unregister(route.name)
         self._routes[route.name] = route
 
         if route.is_fallback:
@@ -67,6 +72,42 @@ class CommandRegistry:
             bucket = self._root_map.setdefault(root_lower, [])
             bucket.append(route)
             bucket.sort(key=lambda r: r.priority)
+
+    def unregister(self, name: str) -> bool:
+        """
+        Unregister a route by name.
+
+        Returns True if a route existed and was removed.
+        """
+        route = self._routes.pop(name, None)
+        if route is None:
+            return False
+
+        if route.is_fallback:
+            self._fallbacks = [r for r in self._fallbacks if r.name != name]
+            return True
+
+        for root in route.roots:
+            root_lower = root.lower()
+            bucket = self._root_map.get(root_lower)
+            if not bucket:
+                continue
+            self._root_map[root_lower] = [r for r in bucket if r.name != name]
+            if not self._root_map[root_lower]:
+                del self._root_map[root_lower]
+        return True
+
+    def unregister_many(self, names: list[str]) -> int:
+        """Unregister multiple routes and return the number removed."""
+        removed = 0
+        for name in names:
+            if self.unregister(name):
+                removed += 1
+        return removed
+
+    def list_routes(self) -> list[str]:
+        """Return all registered route names in sorted order."""
+        return sorted(self._routes.keys())
 
     # ── Dispatch ──────────────────────────────────────────────────────
 

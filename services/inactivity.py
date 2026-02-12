@@ -105,6 +105,11 @@ def register_help() -> None:
     ))
 
 
+def setup_inactivity_service() -> None:
+    """Idempotent setup entrypoint for inactivity registration."""
+    register_help()
+
+
 def _is_mod(member: discord.Member) -> bool:
     """Check if member has mod permissions."""
     perms = member.guild_permissions
@@ -240,10 +245,6 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
         await _cmd_diagnose(message, bot, state)
 
     return True
-
-
-# Register help on import so `@bot help` can list it without waiting for restore_state.
-register_help()
 
 
 async def _cmd_help(message: discord.Message) -> None:

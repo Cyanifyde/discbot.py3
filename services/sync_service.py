@@ -903,6 +903,12 @@ def get_sync_service(bot: discord.Client) -> SyncService:
     return _sync_service
 
 
+def reset_sync_service() -> None:
+    """Reset global sync service singleton (used by hot reload)."""
+    global _sync_service
+    _sync_service = None
+
+
 async def sync_action_downstream(
     bot: discord.Client,
     origin_guild: discord.Guild,

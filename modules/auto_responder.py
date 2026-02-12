@@ -29,21 +29,29 @@ from classes.response_handlers import ResponderInput
 MODULE_NAME = "autoresponder"
 CONFIG_SUFFIX = ".autoresponder.json"
 
-# Register help immediately on module import
-help_system.register_module(
-    name="Auto-Responder",
-    description="Automatic responses to configured triggers with custom handlers, filters, and delivery modes.",
-    help_command="autoresponder help",
-    commands=[
-        ("autoresponder help", "Show this help message"),
-        ("listresponses", "List all server-added responses"),
-        ("addresponse \"trigger\" \"response\"", "Add a simple text response"),
-        ("addresponse \"trigger\" \"\" --embed title=\"T\" desc=\"D\"", "Add an embed response"),
-        ("addresponse ... --allow-roles id1,id2", "Restrict to specific roles"),
-        ("addresponse ... --block-roles id1,id2", "Block specific roles"),
-        ("removeresponse \"trigger\"", "Remove a server-added response"),
-    ]
-)
+_HELP_REGISTERED = False
+
+
+def register_help() -> None:
+    """Register help for auto-responder commands once."""
+    global _HELP_REGISTERED
+    if _HELP_REGISTERED:
+        return
+    help_system.register_module(
+        name="Auto-Responder",
+        description="Automatic responses to configured triggers with custom handlers, filters, and delivery modes.",
+        help_command="autoresponder help",
+        commands=[
+            ("autoresponder help", "Show this help message"),
+            ("listresponses", "List all server-added responses"),
+            ("addresponse \"trigger\" \"response\"", "Add a simple text response"),
+            ("addresponse \"trigger\" \"\" --embed title=\"T\" desc=\"D\"", "Add an embed response"),
+            ("addresponse ... --allow-roles id1,id2", "Restrict to specific roles"),
+            ("addresponse ... --block-roles id1,id2", "Block specific roles"),
+            ("removeresponse \"trigger\"", "Remove a server-added response"),
+        ],
+    )
+    _HELP_REGISTERED = True
 
 # Register command routes for dispatch
 # NOTE: handler references are forward-declared; the functions are defined below.
@@ -93,7 +101,6 @@ _HANDLER_NAMESPACE = "classes"
 _COOLDOWNS: Dict[Tuple[int, str, int], float] = {}
 _LAST_COOLDOWN_CLEANUP = 0.0
 _COOLDOWN_CLEANUP_INTERVAL = 300.0  # Cleanup every 5 minutes
-_HELP_REGISTERED = False  # Track if help has been registered
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "enabled": True,
@@ -1242,5 +1249,7 @@ async def handle_remove_response_command(message: discord.Message) -> bool:
     return True
 
 
-# Deferred registration (handler functions are now defined)
-_register_autoresponder_routes()
+def setup_auto_responder() -> None:
+    """Idempotent setup entrypoint for auto-responder routes/help."""
+    register_help()
+    _register_autoresponder_routes()

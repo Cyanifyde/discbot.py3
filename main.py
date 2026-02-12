@@ -1,94 +1,26 @@
 """
-Main entry point for the Discord bot.
+Stable bootstrap entrypoint.
 
-Loads configuration from environment and starts the bot.
+This file should remain minimal and delegate runtime behavior to `main_runtime.py`.
 """
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-from pathlib import Path
 
-# Set thread limits BEFORE any imports (prevents libgomp/OpenMP thread creation errors)
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
-os.environ['NUMBA_NUM_THREADS'] = '1'
+# Set thread limits BEFORE any heavy imports.
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["NUMBA_NUM_THREADS"] = "1"
 
-from dotenv import load_dotenv
-from discord.errors import PrivilegedIntentsRequired
-
-# Load environment variables from .env file
-env_path = Path(__file__).parent / ".env"
-load_dotenv(env_path)
-
-# Import bot after .env is loaded so modules can read env vars at import time.
-from bot import DiscBot
-
-# Get configuration from environment
-BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("BOT_TOKEN")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-_log_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
-
-logging.basicConfig(
-    level=_log_level,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-logger = logging.getLogger("discbot")
-logging.getLogger().setLevel(_log_level)
-logging.getLogger("discord").setLevel(_log_level)
-logging.getLogger("asyncio").setLevel(_log_level)
-
-# Keep these quieter unless explicitly debugging.
-if _log_level > logging.DEBUG:
-    logging.getLogger("PIL").setLevel(logging.WARNING)
-else:
-    logging.getLogger("PIL").setLevel(_log_level)
-
-# Debug: show if .env was found
-if not env_path.exists():
-    logger.warning(".env file not found at %s", env_path)
-
-
-async def main() -> None:
-    token = BOT_TOKEN
-    if not token:
-        logger.error("Missing bot token. Set DISCORD_BOT_TOKEN in .env or environment.")
-        return
-
-    bot = DiscBot()
-    try:
-        await bot.start(token)
-    except PrivilegedIntentsRequired:
-        logger.error(
-            "Privileged intents required. Enable MESSAGE CONTENT and SERVER MEMBERS intents "
-            "in the Discord developer portal, or disable those intents in code/config if you "
-            "intend to run without them."
-        )
-        try:
-            await bot.close()
-        except Exception:
-            pass
-    except Exception as e:
-        logger.error("Failed to start bot: %s", e)
-        if "401" in str(e) or "Improper token" in str(e):
-            logger.error(
-                "Token is invalid. Go to https://discord.com/developers/applications, "
-                "select your bot, go to Bot tab, and click 'Reset Token' to generate a new one. "
-                "Then update DISCORD_BOT_TOKEN in your .env file."
-            )
-        try:
-            await bot.close()
-        except Exception:
-            pass
-        raise
+from main_runtime import main as runtime_main
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(runtime_main())
     except KeyboardInterrupt:
         pass

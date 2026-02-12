@@ -1437,7 +1437,10 @@ async def restore_reaction_roles(bot: discord.Client) -> None:
             logger.error("Error restoring reaction roles for guild %s: %s", guild.id, e)
             error_count += 1
 
-    if restored_count > 0:
-        logger.info("Restored %d reaction role emojis", restored_count)
+    logger.info(
+        "Reaction role restore complete (restored=%d, failed=%d)",
+        restored_count,
+        error_count,
+    )
     if error_count > 0:
         logger.warning("Failed to restore %d reaction role emojis", error_count)

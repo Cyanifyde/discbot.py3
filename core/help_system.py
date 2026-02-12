@@ -129,6 +129,28 @@ class HelpSystem:
             group=group,
             hidden=hidden,
         )
+
+    def replace_module(
+        self,
+        name: str,
+        description: str,
+        help_command: str = "",
+        commands: Optional[list[tuple[str, str]]] = None,
+        *,
+        group: str = "",
+        hidden: bool = False,
+    ) -> None:
+        """
+        Replace (or insert) a module registration while preserving display order.
+        """
+        self.register_module(
+            name=name,
+            description=description,
+            help_command=help_command,
+            commands=commands,
+            group=group,
+            hidden=hidden,
+        )
     
     def unregister_module(self, name: str) -> None:
         """Remove a module from the help system."""

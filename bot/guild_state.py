@@ -87,17 +87,25 @@ class GuildState:
         
         self._refresh_config_cache()
 
-    async def start(self, start_scanner: bool = False) -> None:
+    async def start(
+        self,
+        start_scanner: bool = False,
+        startup_guild_hashes: Optional[set[str]] = None,
+    ) -> None:
         """
         Initialize and start background tasks.
         
         Args:
             start_scanner: Whether to start the sus scanner queue processor.
                           If False (default), scanner must be enabled via 'sus enable'.
+            startup_guild_hashes: Optional per-guild hashes from persisted scanner
+                                 module data loaded during early startup.
         """
         await self.storage.initialize()
         await self.queue_store.initialize()
         self.hashes = await load_hashes(self.config)
+        if startup_guild_hashes:
+            self.hashes.update(startup_guild_hashes)
         # Configure delayed shard flush without a periodic loop.
         try:
             interval = float(self.config.get(K.QUEUE_FLUSH_INTERVAL_SECONDS, 30))
@@ -115,7 +123,12 @@ class GuildState:
         # queue_state_task only runs while the scanner is running.
         self.enforcement_task = asyncio.create_task(self._periodic_enforcement())
         
-        logger.info("Guild %s state started (scanner=%s)", self.guild_id, start_scanner)
+        logger.info(
+            "Guild %s state started (scanner_running=%s, hashes=%d)",
+            self.guild_id,
+            self.is_scanner_running(),
+            len(self.hashes),
+        )
 
     async def stop(self) -> None:
         """Stop background tasks and flush state."""

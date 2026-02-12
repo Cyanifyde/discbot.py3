@@ -40,6 +40,11 @@ def unregister_component_handler(prefix: str) -> None:
     _COMPONENT_HANDLERS.pop(prefix, None)
 
 
+def list_component_prefixes() -> list[str]:
+    """Return registered component handler prefixes."""
+    return sorted(_COMPONENT_HANDLERS.keys())
+
+
 async def handle_interaction(interaction: discord.Interaction) -> bool:
     """
     Route an interaction to the appropriate handler.

@@ -100,6 +100,11 @@ def register_help() -> None:
     ))
 
 
+def setup_scanner_service() -> None:
+    """Idempotent setup entrypoint for scanner registration."""
+    register_help()
+
+
 def _is_mod(member: discord.Member) -> bool:
     """Check if member has mod permissions."""
     perms = member.guild_permissions
@@ -120,6 +125,34 @@ async def get_state(guild_id: int) -> Dict[str, Any]:
     result = dict(DEFAULT_STATE)
     result.update(data)
     return result
+
+
+def _normalize_guild_hashes(raw_hashes: Any) -> set[str]:
+    """Return normalized guild hash strings from persisted module data."""
+    if not isinstance(raw_hashes, list):
+        return set()
+
+    normalized: set[str] = set()
+    for item in raw_hashes:
+        if not isinstance(item, str):
+            continue
+        value = item.strip().lower()
+        if value:
+            normalized.add(value)
+    return normalized
+
+
+async def get_bootstrap_state(guild_id: int) -> tuple[bool, set[str]]:
+    """
+    Return persisted scanner startup state for early guild bootstrap.
+
+    Returns:
+        (enabled, normalized_guild_hashes)
+    """
+    data = await get_state(guild_id)
+    enabled = bool(data.get("enabled", False))
+    guild_hashes = _normalize_guild_hashes(data.get("guild_hashes", []))
+    return enabled, guild_hashes
 
 
 async def set_enabled(guild_id: int, enabled: bool, user_id: int) -> Dict[str, Any]:
@@ -227,10 +260,6 @@ async def handle_command(message: discord.Message, bot: "DiscBot") -> bool:
         await _cmd_config(message)
 
     return True
-
-
-# Register help on import so `@bot help` can list it even before restore_state runs.
-register_help()
 
 
 async def _cmd_help(message: discord.Message) -> None:
@@ -912,42 +941,42 @@ async def _cmd_config(message: discord.Message) -> None:
 
 async def restore_state(bot: "DiscBot") -> None:
     """
-    Restore scanner state for all guilds on bot startup.
+    Reconcile scanner runtime state for all guilds on bot startup.
 
-    Only starts the scanner for guilds where it was previously enabled.
-    Also loads guild-specific hashes into runtime state.
+    This pass is intentionally idempotent and mostly quiet because
+    scanner bootstrap should already happen during guild-state creation.
     """
     register_help()
-     
+
     for guild_id, state in bot.guild_states.items():
         try:
             data = await get_state(guild_id)
+            enabled = bool(data.get("enabled", False))
+            guild_hashes = _normalize_guild_hashes(data.get("guild_hashes", []))
 
-            # Load guild-specific hashes into runtime state
-            guild_hashes = data.get("guild_hashes", [])
-            if guild_hashes:
-                for h in guild_hashes:
-                    if isinstance(h, str):
-                        state.hashes.add(h)
+            # Add only missing persisted hashes.
+            missing_hashes = guild_hashes.difference(state.hashes)
+            if missing_hashes:
+                state.hashes.update(missing_hashes)
                 logger.info(
-                    "Loaded %d guild hashes for guild %s",
-                    len(guild_hashes),
+                    "Scanner reconciliation added %d missing guild hashes for guild %s",
+                    len(missing_hashes),
                     guild_id,
                 )
 
-            if data.get("enabled"):
-                if (
-                    state.queue_processor.stop_event.is_set()
-                    or state.queue_processor.reader_task is None
-                ):
-                    await state.queue_processor.start()
-                    try:
-                        state.on_scanner_started()
-                    except Exception:
-                        pass
-                    logger.info(
-                        "Restored scanner for guild %s (was enabled)",
-                        guild_id,
-                    )
+            # Start scanner only when persisted-enabled but not running.
+            if enabled and (
+                state.queue_processor.stop_event.is_set()
+                or state.queue_processor.reader_task is None
+            ):
+                await state.queue_processor.start()
+                try:
+                    state.on_scanner_started()
+                except Exception:
+                    pass
+                logger.info(
+                    "Scanner reconciliation started scanner for guild %s (persisted enabled)",
+                    guild_id,
+                )
         except Exception as e:
             logger.error("Failed to restore scanner state for guild %s: %s", guild_id, e)

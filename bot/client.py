@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 import discord
 from discord import app_commands
@@ -34,8 +34,11 @@ from core.io_utils import read_json, read_text
 from core.paths import resolve_repo_path
 from core.utils import dt_to_iso, iso_to_dt, safe_int, sanitize_text, utcnow
 from core.help_system import help_system
-import modules.auto_responder  # noqa: F401 - routes registered at module level
-from modules.dm_sender import handle_dm_send
+from modules import auto_responder as auto_responder_module
+from modules import dm_sender as dm_sender_module
+from modules import invite_protection as invite_protection_module
+from modules import roles as roles_module
+from modules import utility as utility_module
 from modules.verification import (
     restore_verification_views,
     setup_verification,
@@ -54,7 +57,6 @@ from modules.reports import (
 )
 from modules.utility import (
     setup_utility,
-    handle_bookmark_reaction,
 )
 from modules.communication import (
     setup_communication,
@@ -69,7 +71,6 @@ from modules.automation import (
     setup_automation,
 )
 from modules.roles import (
-    handle_reaction_role_event,
     restore_reaction_roles,
     setup_roles,
 )
@@ -77,20 +78,30 @@ from modules.custom_content import (
     setup_custom_content,
 )
 from modules.invite_protection import (
-    handle_invite_protection,
     setup_invite_protection,
 )
-from services.inactivity import restore_state as restore_inactivity_state
-from services.scanner import restore_state as restore_scanner_state
+from services.inactivity import (
+    restore_state as restore_inactivity_state,
+    setup_inactivity_service,
+)
+from services.scanner import (
+    get_bootstrap_state as get_scanner_bootstrap_state,
+    restore_state as restore_scanner_state,
+    setup_scanner_service,
+)
 from services.ptc_service import (
-    handle_ptc_message,
+    handle_ptc_message as ptc_handle_message,
+    handle_ptc_reaction as ptc_handle_reaction,
     restore_ptc_state,
     setup_ptc,
     cleanup_ptc,
-    handle_ptc_reaction,
 )
 from services.sync_service import setup_sync_interactions
 from modules.modules_command import register_help as register_modules_help
+from services.hot_reload_service import (
+    start as start_hot_reload_service,
+    stop as stop_hot_reload_service,
+)
 
 from .guild_state import GuildState
 from .auto_responder_dispatcher import AutoResponderDispatcher
@@ -99,6 +110,10 @@ from services.user_utility_service import UserUtilityService
 from services.bookmark_scheduler import BookmarkScheduler
 
 logger = logging.getLogger("discbot")
+
+AutoResponderHandler = Callable[[discord.Message], Awaitable[bool]]
+
+RuntimeHookMap = dict[str, Callable[..., Awaitable[Any]]]
 
 
 class DiscBot(discord.Client):
@@ -130,6 +145,8 @@ class DiscBot(discord.Client):
         self._questions_allowed_user_ids: Optional[set[int]] = None
         self._questions_cache_mtime: Optional[float] = None
         self.started_at = utcnow()
+        self._runtime_hooks: RuntimeHookMap = {}
+        self._init_runtime_hooks()
 
         # AI Detection resource limits
         self._ai_detection_semaphore = asyncio.Semaphore(1)  # Only 1 concurrent detection
@@ -139,6 +156,34 @@ class DiscBot(discord.Client):
         self.auto_responder = AutoResponderDispatcher(queue_max=5000, worker_count=4)
         self.user_utility = UserUtilityService(max_stores=5000, afk_cache_ttl_seconds=5.0)
         self.bookmark_scheduler = BookmarkScheduler()
+
+    def _init_runtime_hooks(self) -> None:
+        """Set default runtime hook bindings."""
+        self.set_runtime_hook("dm_send", dm_sender_module.handle_dm_send)
+        self.set_runtime_hook("invite_protection", invite_protection_module.handle_invite_protection)
+        self.set_runtime_hook("ptc_message", ptc_handle_message)
+        self.set_runtime_hook("ptc_reaction", ptc_handle_reaction)
+        self.set_runtime_hook("bookmark_reaction", utility_module.handle_bookmark_reaction)
+        self.set_runtime_hook("reaction_role_event", roles_module.handle_reaction_role_event)
+        self.set_runtime_hook("auto_responder", auto_responder_module.handle_auto_responder)
+
+    def set_runtime_hook(self, name: str, func: Callable[..., Awaitable[Any]]) -> None:
+        self._runtime_hooks[name] = func
+
+    def get_runtime_hook(self, name: str) -> Optional[Callable[..., Awaitable[Any]]]:
+        return self._runtime_hooks.get(name)
+
+    def get_runtime_hooks_snapshot(self) -> RuntimeHookMap:
+        return dict(self._runtime_hooks)
+
+    def restore_runtime_hooks(self, snapshot: RuntimeHookMap) -> None:
+        self._runtime_hooks = dict(snapshot)
+
+    def get_auto_responder_handler(self) -> Optional[AutoResponderHandler]:
+        hook = self.get_runtime_hook("auto_responder")
+        if hook is None:
+            return None
+        return hook  # type: ignore[return-value]
 
     async def _safe_dispatch(self, handler_coro, message: discord.Message) -> bool:
         """Wrap a command handler coroutine with centralised error handling."""
@@ -154,10 +199,13 @@ class DiscBot(discord.Client):
         """Called when the bot is starting up."""
         # Register interaction handlers
         setup_verification()
+        auto_responder_module.setup_auto_responder()
         setup_moderation()
         setup_server_stats()
         setup_server_link()
         setup_sync_interactions()
+        setup_scanner_service()
+        setup_inactivity_service()
 
         # Register additional modules
         setup_reports()
@@ -213,38 +261,59 @@ class DiscBot(discord.Client):
             # Register help for modules command
             register_modules_help()
 
+            logger.info("Startup restore pipeline: begin")
+
             # Initialize guild states first
+            logger.info("Startup step 1/6 initialize_guild_states: begin")
             await self._initialize_existing_guilds()
+            logger.info("Startup step 1/6 initialize_guild_states: done")
 
             # Restore verification buttons from saved data
+            logger.info("Startup step 2/6 restore_verification_views: begin")
             try:
                 await restore_verification_views(self)
             except Exception as e:
                 await handle_event_error(e, context="restore_verification_views")
+            finally:
+                logger.info("Startup step 2/6 restore_verification_views: done")
 
             # Restore service states (inactivity)
+            logger.info("Startup step 3/6 restore_inactivity_state: begin")
             try:
                 await restore_inactivity_state(self)
             except Exception as e:
                 await handle_event_error(e, context="restore_inactivity_state")
+            finally:
+                logger.info("Startup step 3/6 restore_inactivity_state: done")
 
-            # Restore scanner state (also registers scanner help)
+            # Reconcile scanner runtime state after early bootstrap.
+            logger.info("Startup step 4/6 restore_scanner_state: begin")
             try:
                 await restore_scanner_state(self)
             except Exception as e:
                 await handle_event_error(e, context="restore_scanner_state")
+            finally:
+                logger.info("Startup step 4/6 restore_scanner_state: done")
 
             # Restore PTC state (timers, etc.)
+            logger.info("Startup step 5/6 restore_ptc_state: begin")
             try:
                 await restore_ptc_state(self)
             except Exception as e:
                 await handle_event_error(e, context="restore_ptc_state")
+            finally:
+                logger.info("Startup step 5/6 restore_ptc_state: done")
 
             # Restore reaction role emojis
+            logger.info("Startup step 6/6 restore_reaction_roles: begin")
             try:
                 await restore_reaction_roles(self)
             except Exception as e:
                 await handle_event_error(e, context="restore_reaction_roles")
+            finally:
+                logger.info("Startup step 6/6 restore_reaction_roles: done")
+
+            logger.info("Startup restore pipeline: done")
 
             # Start bounded dispatchers/schedulers
             try:
@@ -262,8 +331,15 @@ class DiscBot(discord.Client):
 
             self._status_task = asyncio.create_task(self._status_loop())
 
+            try:
+                await start_hot_reload_service(self)
+            except Exception as e:
+                await handle_event_error(e, context="hot_reload_start")
+
     async def close(self) -> None:
         """Cleanup when shutting down."""
+        await stop_hot_reload_service()
+
         for state in list(self.guild_states.values()):
             await state.stop()
 
@@ -318,8 +394,22 @@ class DiscBot(discord.Client):
                 logger.error("Failed to seed config for guild %s: %s", guild.id, exc2)
                 return None
         
+        start_scanner = False
+        startup_guild_hashes: set[str] = set()
+        try:
+            start_scanner, startup_guild_hashes = await get_scanner_bootstrap_state(guild.id)
+        except Exception as e:
+            logger.warning(
+                "Scanner bootstrap read failed for guild %s; using defaults: %s",
+                guild.id,
+                e,
+            )
+
         state = GuildState(self, config)
-        await state.start()
+        await state.start(
+            start_scanner=start_scanner,
+            startup_guild_hashes=startup_guild_hashes,
+        )
         self.guild_states[guild.id] = state
         return state
 
@@ -389,21 +479,25 @@ class DiscBot(discord.Client):
         # Handle DMs
         if message.guild is None:
             try:
-                await handle_dm_send(self, message)
+                dm_hook = self.get_runtime_hook("dm_send")
+                if dm_hook is not None:
+                    await dm_hook(self, message)
             except Exception as e:
                 await handle_event_error(e, context="dm_send", channel_id=message.channel.id)
             return
 
         # Invite protection runs before other handlers (can delete messages)
         try:
-            if await handle_invite_protection(message, self):
+            invite_hook = self.get_runtime_hook("invite_protection")
+            if invite_hook and await invite_hook(message, self):
                 return
         except Exception as e:
             await handle_event_error(e, context="invite_protection", guild_id=message.guild.id, channel_id=message.channel.id)
 
         # PTC enforcement: intercepts ALL messages in bound threads + ptc commands
         try:
-            if await handle_ptc_message(message, self):
+            ptc_hook = self.get_runtime_hook("ptc_message")
+            if ptc_hook and await ptc_hook(message, self):
                 return
         except Exception as e:
             await handle_event_error(e, context="ptc_message", guild_id=message.guild.id, channel_id=message.channel.id)
@@ -489,22 +583,30 @@ class DiscBot(discord.Client):
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
         """Handle reaction events (bookmarks, reaction roles)."""
         try:
-            await handle_bookmark_reaction(payload, self)
+            bookmark_hook = self.get_runtime_hook("bookmark_reaction")
+            if bookmark_hook:
+                await bookmark_hook(payload, self)
         except Exception as e:
             await handle_event_error(e, context="bookmark_reaction", guild_id=payload.guild_id, channel_id=payload.channel_id)
         try:
-            await handle_reaction_role_event(payload, self, added=True)
+            reaction_role_hook = self.get_runtime_hook("reaction_role_event")
+            if reaction_role_hook:
+                await reaction_role_hook(payload, self, added=True)
         except Exception as e:
             await handle_event_error(e, context="reaction_role_add", guild_id=payload.guild_id, channel_id=payload.channel_id)
         try:
-            await handle_ptc_reaction(payload, self)
+            ptc_reaction_hook = self.get_runtime_hook("ptc_reaction")
+            if ptc_reaction_hook:
+                await ptc_reaction_hook(payload, self)
         except Exception as e:
             await handle_event_error(e, context="ptc_reaction", guild_id=payload.guild_id, channel_id=payload.channel_id)
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
         """Handle reaction remove events (reaction roles)."""
         try:
-            await handle_reaction_role_event(payload, self, added=False)
+            reaction_role_hook = self.get_runtime_hook("reaction_role_event")
+            if reaction_role_hook:
+                await reaction_role_hook(payload, self, added=False)
         except Exception as e:
             await handle_event_error(e, context="reaction_role_remove", guild_id=payload.guild_id, channel_id=payload.channel_id)
 
